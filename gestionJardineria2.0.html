@@ -707,6 +707,36 @@
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <input type="text" placeholder="🔍 Buscar cliente..." oninput="filtrarClientes(this.value)"
         style="border:1px solid rgba(26,46,26,0.18);border-radius:8px;padding:8px 12px;font-size:13px;font-family:'DM Sans',sans-serif;outline:none;width:200px;">
+      <button class="btn" onclick="toggleFormCliente()">+ Nuevo cliente</button>
+    </div>
+  </div>
+
+  <div id="formNuevoCliente" style="display:none;margin-bottom:20px">
+    <div class="tabla-wrap" style="padding:20px">
+      <div class="section-title" style="margin-bottom:14px;font-size:16px">Agregar nuevo cliente</div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Nombre / Empresa</label>
+          <input type="text" id="nc_nombre" placeholder="Ej: Juan Pérez">
+        </div>
+        <div class="form-group">
+          <label>Dirección</label>
+          <input type="text" id="nc_dir" placeholder="Ej: San Martín 1234">
+        </div>
+        <div class="form-group">
+          <label>Forma de pago</label>
+          <select id="nc_pago">
+            <option>Transferencia</option>
+            <option>Contado</option>
+            <option>Transf / Contado</option>
+            <option>Mercado Pago</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px">
+        <button class="btn" onclick="agregarCliente()">Guardar cliente</button>
+        <button class="btn secundario" onclick="toggleFormCliente()">Cancelar</button>
+      </div>
     </div>
   </div>
 
@@ -724,6 +754,7 @@
           <th>Último pago</th>
           <th>Estado</th>
           <th>Acción</th>
+          <th></th>
         </tr>
       </thead>
       <tbody id="clientesTbody">
@@ -732,7 +763,7 @@
     </table>
     </div>
   </div>
-  <p style="font-size:12px;color:#888;text-align:right;margin-top:8px">Total clientes registrados: 42 — Hacé clic en cualquier fila para ver / cargar historial de pagos</p>
+  <p id="contadorClientes" style="font-size:12px;color:#888;text-align:right;margin-top:8px">Total clientes registrados: — — Hacé clic en cualquier fila para ver / cargar historial de pagos</p>
 </div>
 
 <!-- ══════════════════════════════════════════════════════ PROSPECTOS -->
@@ -1163,7 +1194,7 @@ function cambiarPanel(id, btn) {
 }
 
 // ── DATOS BASE CLIENTES ────────────────────────────────
-const CLIENTES_BASE = [
+const CLIENTES_DEFAULT = [
   { id:'cl01', num:1,  nombre:'Maricel Brunas',              dir:'Los Garabatos 1612',          pago:'Transf / Contado', deuda:116625 },
   { id:'cl02', num:2,  nombre:'Alberto Lambertti',           dir:'Libertador Norte 1451',       pago:'Transferencia',    deuda:50750  },
   { id:'cl03', num:3,  nombre:'Ariel',                       dir:'dato pendiente',              pago:'dato pendiente',   deuda:43500  },
@@ -1208,6 +1239,17 @@ const CLIENTES_BASE = [
   { id:'cl42', num:42, nombre:'Gustavo Salomon',             dir:'Molina Campos 3806',          pago:'Transferencia',    deuda:0      },
 ];
 
+function cargarClientes() {
+  try {
+    const stored = localStorage.getItem('j2_clientes');
+    return stored ? JSON.parse(stored) : CLIENTES_DEFAULT;
+  } catch(e) { return CLIENTES_DEFAULT; }
+}
+function guardarClientes() {
+  localStorage.setItem('j2_clientes', JSON.stringify(clientes));
+}
+let clientes = cargarClientes();
+
 // Historial de pagos por cliente: { [clienteId]: [ {fecha, monto, tipo, medio, nota} ] }
 function cargarHistorial() {
   try { return JSON.parse(localStorage.getItem('j2_historial') || '{}'); }
@@ -1226,8 +1268,11 @@ function renderClientes() {
   if (!tbody) return;
 
   const lista = filtroClientes
-    ? CLIENTES_BASE.filter(c => c.nombre.toLowerCase().includes(filtroClientes))
-    : CLIENTES_BASE;
+    ? clientes.filter(c => c.nombre.toLowerCase().includes(filtroClientes))
+    : clientes;
+
+  const contador = document.getElementById('contadorClientes');
+  if (contador) contador.textContent = `Total clientes registrados: ${clientes.length} — Hacé clic en cualquier fila para ver / cargar historial de pagos`;
 
   tbody.innerHTML = lista.map(c => {
     const pagos  = state.historial[c.id] || [];
@@ -1273,6 +1318,10 @@ function renderClientes() {
         <td>${ultimoStr}</td>
         <td>${estadoBadge}</td>
         <td onclick="event.stopPropagation()">${accion}</td>
+        <td onclick="event.stopPropagation()">
+          <button onclick="eliminarCliente('${c.id}')" title="Eliminar cliente"
+            style="background:none;border:1px solid rgba(192,57,43,0.3);border-radius:6px;cursor:pointer;font-size:12px;padding:3px 8px;color:var(--rojo);opacity:0.7" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.7">🗑</button>
+        </td>
       </tr>
       <tr class="cl-fila-historial" id="hist-${c.id}">
         <td colspan="9" style="padding:0">
@@ -1446,7 +1495,7 @@ function toggleHistorial(id) {
     filaMain.classList.add('abierta');
     filaHist.classList.add('visible');
     // Re-render el box por si cambió
-    const c = CLIENTES_BASE.find(x => x.id === id);
+    const c = clientes.find(x => x.id === id);
     if (c) document.getElementById('box-' + id).innerHTML = renderHistorialBox(c);
   }
 }
@@ -1488,7 +1537,7 @@ function eliminarPago(clienteId, pagoId) {
   if (!state.historial[clienteId]) return;
   state.historial[clienteId] = state.historial[clienteId].filter(p => p.id !== pagoId);
   guardarHistorial();
-  const c = CLIENTES_BASE.find(x => x.id === clienteId);
+  const c = clientes.find(x => x.id === clienteId);
   if (c) document.getElementById('box-' + clienteId).innerHTML = renderHistorialBox(c);
   renderClientes();
   // Mantener abierto
@@ -1504,6 +1553,46 @@ function eliminarPago(clienteId, pagoId) {
 function filtrarClientes(q) {
   filtroClientes = q.toLowerCase().trim();
   renderClientes();
+}
+
+function toggleFormCliente() {
+  const form = document.getElementById('formNuevoCliente');
+  form.style.display = form.style.display === 'none' ? 'block' : 'none';
+  if (form.style.display === 'block') {
+    document.getElementById('nc_nombre').focus();
+  }
+}
+
+function agregarCliente() {
+  const nombre = document.getElementById('nc_nombre').value.trim();
+  if (!nombre) { mostrarToast('⚠ Ingresá el nombre del cliente'); return; }
+
+  const nuevoNum = clientes.length > 0 ? Math.max(...clientes.map(c => c.num)) + 1 : 1;
+  const nuevo = {
+    id: 'cl_' + Date.now(),
+    num: nuevoNum,
+    nombre,
+    dir: document.getElementById('nc_dir').value.trim() || 'dato pendiente',
+    pago: document.getElementById('nc_pago').value,
+    deuda: 0
+  };
+
+  clientes.push(nuevo);
+  guardarClientes();
+  renderClientes();
+  toggleFormCliente();
+  ['nc_nombre','nc_dir'].forEach(id => document.getElementById(id).value = '');
+  mostrarToast('✓ Cliente agregado correctamente');
+}
+
+function eliminarCliente(id) {
+  const c = clientes.find(x => x.id === id);
+  if (!c) return;
+  if (!confirm(`¿Eliminar a "${c.nombre}" de la lista? Esta acción no se puede deshacer.`)) return;
+  clientes = clientes.filter(x => x.id !== id);
+  guardarClientes();
+  renderClientes();
+  mostrarToast('Cliente eliminado');
 }
 
 // ── AGENDA ────────────────────────────────────────────
