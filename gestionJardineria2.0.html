@@ -1,0 +1,1904 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Jardinería 2.0 — Gestión Operativa</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap');
+
+  :root {
+    --verde-oscuro: #1a2e1a;
+    --verde-medio: #2d5a2d;
+    --verde-vivo: #4a8c3f;
+    --verde-claro: #7ab648;
+    --tierra: #8b5a2b;
+    --tierra-claro: #c4874a;
+    --crema: #f5f0e8;
+    --crema-oscura: #e8e0d0;
+    --rojo: #c0392b;
+    --rojo-suave: #e74c3c;
+    --amarillo: #f39c12;
+    --azul: #2980b9;
+    --blanco: #fafaf8;
+    --sombra: 0 2px 12px rgba(26,46,26,0.12);
+    --borde: 1px solid rgba(26,46,26,0.12);
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--crema);
+    color: var(--verde-oscuro);
+    min-height: 100vh;
+  }
+
+  /* HEADER */
+  header {
+    background: var(--verde-oscuro);
+    color: var(--crema);
+    padding: 0;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+  }
+  .header-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 28px;
+    gap: 20px;
+  }
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .logo-icon {
+    width: 38px; height: 38px;
+    background: var(--verde-vivo);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px;
+  }
+  .logo-text {
+    font-family: 'DM Serif Display', serif;
+    font-size: 20px;
+    letter-spacing: -0.3px;
+  }
+  .logo-sub {
+    font-size: 11px;
+    opacity: 0.6;
+    font-weight: 300;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .fecha-hoy {
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    opacity: 0.7;
+    background: rgba(255,255,255,0.08);
+    padding: 6px 14px;
+    border-radius: 20px;
+    border: 1px solid rgba(255,255,255,0.12);
+  }
+
+  /* NAV TABS */
+  nav {
+    background: var(--verde-medio);
+    display: flex;
+    gap: 2px;
+    padding: 0 28px;
+    overflow-x: auto;
+  }
+  nav button {
+    background: none;
+    border: none;
+    color: rgba(245,240,232,0.65);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 12px 18px;
+    cursor: pointer;
+    border-bottom: 3px solid transparent;
+    white-space: nowrap;
+    transition: all 0.2s;
+    letter-spacing: 0.2px;
+  }
+  nav button:hover { color: var(--crema); }
+  nav button.active {
+    color: var(--verde-claro);
+    border-bottom-color: var(--verde-claro);
+  }
+
+  /* LAYOUT */
+  main { padding: 28px; max-width: 1400px; margin: 0 auto; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  /* RESUMEN CARDS */
+  .cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 28px;
+  }
+  .card {
+    background: var(--blanco);
+    border-radius: 14px;
+    padding: 20px;
+    box-shadow: var(--sombra);
+    border: var(--borde);
+    position: relative;
+    overflow: hidden;
+  }
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 4px;
+    background: var(--verde-vivo);
+  }
+  .card.rojo::before { background: var(--rojo); }
+  .card.amarillo::before { background: var(--amarillo); }
+  .card.azul::before { background: var(--azul); }
+  .card.tierra::before { background: var(--tierra); }
+
+  .card-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #888;
+    margin-bottom: 8px;
+  }
+  .card-valor {
+    font-family: 'DM Serif Display', serif;
+    font-size: 28px;
+    color: var(--verde-oscuro);
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+  .card-sub {
+    font-size: 12px;
+    color: #999;
+  }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    font-family: 'DM Mono', monospace;
+  }
+  .badge.urgente { background: #fdecea; color: var(--rojo); }
+  .badge.ok { background: #e8f5e9; color: #2e7d32; }
+  .badge.pendiente { background: #fff8e1; color: #e65100; }
+  .badge.info { background: #e3f2fd; color: #1565c0; }
+
+  /* SECCIÓN TÍTULO */
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .section-title {
+    font-family: 'DM Serif Display', serif;
+    font-size: 22px;
+    color: var(--verde-oscuro);
+  }
+  .section-title small {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    color: #888;
+    font-weight: 400;
+    margin-left: 8px;
+  }
+
+  /* TABLA PRINCIPAL */
+  .tabla-wrap {
+    background: var(--blanco);
+    border-radius: 14px;
+    box-shadow: var(--sombra);
+    border: var(--borde);
+    overflow: hidden;
+    margin-bottom: 24px;
+  }
+  .tabla-scroll { overflow-x: auto; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  thead tr {
+    background: var(--verde-oscuro);
+    color: var(--crema);
+  }
+  thead th {
+    padding: 12px 14px;
+    text-align: left;
+    font-weight: 500;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    white-space: nowrap;
+  }
+  tbody tr {
+    border-bottom: 1px solid rgba(26,46,26,0.06);
+    transition: background 0.15s;
+  }
+  tbody tr:hover { background: rgba(74,140,63,0.04); }
+  tbody tr:last-child { border-bottom: none; }
+  tbody td {
+    padding: 11px 14px;
+    vertical-align: middle;
+    line-height: 1.4;
+  }
+  .prioridad-alta { background: rgba(192,57,43,0.04); }
+  .prioridad-media { background: rgba(243,156,18,0.03); }
+
+  /* ACCIONES WA */
+  .whatsapp-box {
+    background: #f0fdf0;
+    border: 1px solid #a3e6a3;
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin-bottom: 12px;
+    position: relative;
+  }
+  .whatsapp-box .cliente-nombre {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--verde-oscuro);
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .whatsapp-box .mensaje-wa {
+    background: white;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 13px;
+    color: #333;
+    border-left: 3px solid #25d366;
+    white-space: pre-wrap;
+    line-height: 1.5;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .wa-meta {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 8px;
+    flex-wrap: wrap;
+  }
+  .copy-btn {
+    background: #25d366;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 5px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+    letter-spacing: 0.3px;
+    transition: background 0.2s;
+  }
+  .copy-btn:hover { background: #1ebe5a; }
+
+  /* AGENDA / CALENDAR */
+  .agenda-dia {
+    background: var(--blanco);
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin-bottom: 12px;
+    box-shadow: var(--sombra);
+    border: var(--borde);
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+  .agenda-fecha {
+    min-width: 70px;
+    text-align: center;
+  }
+  .agenda-fecha .dia-num {
+    font-family: 'DM Serif Display', serif;
+    font-size: 32px;
+    color: var(--verde-vivo);
+    line-height: 1;
+  }
+  .agenda-fecha .dia-texto {
+    font-size: 11px;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+  }
+  .agenda-turnos {
+    flex: 1;
+    min-width: 200px;
+  }
+  .turno-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(0,0,0,0.05);
+  }
+  .turno-item:last-child { border-bottom: none; }
+  .turno-hora {
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    color: #888;
+    white-space: nowrap;
+    min-width: 40px;
+  }
+  .turno-cliente { font-size: 13px; font-weight: 500; }
+  .turno-detalle { font-size: 12px; color: #888; }
+
+  /* ALERTAS */
+  .alerta {
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    font-size: 13px;
+  }
+  .alerta.urgente { background: #fdecea; border-left: 4px solid var(--rojo); }
+  .alerta.aviso { background: #fff8e1; border-left: 4px solid var(--amarillo); }
+  .alerta.info { background: #e3f2fd; border-left: 4px solid var(--azul); }
+  .alerta.ok { background: #e8f5e9; border-left: 4px solid #4caf50; }
+  .alerta-icon { font-size: 18px; margin-top: 1px; }
+  .alerta-texto strong { display: block; margin-bottom: 3px; }
+
+  /* FORMULARIO INGRESO */
+  .form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 14px;
+    margin-bottom: 18px;
+  }
+  .form-group label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: #666;
+    margin-bottom: 5px;
+  }
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    width: 100%;
+    border: 1px solid rgba(26,46,26,0.18);
+    border-radius: 8px;
+    padding: 9px 12px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    color: var(--verde-oscuro);
+    background: white;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .form-group input:focus,
+  .form-group select:focus,
+  .form-group textarea:focus {
+    border-color: var(--verde-vivo);
+    box-shadow: 0 0 0 3px rgba(74,140,63,0.1);
+  }
+  .btn {
+    background: var(--verde-vivo);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 22px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+    letter-spacing: 0.2px;
+  }
+  .btn:hover { background: var(--verde-medio); }
+  .btn.secundario {
+    background: var(--crema-oscura);
+    color: var(--verde-oscuro);
+  }
+  .btn.secundario:hover { background: #d5ccc0; }
+  .btn.rojo { background: var(--rojo); }
+  .btn.rojo:hover { background: #a93226; }
+
+  /* PROSPECTO FICHA */
+  .prospecto-card {
+    background: var(--blanco);
+    border-radius: 12px;
+    padding: 18px;
+    margin-bottom: 12px;
+    box-shadow: var(--sombra);
+    border: var(--borde);
+    border-left: 4px solid var(--tierra);
+  }
+  .prospecto-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .prospecto-nombre { font-weight: 600; font-size: 15px; }
+  .datos-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 10px;
+    margin-top: 10px;
+  }
+  .dato-item { font-size: 12px; }
+  .dato-item strong { display: block; color: #888; font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  /* SEPARADOR */
+  .sep {
+    height: 1px;
+    background: rgba(26,46,26,0.08);
+    margin: 24px 0;
+  }
+
+  /* NOTIFICACIÓN TOAST */
+  #toast {
+    position: fixed;
+    bottom: 28px;
+    right: 28px;
+    background: var(--verde-oscuro);
+    color: var(--crema);
+    padding: 12px 20px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 500;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+    opacity: 0;
+    transform: translateY(10px);
+    transition: all 0.3s;
+    pointer-events: none;
+    z-index: 999;
+  }
+  #toast.show { opacity: 1; transform: translateY(0); }
+
+  /* ESTADO VACÍO */
+  .empty-state {
+    text-align: center;
+    padding: 48px 20px;
+    color: #aaa;
+  }
+  .empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+  .empty-state p { font-size: 14px; }
+
+  @media (max-width: 640px) {
+    main { padding: 16px; }
+    .header-inner { padding: 12px 16px; }
+    nav { padding: 0 12px; }
+    nav button { padding: 10px 12px; font-size: 12px; }
+    .card-valor { font-size: 22px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <div class="logo">
+      <div class="logo-icon">🌿</div>
+      <div>
+        <div class="logo-text">Jardinería 2.0</div>
+        <div class="logo-sub">Gestión Operativa</div>
+      </div>
+    </div>
+    <div class="fecha-hoy" id="fechaHoy">—</div>
+  </div>
+  <nav>
+    <button class="active" onclick="cambiarPanel('resumen', this)">📊 Resumen</button>
+    <button onclick="cambiarPanel('clientes', this)">👥 Clientes Fijos</button>
+    <button onclick="cambiarPanel('prospectos', this)">🌱 Prospectos</button>
+    <button onclick="cambiarPanel('agenda', this)">📅 Agenda</button>
+    <button onclick="cambiarPanel('cobros', this)">💰 Cobros</button>
+    <button onclick="cambiarPanel('whatsapp', this)">💬 WhatsApp</button>
+    <button onclick="cambiarPanel('cargar', this)">➕ Cargar Info</button>
+  </nav>
+</header>
+
+<main>
+
+<!-- ══════════════════════════════════════════════════════ RESUMEN -->
+<div class="panel active" id="panel-resumen">
+  
+  <div class="cards-grid">
+    <div class="card">
+      <div class="card-label">Caja Líquida</div>
+      <div class="card-valor">$1.088.811</div>
+      <div class="card-sub">MP $568.600 · Banco $7.910 · Efectivo $512.300</div>
+    </div>
+    <div class="card rojo">
+      <div class="card-label">Cuentas por Cobrar</div>
+      <div class="card-valor">$210.875</div>
+      <div class="card-sub">Maricel $116.625 · Alberto $50.750 · Ariel $43.500</div>
+    </div>
+    <div class="card amarillo">
+      <div class="card-label">Empleados Este Mes</div>
+      <div class="card-valor">$68.500</div>
+      <div class="card-sub">Carlos C. $44.000 · Aylen $24.500 · Angel $0</div>
+    </div>
+    <div class="card azul">
+      <div class="card-label">Resultado Mayo 2026</div>
+      <div class="card-valor rojo-texto" style="color:var(--rojo)">-$199.755</div>
+      <div class="card-sub">Solo ingresos del mes: $0 registrados aún</div>
+    </div>
+    <div class="card tierra">
+      <div class="card-label">Patrimonio Total</div>
+      <div class="card-valor">$9.110.494</div>
+      <div class="card-sub">Activos no líquidos: $8.021.682</div>
+    </div>
+  </div>
+
+  <div class="section-header">
+    <div class="section-title">🚨 Alertas del Día</div>
+  </div>
+
+  <div class="alerta urgente">
+    <div class="alerta-icon">🔴</div>
+    <div class="alerta-texto">
+      <strong>COBRO URGENTE — $210.875 pendiente de 3 clientes</strong>
+      Maricel ($116.625) · Alberto ($50.750) · Ariel ($43.500). Gestionar cobro esta semana.
+    </div>
+  </div>
+  <div class="alerta urgente">
+    <div class="alerta-icon">🔴</div>
+    <div class="alerta-texto">
+      <strong>Mayo sin ingresos registrados ($0 en el sistema)</strong>
+      Los egresos ya suman $199.755 (sueldos). Cargar cobros del mes cuanto antes.
+    </div>
+  </div>
+  <div class="alerta aviso">
+    <div class="alerta-icon">🟡</div>
+    <div class="alerta-texto">
+      <strong>Ángel sin pago este mes</strong>
+      Empleado Ángel figura con $0 pagado en mayo 2026. Verificar si trabajó o está de baja.
+    </div>
+  </div>
+  <div class="alerta info">
+    <div class="alerta-icon">🔵</div>
+    <div class="alerta-texto">
+      <strong>Datos de teléfono faltantes en clientes</strong>
+      La planilla de clientes no tiene columna de teléfono completa. Completar para WhatsApp ágil.
+    </div>
+  </div>
+  <div class="alerta ok">
+    <div class="alerta-icon">🟢</div>
+    <div class="alerta-texto">
+      <strong>Abril 2026 cerró con resultado positivo: +$295.649</strong>
+      Buen mes anterior. El negocio viene con tendencia positiva desde el cierre 2025.
+    </div>
+  </div>
+
+  <div class="sep"></div>
+
+  <div class="section-header">
+    <div class="section-title">📈 Últimos 6 meses</div>
+  </div>
+  <div class="tabla-wrap">
+    <div class="tabla-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Mes</th><th>Año</th><th>Ingresos</th><th>Egresos</th><th>Resultado</th><th>Estado</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Noviembre</td><td>2025</td><td>$2.891.303</td><td>$2.528.386</td><td style="color:#2e7d32;font-weight:600">+$362.916</td><td><span class="badge ok">✓ Cerrado</span></td></tr>
+        <tr><td>Diciembre</td><td>2025</td><td>$3.547.370</td><td>$2.772.337</td><td style="color:#2e7d32;font-weight:600">+$775.033</td><td><span class="badge ok">✓ Cerrado</span></td></tr>
+        <tr><td>Enero</td><td>2026</td><td>$2.855.430</td><td>$3.225.075</td><td style="color:var(--rojo);font-weight:600">-$369.644</td><td><span class="badge ok">✓ Cerrado</span></td></tr>
+        <tr><td>Febrero</td><td>2026</td><td>$2.185.217</td><td>$2.171.275</td><td style="color:#2e7d32;font-weight:600">+$13.942</td><td><span class="badge ok">✓ Cerrado</span></td></tr>
+        <tr><td>Marzo</td><td>2026</td><td>$3.445.967</td><td>$3.299.805</td><td style="color:#2e7d32;font-weight:600">+$146.162</td><td><span class="badge ok">✓ Cerrado</span></td></tr>
+        <tr><td>Abril</td><td>2026</td><td>$3.594.950</td><td>$3.299.301</td><td style="color:#2e7d32;font-weight:600">+$295.649</td><td><span class="badge ok">✓ Cerrado</span></td></tr>
+        <tr class="prioridad-alta"><td><strong>Mayo</strong></td><td><strong>2026</strong></td><td style="color:var(--rojo)">$0 (sin cargar)</td><td>$199.755</td><td style="color:var(--rojo);font-weight:600">-$199.755</td><td><span class="badge urgente">⚠ En curso</span></td></tr>
+      </tbody>
+    </table>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════ CLIENTES -->
+<div class="panel" id="panel-clientes">
+
+  <style>
+    /* ── HISTORIAL DESPLEGABLE ── */
+    .cl-fila-main td { cursor:pointer; }
+    .cl-fila-main td:last-child { cursor:default; }
+    .cl-fila-main:hover { background: rgba(74,140,63,0.06) !important; }
+    .cl-fila-main .expand-icon {
+      display:inline-block; width:18px; text-align:center;
+      font-size:11px; color:#aaa; transition:transform 0.2s;
+    }
+    .cl-fila-main.abierta .expand-icon { transform:rotate(90deg); color:var(--verde-vivo); }
+
+    .cl-fila-historial { display:none; }
+    .cl-fila-historial.visible { display:table-row; }
+    .cl-historial-box {
+      background: #f8fdf7;
+      border-top: 1px dashed rgba(74,140,63,0.25);
+      border-bottom: 2px solid rgba(74,140,63,0.15);
+      padding: 16px 20px;
+    }
+    .historial-header {
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 10px; margin-bottom: 14px;
+    }
+    .historial-resumen {
+      display: flex; gap: 20px; flex-wrap: wrap;
+    }
+    .hist-stat {
+      text-align:center;
+    }
+    .hist-stat .valor {
+      font-family:'DM Serif Display',serif; font-size:20px;
+      color: var(--verde-oscuro); line-height:1;
+    }
+    .hist-stat .etiq {
+      font-size:10px; color:#888; text-transform:uppercase;
+      letter-spacing:0.8px; margin-top:2px;
+    }
+    .historial-tabla { width:100%; border-collapse:collapse; font-size:12px; margin-bottom:12px; }
+    .historial-tabla th {
+      background: rgba(26,46,26,0.06);
+      color: #555; font-size:10px; text-transform:uppercase;
+      letter-spacing:0.7px; padding:7px 10px; text-align:left;
+    }
+    .historial-tabla td { padding:7px 10px; border-bottom:1px solid rgba(0,0,0,0.04); }
+    .historial-tabla tr:last-child td { border-bottom:none; }
+    .historial-tabla .monto-col { font-family:'DM Mono',monospace; font-weight:600; color:#2e7d32; }
+    .historial-tabla .mes-col { font-weight:500; }
+
+    /* formulario inline de cobro */
+    .form-cobro-inline {
+      background: white;
+      border: 1px solid rgba(74,140,63,0.2);
+      border-radius: 10px;
+      padding: 14px 16px;
+      display: none;
+      margin-top: 10px;
+    }
+    .form-cobro-inline.visible { display:block; }
+    .form-cobro-inline .fg-row {
+      display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;
+    }
+    .form-cobro-inline .fg {
+      display:flex; flex-direction:column; gap:4px; flex:1; min-width:130px;
+    }
+    .form-cobro-inline label {
+      font-size:10px; font-weight:600; text-transform:uppercase;
+      letter-spacing:0.7px; color:#777;
+    }
+    .form-cobro-inline input,
+    .form-cobro-inline select {
+      border:1px solid rgba(26,46,26,0.18); border-radius:7px;
+      padding:7px 10px; font-family:'DM Sans',sans-serif; font-size:13px;
+      outline:none; background:white;
+    }
+    .form-cobro-inline input:focus,
+    .form-cobro-inline select:focus { border-color:var(--verde-vivo); }
+
+    /* barra progreso mensual */
+    .barra-wrap { margin-top:10px; }
+    .barra-label { display:flex; justify-content:space-between; font-size:11px; color:#888; margin-bottom:4px; }
+    .barra-bg { background:#e8e0d0; border-radius:20px; height:8px; overflow:hidden; }
+    .barra-fill { background: linear-gradient(90deg, var(--verde-vivo), var(--verde-claro)); height:100%; border-radius:20px; transition:width 0.5s; }
+  </style>
+
+  <div class="section-header">
+    <div class="section-title">Clientes Fijos <small>Hacé clic en un cliente para ver su historial</small></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <input type="text" placeholder="🔍 Buscar cliente..." oninput="filtrarClientes(this.value)"
+        style="border:1px solid rgba(26,46,26,0.18);border-radius:8px;padding:8px 12px;font-size:13px;font-family:'DM Sans',sans-serif;outline:none;width:200px;">
+    </div>
+  </div>
+
+  <div class="tabla-wrap">
+    <div class="tabla-scroll">
+    <table id="tablaClientes">
+      <thead>
+        <tr>
+          <th style="width:28px"></th>
+          <th>#</th>
+          <th>Nombre / Empresa</th>
+          <th>Dirección</th>
+          <th>Forma de Pago</th>
+          <th>Pagado acumulado</th>
+          <th>Último pago</th>
+          <th>Estado</th>
+          <th>Acción</th>
+        </tr>
+      </thead>
+      <tbody id="clientesTbody">
+        <!-- generado por JS -->
+      </tbody>
+    </table>
+    </div>
+  </div>
+  <p style="font-size:12px;color:#888;text-align:right;margin-top:8px">Total clientes registrados: 42 — Hacé clic en cualquier fila para ver / cargar historial de pagos</p>
+</div>
+
+<!-- ══════════════════════════════════════════════════════ PROSPECTOS -->
+<div class="panel" id="panel-prospectos">
+  <div class="section-header">
+    <div class="section-title">Prospectos <small>Pipeline de nuevos clientes</small></div>
+    <button class="btn" onclick="mostrarFormProspecto()">+ Nuevo prospecto</button>
+  </div>
+
+  <div class="tabla-wrap">
+    <div class="tabla-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Nombre</th><th>Zona</th><th>Tipo trabajo</th><th>Frecuencia</th><th>Presupuesto</th><th>Estado</th><th>Urgencia</th><th>Acción</th>
+        </tr>
+      </thead>
+      <tbody id="tablaProspectos">
+        <tr>
+          <td colspan="8">
+            <div class="empty-state">
+              <div class="icon">🌱</div>
+              <p>Cargá un prospecto desde WhatsApp o con el botón "+ Nuevo prospecto"</p>
+            </div>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <div id="formProspecto" style="display:none;">
+    <div class="sep"></div>
+    <div class="section-title" style="margin-bottom:16px">Registrar nuevo prospecto</div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Nombre o contacto</label>
+        <input type="text" id="p_nombre" placeholder="Ej: Juan Pérez">
+      </div>
+      <div class="form-group">
+        <label>Zona / Barrio</label>
+        <input type="text" id="p_zona" placeholder="Ej: Los Paraisos, centro...">
+      </div>
+      <div class="form-group">
+        <label>Tipo de trabajo</label>
+        <select id="p_tipo">
+          <option value="">Seleccionar...</option>
+          <option>Mantenimiento mensual</option>
+          <option>Poda</option>
+          <option>Desmalezado</option>
+          <option>Diseño de jardín</option>
+          <option>Vivero / venta</option>
+          <option>Otro</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Frecuencia deseada</label>
+        <select id="p_frecuencia">
+          <option value="">Sin definir</option>
+          <option>Mensual</option>
+          <option>Quincenal</option>
+          <option>Semanal</option>
+          <option>Una sola vez</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Disponibilidad del cliente</label>
+        <input type="text" id="p_disponibilidad" placeholder="Ej: lunes y miércoles mañana">
+      </div>
+      <div class="form-group">
+        <label>Estado</label>
+        <select id="p_estado">
+          <option>Presupuesto pendiente</option>
+          <option>A confirmar</option>
+          <option>Espera / sin lugar</option>
+          <option>En negociación</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group" style="margin-bottom:14px">
+      <label>Notas adicionales</label>
+      <textarea id="p_notas" rows="2" placeholder="Qué dijo, qué necesita, si mandó fotos..."></textarea>
+    </div>
+    <div style="display:flex;gap:10px">
+      <button class="btn" onclick="agregarProspecto()">Guardar prospecto</button>
+      <button class="btn secundario" onclick="document.getElementById('formProspecto').style.display='none'">Cancelar</button>
+    </div>
+  </div>
+
+  <div class="sep"></div>
+  <div class="section-title" style="margin-bottom:12px">📋 Datos mínimos para presupuestar</div>
+  <div class="alerta info">
+    <div class="alerta-icon">📌</div>
+    <div class="alerta-texto">
+      <strong>Pedí siempre estos datos antes de dar precio:</strong>
+      Zona exacta · Tipo de trabajo · Tamaño del jardín (m² o fotos/video) · Frecuencia deseada · Disponibilidad horaria · Si tiene acceso de moto/camioneta
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════ AGENDA -->
+<div class="panel" id="panel-agenda">
+  <div class="section-header">
+    <div class="section-title">Agenda <small>Semana del 5 al 10 de mayo 2026</small></div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="btn secundario" onclick="cambiarSemana(-1)">← Semana anterior</button>
+      <button class="btn secundario" onclick="semanaOffset=0;generarAgendaSemana()">Hoy</button>
+      <button class="btn secundario" onclick="cambiarSemana(1)">Semana siguiente →</button>
+      <button class="btn secundario" onclick="exportarAgenda()">📋 Copiar para WA</button>
+    </div>
+  </div>
+
+  <div class="alerta aviso">
+    <div class="alerta-icon">💡</div>
+    <div class="alerta-texto">
+      <strong>Reglas de agenda:</strong>
+      Clientes fijos primero. Máx 3 turnos/día. Si llueve: reprogramar sin acumular más de 2 pendientes. Indicar duración real de cada trabajo para no sobrecargar.
+    </div>
+  </div>
+
+  <div id="agendaContainer">
+    <!-- Días de la semana generados por JS -->
+  </div>
+
+  <div class="sep"></div>
+  <div class="section-header">
+    <div class="section-title">➕ Agregar turno</div>
+  </div>
+  <div class="tabla-wrap" style="padding:20px">
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Cliente</label>
+        <input type="text" id="t_cliente" placeholder="Nombre del cliente">
+      </div>
+      <div class="form-group">
+        <label>Fecha</label>
+        <input type="date" id="t_fecha">
+      </div>
+      <div class="form-group">
+        <label>Hora estimada</label>
+        <input type="time" id="t_hora">
+      </div>
+      <div class="form-group">
+        <label>Duración estimada</label>
+        <select id="t_duracion">
+          <option>1 hora</option>
+          <option>1.5 horas</option>
+          <option>2 horas</option>
+          <option>3 horas</option>
+          <option>Medio día</option>
+          <option>Día completo</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Tipo</label>
+        <select id="t_tipo">
+          <option>Cliente fijo</option>
+          <option>Prospecto confirmado</option>
+          <option>Reprogramado</option>
+        </select>
+      </div>
+    </div>
+    <button class="btn" onclick="agregarTurno()">Agregar a la agenda</button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════ COBROS -->
+<div class="panel" id="panel-cobros">
+  <div class="section-header">
+    <div class="section-title">Cobros y Deudas</div>
+  </div>
+
+  <div class="cards-grid">
+    <div class="card rojo">
+      <div class="card-label">Total por Cobrar</div>
+      <div class="card-valor">$210.875</div>
+      <div class="card-sub">3 clientes con saldo pendiente</div>
+    </div>
+    <div class="card tierra">
+      <div class="card-label">Cuentas a Pagar (Proveedores)</div>
+      <div class="card-valor">$151.000</div>
+      <div class="card-sub">El Sol · Marquez · Pelegrini · Vertice</div>
+    </div>
+  </div>
+
+  <div class="section-title" style="margin-bottom:12px">💰 Saldos pendientes de clientes</div>
+  <div class="tabla-wrap">
+    <div class="tabla-scroll">
+    <table>
+      <thead>
+        <tr><th>Cliente</th><th>Monto adeudado</th><th>Producto/Servicio</th><th>Urgencia</th><th>Acción WhatsApp</th></tr>
+      </thead>
+      <tbody>
+        <tr class="prioridad-alta">
+          <td><strong>MARICEL Brunas</strong></td>
+          <td style="font-family:'DM Mono',monospace;font-weight:600;color:var(--rojo)">$116.625</td>
+          <td>Mantenimiento mensual</td>
+          <td><span class="badge urgente">🔴 Urgente</span></td>
+          <td><button class="btn" style="padding:5px 12px;font-size:12px" onclick="generarMensaje('Maricel','cobro')">💬 Mensaje cobro</button></td>
+        </tr>
+        <tr class="prioridad-alta">
+          <td><strong>ALBERTO Lambertti</strong></td>
+          <td style="font-family:'DM Mono',monospace;font-weight:600;color:var(--rojo)">$50.750</td>
+          <td>Mantenimiento mensual</td>
+          <td><span class="badge urgente">🔴 Urgente</span></td>
+          <td><button class="btn" style="padding:5px 12px;font-size:12px" onclick="generarMensaje('Alberto','cobro')">💬 Mensaje cobro</button></td>
+        </tr>
+        <tr class="prioridad-alta">
+          <td><strong>ARIEL</strong></td>
+          <td style="font-family:'DM Mono',monospace;font-weight:600;color:var(--rojo)">$43.500</td>
+          <td>Mantenimiento mensual</td>
+          <td><span class="badge urgente">🔴 Urgente</span></td>
+          <td><button class="btn" style="padding:5px 12px;font-size:12px" onclick="generarMensaje('Ariel','cobro')">💬 Mensaje cobro</button></td>
+        </tr>
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <div class="sep"></div>
+  <div class="section-title" style="margin-bottom:12px">🏪 Deudas con proveedores</div>
+  <div class="tabla-wrap">
+    <div class="tabla-scroll">
+    <table>
+      <thead>
+        <tr><th>Proveedor</th><th>Factura</th><th>Deuda total</th><th>Saldo actual</th><th>Estado</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>El Sol</td><td>1232</td><td>$10.000</td><td style="color:var(--amarillo);font-weight:600">$5.000</td><td><span class="badge pendiente">Parcial</span></td></tr>
+        <tr><td>Marquez</td><td>2355</td><td>$20.000</td><td style="color:var(--rojo);font-weight:600">$16.000</td><td><span class="badge urgente">Pendiente</span></td></tr>
+        <tr><td>Pelegrini</td><td>4325</td><td>$40.000</td><td style="color:var(--rojo);font-weight:600">$30.000</td><td><span class="badge urgente">Pendiente</span></td></tr>
+        <tr><td>Vertice</td><td>43554</td><td>$100.000</td><td style="color:var(--rojo);font-weight:600">$100.000</td><td><span class="badge urgente">Sin pagar</span></td></tr>
+      </tbody>
+    </table>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════ WHATSAPP -->
+<div class="panel" id="panel-whatsapp">
+  <div class="section-header">
+    <div class="section-title">WhatsApp <small>Mensajes listos para copiar</small></div>
+  </div>
+
+  <div class="alerta info">
+    <div class="alerta-icon">💬</div>
+    <div class="alerta-texto">
+      <strong>Cómo usar:</strong>
+      Hacé clic en "Copiar mensaje", pegalo en WhatsApp y envialo. Podés editar antes de enviar. Los botones de cada cliente también generan mensajes personalizados.
+    </div>
+  </div>
+
+  <div id="mensajesWA">
+    <!-- Mensajes generados -->
+  </div>
+
+  <div class="sep"></div>
+  <div class="section-title" style="margin-bottom:16px">📩 Pegar transcripción de WhatsApp</div>
+  <div class="tabla-wrap" style="padding:20px">
+    <div class="form-group" style="margin-bottom:14px">
+      <label>Pegá el texto del chat de WhatsApp aquí</label>
+      <textarea id="transcripcionWA" rows="6" placeholder="Pegá la conversación completa acá. El sistema la va a clasificar automáticamente en categorías: cliente fijo, prospecto, cobro, reprogramación, etc."></textarea>
+    </div>
+    <button class="btn" onclick="clasificarWA()">Clasificar mensajes</button>
+  </div>
+
+  <div id="resultadoClasificacion" style="margin-top:20px"></div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════ CARGAR INFO -->
+<div class="panel" id="panel-cargar">
+  <div class="section-header">
+    <div class="section-title">Cargar información diaria</div>
+  </div>
+
+  <div class="alerta ok">
+    <div class="alerta-icon">✅</div>
+    <div class="alerta-texto">
+      <strong>Carga diaria recomendada (5 minutos al fin del día):</strong>
+      Cobros del día · Clientes visitados · Gastos realizados · Novedades de agenda · Mensajes respondidos
+    </div>
+  </div>
+
+  <div class="section-title" style="margin:20px 0 12px">💵 Registrar cobro</div>
+  <div class="tabla-wrap" style="padding:20px">
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Cliente</label>
+        <input type="text" id="c_cliente" placeholder="Nombre del cliente">
+      </div>
+      <div class="form-group">
+        <label>Monto cobrado</label>
+        <input type="number" id="c_monto" placeholder="Ej: 45000">
+      </div>
+      <div class="form-group">
+        <label>Fecha</label>
+        <input type="date" id="c_fecha">
+      </div>
+      <div class="form-group">
+        <label>Medio de cobro</label>
+        <select id="c_medio">
+          <option>Mercado Pago</option>
+          <option>Transferencia bancaria</option>
+          <option>Efectivo</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Tipo</label>
+        <select id="c_tipo">
+          <option>Cobro de trabajo</option>
+          <option>Venta vivero</option>
+          <option>Cobro deuda anterior</option>
+        </select>
+      </div>
+    </div>
+    <button class="btn" onclick="registrarCobro()">Registrar cobro</button>
+  </div>
+
+  <div id="registrosCargados" style="margin-top:20px">
+    <div class="section-title" style="margin-bottom:12px">📋 Cargado hoy</div>
+    <div class="empty-state">
+      <div class="icon">📝</div>
+      <p>Todavía no cargaste nada hoy</p>
+    </div>
+  </div>
+
+  <div class="sep"></div>
+  <div class="section-title" style="margin-bottom:12px">📤 Exportar para Excel</div>
+  <div class="tabla-wrap" style="padding:20px">
+    <p style="font-size:13px;color:#666;margin-bottom:14px">Copiá lo que necesitás para pegar directamente en tu planilla de Ingresos y Egresos:</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <button class="btn secundario" onclick="exportarCobros()">📊 Cobros del día (formato Excel)</button>
+      <button class="btn secundario" onclick="exportarClientes()">👥 Lista clientes</button>
+      <button class="btn secundario" onclick="exportarDeudas()">💰 Resumen deudas</button>
+    </div>
+    <div id="exportResult" style="margin-top:14px"></div>
+  </div>
+</div>
+
+</main>
+
+<div id="toast">✓ Copiado al portapapeles</div>
+
+<script>
+// ── ESTADO GLOBAL ──────────────────────────────────────
+function cargarState() {
+  try {
+    return {
+      prospectos: JSON.parse(localStorage.getItem('j2_prospectos') || '[]'),
+      turnos:     JSON.parse(localStorage.getItem('j2_turnos')     || '[]'),
+      cobrosHoy:  JSON.parse(localStorage.getItem('j2_cobros')     || '[]'),
+    };
+  } catch(e) { return { prospectos:[], turnos:[], cobrosHoy:[] }; }
+}
+function guardarState() {
+  try {
+    localStorage.setItem('j2_prospectos', JSON.stringify(state.prospectos));
+    localStorage.setItem('j2_turnos',     JSON.stringify(state.turnos));
+    localStorage.setItem('j2_cobros',     JSON.stringify(state.cobrosHoy));
+  } catch(e) {}
+}
+const state = cargarState();
+
+// Devuelve "YYYY-MM-DD" de forma segura sin problemas de zona horaria
+function fechaLocal(d) {
+  if (!d) return '';
+  const dt = new Date(d + 'T00:00:00'); // forzar sin conversión UTC
+  return d; // ya viene como string YYYY-MM-DD desde input[type=date]
+}
+
+// Devuelve el lunes de la semana que contiene la fecha dada
+function lunesDe(fecha) {
+  // fecha = "YYYY-MM-DD"
+  const [y,m,d] = fecha.split('-').map(Number);
+  const dt = new Date(y, m-1, d);
+  const dow = dt.getDay(); // 0=dom
+  const diff = (dow === 0) ? -6 : 1 - dow;
+  dt.setDate(dt.getDate() + diff);
+  return dt;
+}
+
+function semanaLabel(lunes) {
+  const opciones = { day:'numeric', month:'long', year:'numeric' };
+  const viernes = new Date(lunes); viernes.setDate(lunes.getDate() + 5);
+  return `${lunes.getDate()} al ${viernes.toLocaleDateString('es-AR', opciones)}`;
+}
+
+// ── SEMANA ACTUAL NAVEGADA ─────────────────────────────
+let semanaOffset = 0; // 0 = semana actual, +1 = próxima, etc.
+
+function lunesDeHoy() {
+  const hoy = new Date();
+  const dow = hoy.getDay();
+  const diff = (dow === 0) ? -6 : 1 - dow;
+  hoy.setDate(hoy.getDate() + diff);
+  hoy.setHours(0,0,0,0);
+  return hoy;
+}
+
+function getLunesNavegado() {
+  const l = lunesDeHoy();
+  l.setDate(l.getDate() + semanaOffset * 7);
+  return l;
+}
+
+// ── INIT ───────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  const hoy = new Date();
+  document.getElementById('fechaHoy').textContent = hoy.toLocaleDateString('es-AR', {weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  
+  const fechaHoy = hoy.toISOString().split('T')[0];
+  document.getElementById('t_fecha').value = fechaHoy;
+  document.getElementById('c_fecha').value = fechaHoy;
+
+  generarAgendaSemana();
+  generarMensajesUrgentes();
+  renderProspectos();
+  renderCobrosHoy();
+  renderClientes();
+});
+
+// ── NAVEGACIÓN ─────────────────────────────────────────
+function cambiarPanel(id, btn) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  document.getElementById('panel-'+id).classList.add('active');
+  btn.classList.add('active');
+}
+
+// ── DATOS BASE CLIENTES ────────────────────────────────
+const CLIENTES_BASE = [
+  { id:'cl01', num:1,  nombre:'Maricel Brunas',              dir:'Los Garabatos 1612',          pago:'Transf / Contado', deuda:116625 },
+  { id:'cl02', num:2,  nombre:'Alberto Lambertti',           dir:'Libertador Norte 1451',       pago:'Transferencia',    deuda:50750  },
+  { id:'cl03', num:3,  nombre:'Ariel',                       dir:'dato pendiente',              pago:'dato pendiente',   deuda:43500  },
+  { id:'cl04', num:4,  nombre:'Gerardo Martini',             dir:'Los Paraisos 1397',           pago:'Transferencia',    deuda:0      },
+  { id:'cl05', num:5,  nombre:'Graciela Beatriz Santana',    dir:'Cullen 153',                  pago:'Transferencia',    deuda:0      },
+  { id:'cl06', num:6,  nombre:'Florencia Lambertti',         dir:'Florencio Sanchez 1900',      pago:'Transferencia',    deuda:0      },
+  { id:'cl07', num:7,  nombre:'Valeria Alejandra Heredia',   dir:'Juan B. Justo 1520',          pago:'Transf / Contado', deuda:0      },
+  { id:'cl08', num:8,  nombre:'Mariano Armando',             dir:'Juan de Garay 1138',          pago:'Transferencia',    deuda:0      },
+  { id:'cl09', num:9,  nombre:'Raul Vigil (Griselda)',       dir:'Los Constituyente 1387',      pago:'Transf / Contado', deuda:0      },
+  { id:'cl10', num:10, nombre:'Victoria Tortossa',           dir:'Roca 2034',                   pago:'Transf / Contado', deuda:0      },
+  { id:'cl11', num:11, nombre:'Cindy',                       dir:'Mitre 780',                   pago:'Transferencia',    deuda:0      },
+  { id:'cl12', num:12, nombre:'Maria Figueroa',              dir:'Olegario Andrade 1934',       pago:'Transferencia',    deuda:0      },
+  { id:'cl13', num:13, nombre:'Agueda Allasino',             dir:'Córdoba 664',                 pago:'Transf / Contado', deuda:0      },
+  { id:'cl14', num:14, nombre:'Marce',                       dir:'J Hernandez 4498',            pago:'Transferencia',    deuda:0      },
+  { id:'cl15', num:15, nombre:'Noe',                         dir:'Echeverria 1042',             pago:'Transferencia',    deuda:0      },
+  { id:'cl16', num:16, nombre:'Naara',                       dir:'Olga Terraf 1793',            pago:'Transferencia',    deuda:0      },
+  { id:'cl17', num:17, nombre:'EMPA',                        dir:'Anexo 6062 Sarmiento 825',    pago:'Contado',          deuda:0      },
+  { id:'cl18', num:18, nombre:'Agromade SRL',                dir:'Santiago Pampiglione 4782',   pago:'Transferencia',    deuda:0      },
+  { id:'cl19', num:19, nombre:'Raul Ochoa',                  dir:'Rivadavia 1563',              pago:'Transf / Contado', deuda:0      },
+  { id:'cl20', num:20, nombre:'Iglesia Vision del Futuro',   dir:'A. Olmos 127',                pago:'Transferencia',    deuda:0      },
+  { id:'cl21', num:21, nombre:'Sandra Bossio',               dir:'Los Garabatos 2955',          pago:'Transferencia',    deuda:0      },
+  { id:'cl22', num:22, nombre:'Cynthia Lizana',              dir:'Venezuela 507',               pago:'Transferencia',    deuda:0      },
+  { id:'cl23', num:23, nombre:'Adrian Pighin',               dir:'Independencia S 3454',        pago:'Transferencia',    deuda:0      },
+  { id:'cl24', num:24, nombre:'Full Rep (Maximiliano Almada)',dir:'Av. Urquiza 1180',            pago:'Transferencia',    deuda:0      },
+  { id:'cl25', num:25, nombre:'Mario Baroni',                dir:'Salta 3131',                  pago:'Transf / Contado', deuda:0      },
+  { id:'cl26', num:26, nombre:'Negocios del Campo',          dir:'Parque industrial',           pago:'Transferencia',    deuda:0      },
+  { id:'cl27', num:27, nombre:'Rual Lizarraga',              dir:'Chañaritos 1358',             pago:'Transferencia',    deuda:0      },
+  { id:'cl28', num:28, nombre:'Daniel Ricci',                dir:'Olegario Andrade 544',        pago:'Transferencia',    deuda:0      },
+  { id:'cl29', num:29, nombre:'Noemi Cesca',                 dir:'Marconi 714',                 pago:'Transferencia',    deuda:0      },
+  { id:'cl30', num:30, nombre:'Cordi Alicia Clara',          dir:'Molina Campos 3909',          pago:'Transferencia',    deuda:0      },
+  { id:'cl31', num:31, nombre:'Natalia Rita Martin',         dir:'Av. Universidad 362',         pago:'Transf / Contado', deuda:0      },
+  { id:'cl32', num:32, nombre:'Asoc. civil Oxymoron (Maite)',dir:'Paraguay 1511',               pago:'Transf / Contado', deuda:0      },
+  { id:'cl33', num:33, nombre:'Maria Ferreyra',              dir:'Jose Hernandez 3133',         pago:'Transferencia',    deuda:0      },
+  { id:'cl34', num:34, nombre:'Jesica Alvarez',              dir:'Los Algarrobos 1850',         pago:'Transferencia',    deuda:0      },
+  { id:'cl35', num:35, nombre:'Bety',                        dir:'Bv Roca',                     pago:'Contado',          deuda:0      },
+  { id:'cl36', num:36, nombre:'Laura Ferreyra',              dir:'Rioja 705',                   pago:'Transferencia',    deuda:0      },
+  { id:'cl37', num:37, nombre:'Jorge Maciel',                dir:'Las Magnolias 235',           pago:'Transferencia',    deuda:0      },
+  { id:'cl38', num:38, nombre:'Noe Prez (Flaco)',            dir:'Entre Rios Sur',              pago:'Contado',          deuda:0      },
+  { id:'cl39', num:39, nombre:'Natacha Leoni',               dir:'Cordoba 764',                 pago:'Contado',          deuda:0      },
+  { id:'cl40', num:40, nombre:'Maria de los Angeles Goy',    dir:'San Luis 687',                pago:'Transferencia',    deuda:0      },
+  { id:'cl41', num:41, nombre:'Gabriel Cornaglia',           dir:'Av Libertador Norte 14',      pago:'Contado',          deuda:0      },
+  { id:'cl42', num:42, nombre:'Gustavo Salomon',             dir:'Molina Campos 3806',          pago:'Transferencia',    deuda:0      },
+];
+
+// Historial de pagos por cliente: { [clienteId]: [ {fecha, monto, tipo, medio, nota} ] }
+function cargarHistorial() {
+  try { return JSON.parse(localStorage.getItem('j2_historial') || '{}'); }
+  catch(e) { return {}; }
+}
+function guardarHistorial() {
+  localStorage.setItem('j2_historial', JSON.stringify(state.historial));
+}
+state.historial = cargarHistorial();
+
+// ── RENDER TABLA CLIENTES ──────────────────────────────
+let filtroClientes = '';
+
+function renderClientes() {
+  const tbody = document.getElementById('clientesTbody');
+  if (!tbody) return;
+
+  const lista = filtroClientes
+    ? CLIENTES_BASE.filter(c => c.nombre.toLowerCase().includes(filtroClientes))
+    : CLIENTES_BASE;
+
+  tbody.innerHTML = lista.map(c => {
+    const pagos  = state.historial[c.id] || [];
+    const total  = pagos.reduce((s,p) => s + p.monto, 0);
+    const ultimo = pagos.length ? pagos[pagos.length-1] : null;
+
+    // mes actual
+    const ahora = new Date();
+    const mesClave = `${ahora.getFullYear()}-${String(ahora.getMonth()+1).padStart(2,'0')}`;
+    const pagosMes = pagos.filter(p => p.fecha && p.fecha.startsWith(mesClave));
+    const totalMes = pagosMes.reduce((s,p) => s + p.monto, 0);
+
+    const tieneDeuda = c.deuda > 0;
+    const estadoBadge = tieneDeuda
+      ? `<span class="badge urgente">$${c.deuda.toLocaleString('es-AR')} adeuda</span>`
+      : (total > 0
+          ? `<span class="badge ok">Al día</span>`
+          : `<span class="badge pendiente">Sin registros</span>`);
+
+    const accion = tieneDeuda
+      ? `<button class="btn" style="padding:4px 10px;font-size:11px" onclick="event.stopPropagation();generarMensaje('${c.nombre.split(' ')[0]}','cobro')">💬 Cobrar</button>`
+      : `<button class="btn secundario" style="padding:4px 10px;font-size:11px" onclick="event.stopPropagation();generarMensaje('${c.nombre.split(' ')[0]}','turno')">📅 Turno</button>`;
+
+    const totalStr = total > 0
+      ? `<span style="font-family:'DM Mono',monospace;font-weight:600;color:#2e7d32">$${total.toLocaleString('es-AR')}</span><br><span style="font-size:10px;color:#aaa">(${pagos.length} pago${pagos.length!==1?'s':''})</span>`
+      : `<span style="color:#ccc;font-size:12px">—</span>`;
+
+    const ultimoStr = ultimo
+      ? `<span style="font-size:12px">${ultimo.fecha}<br>
+          <span style="font-family:'DM Mono',monospace;color:#2e7d32">$${ultimo.monto.toLocaleString('es-AR')}</span>
+          ${ultimo.horas ? `<span style="color:#aaa;font-size:11px"> · ${ultimo.horas}h</span>` : ''}
+         </span>`
+      : `<span style="color:#ccc;font-size:12px">—</span>`;
+
+    return `
+      <tr class="cl-fila-main" id="main-${c.id}" onclick="toggleHistorial('${c.id}')">
+        <td><span class="expand-icon">▶</span></td>
+        <td style="color:#aaa;font-size:12px">${c.num}</td>
+        <td><strong>${c.nombre}</strong></td>
+        <td style="font-size:12px;color:#666">${c.dir}</td>
+        <td><span class="badge info" style="font-size:11px">${c.pago}</span></td>
+        <td>${totalStr}</td>
+        <td>${ultimoStr}</td>
+        <td>${estadoBadge}</td>
+        <td onclick="event.stopPropagation()">${accion}</td>
+      </tr>
+      <tr class="cl-fila-historial" id="hist-${c.id}">
+        <td colspan="9" style="padding:0">
+          <div class="cl-historial-box" id="box-${c.id}">
+            ${renderHistorialBox(c)}
+          </div>
+        </td>
+      </tr>`;
+  }).join('');
+}
+
+function renderHistorialBox(c) {
+  const pagos = state.historial[c.id] || [];
+  const total = pagos.reduce((s,p) => s + p.monto, 0);
+
+  // Agrupar por mes
+  const porMes = {};
+  pagos.forEach(p => {
+    const clave = p.fecha ? p.fecha.substring(0,7) : 'sin-fecha';
+    if (!porMes[clave]) porMes[clave] = [];
+    porMes[clave].push(p);
+  });
+  const meses = Object.keys(porMes).sort().reverse();
+
+
+  // Totales de horas y monto del mes actual
+  const ahora2    = new Date();
+  const mesClave2 = `${ahora2.getFullYear()}-${String(ahora2.getMonth()+1).padStart(2,'0')}`;
+  const pagosMesAct  = porMes[mesClave2] || [];
+  const totalMes     = pagosMesAct.reduce((s,p) => s + p.monto, 0);
+  const horasMes     = pagosMesAct.reduce((s,p) => s + (parseFloat(p.horas)||0), 0);
+  const horasTotales = pagos.reduce((s,p) => s + (parseFloat(p.horas)||0), 0);
+  const valorHoraGlobal = horasTotales > 0 ? Math.round(total / horasTotales) : 0;
+
+  // Barra: mes actual vs mejor mes histórico
+  const refMes   = meses.length ? Math.max(...meses.map(m => (porMes[m]||[]).reduce((s,p)=>s+p.monto,0))) : 0;
+  const pctBarra = refMes > 0 ? Math.min(100, Math.round(totalMes/refMes*100)) : 0;
+
+  // Resumen por mes (últimos 6)
+  const mesesResumen = meses.slice(0,6).map(m => {
+    const sub  = porMes[m].reduce((s,p)=>s+p.monto,0);
+    const hrs  = porMes[m].reduce((s,p)=>s+(parseFloat(p.horas)||0),0);
+    const [y,mo] = m.split('-');
+    const lbl  = new Date(+y,+mo-1,1).toLocaleDateString('es-AR',{month:'short',year:'2-digit'});
+    return `<div class="hist-stat">
+      <div class="valor">$${(sub/1000).toFixed(0)}k</div>
+      <div class="etiq">${lbl}</div>
+      ${hrs>0?`<div style="font-size:10px;color:#aaa;margin-top:1px">${hrs}h</div>`:''}
+    </div>`;
+  }).join('');
+
+  // Tabla de visitas
+  const tablaFilas = pagos.length
+    ? [...pagos].reverse().slice(0,24).map(p => {
+        const vh = p.horas && p.horas > 0 ? Math.round(p.monto / p.horas) : null;
+        return `<tr>
+          <td class="mes-col">${p.fecha||'—'}</td>
+          <td class="monto-col">$${p.monto.toLocaleString('es-AR')}</td>
+          <td style="font-family:'DM Mono',monospace;font-size:12px;text-align:center">${p.horas ? p.horas+' hs' : '—'}</td>
+          <td style="font-size:11px;color:#888;text-align:center">${vh ? '$'+vh.toLocaleString('es-AR')+'/h' : '—'}</td>
+          <td style="text-align:center"><button onclick="eliminarPago('${c.id}','${p.id}')" title="Eliminar"
+            style="background:none;border:none;cursor:pointer;font-size:13px;opacity:0.3;padding:0 4px">✕</button></td>
+        </tr>`;}).join('')
+    : `<tr><td colspan="5" style="color:#bbb;text-align:center;padding:16px">Sin visitas registradas — hacé clic en "+ Registrar visita"</td></tr>`;
+
+  return `
+    <div class="historial-header">
+      <div>
+        <strong style="font-size:14px">${c.nombre}</strong>
+        <span style="font-size:12px;color:#888;margin-left:8px">${c.dir}</span>
+      </div>
+      <div class="historial-resumen">
+        <div class="hist-stat">
+          <div class="valor" style="color:var(--verde-vivo)">$${total.toLocaleString('es-AR')}</div>
+          <div class="etiq">Total cobrado</div>
+        </div>
+        <div class="hist-stat">
+          <div class="valor">${horasTotales > 0 ? horasTotales+'h' : '—'}</div>
+          <div class="etiq">Horas trabajadas</div>
+        </div>
+        <div class="hist-stat">
+          <div class="valor">${valorHoraGlobal > 0 ? '$'+valorHoraGlobal.toLocaleString('es-AR') : '—'}</div>
+          <div class="etiq">Valor hora prom.</div>
+        </div>
+        <div class="hist-stat">
+          <div class="valor" style="color:var(--azul)">$${totalMes.toLocaleString('es-AR')}</div>
+          <div class="etiq">Este mes${horasMes>0?' · '+horasMes+'h':''}</div>
+        </div>
+        <div class="hist-stat">
+          <div class="valor">${pagos.length}</div>
+          <div class="etiq">Visitas totales</div>
+        </div>
+      </div>
+    </div>
+
+    ${meses.length > 0 ? `
+    <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:14px;padding:12px;background:rgba(74,140,63,0.05);border-radius:8px">
+      ${mesesResumen}
+    </div>` : ''}
+
+    ${refMes > 0 ? `
+    <div class="barra-wrap" style="margin-bottom:14px">
+      <div class="barra-label">
+        <span>Mes actual vs mejor mes</span>
+        <span style="font-family:'DM Mono',monospace">${pctBarra}% · $${totalMes.toLocaleString('es-AR')} de $${refMes.toLocaleString('es-AR')}</span>
+      </div>
+      <div class="barra-bg"><div class="barra-fill" style="width:${pctBarra}%"></div></div>
+    </div>` : ''}
+
+    <table class="historial-tabla">
+      <thead>
+        <tr>
+          <th>Fecha</th>
+          <th>Monto cobrado</th>
+          <th style="text-align:center">Duración</th>
+          <th style="text-align:center">$/hora</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>${tablaFilas}</tbody>
+    </table>
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px">
+      <button class="btn" style="font-size:12px;padding:7px 16px" onclick="mostrarFormCobro('${c.id}')">+ Registrar visita</button>
+      <button class="btn secundario" style="font-size:12px;padding:7px 14px" onclick="event.stopPropagation();generarMensaje('${c.nombre.split(' ')[0]}','cobro')">💬 WA cobro</button>
+    </div>
+
+    <div class="form-cobro-inline" id="form-cobro-${c.id}">
+      <div class="fg-row">
+        <div class="fg">
+          <label>Fecha de la visita</label>
+          <input type="date" id="fc_fecha_${c.id}" value="${new Date().toISOString().split('T')[0]}">
+        </div>
+        <div class="fg">
+          <label>Monto cobrado ($)</label>
+          <input type="number" id="fc_monto_${c.id}" placeholder="Ej: 45000" min="0">
+        </div>
+        <div class="fg" style="max-width:160px">
+          <label>Duración (horas)</label>
+          <select id="fc_horas_${c.id}">
+            <option value="">— no registrar —</option>
+            <option value="0.5">30 minutos</option>
+            <option value="1">1 hora</option>
+            <option value="1.5">1.5 horas</option>
+            <option value="2">2 horas</option>
+            <option value="2.5">2.5 horas</option>
+            <option value="3">3 horas</option>
+            <option value="4">4 horas (medio día)</option>
+            <option value="6">6 horas</option>
+            <option value="8">8 horas (día completo)</option>
+          </select>
+        </div>
+        <div class="fg" style="flex:0;min-width:auto">
+          <label style="opacity:0">ok</label>
+          <button class="btn" style="white-space:nowrap" onclick="guardarPago('${c.id}')">✓ Guardar</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function toggleHistorial(id) {
+  const filaMain = document.getElementById('main-' + id);
+  const filaHist = document.getElementById('hist-' + id);
+  const estaAbierto = filaHist.classList.contains('visible');
+
+  // Cerrar todos
+  document.querySelectorAll('.cl-fila-main').forEach(f => f.classList.remove('abierta'));
+  document.querySelectorAll('.cl-fila-historial').forEach(f => f.classList.remove('visible'));
+
+  if (!estaAbierto) {
+    filaMain.classList.add('abierta');
+    filaHist.classList.add('visible');
+    // Re-render el box por si cambió
+    const c = CLIENTES_BASE.find(x => x.id === id);
+    if (c) document.getElementById('box-' + id).innerHTML = renderHistorialBox(c);
+  }
+}
+
+function mostrarFormCobro(clienteId) {
+  const form = document.getElementById('form-cobro-' + clienteId);
+  if (!form) return;
+  form.classList.toggle('visible');
+}
+
+function guardarPago(clienteId) {
+  const fecha = document.getElementById('fc_fecha_' + clienteId).value;
+  const monto = parseInt(document.getElementById('fc_monto_' + clienteId).value);
+  const horas = parseFloat(document.getElementById('fc_horas_' + clienteId).value) || 0;
+
+  if (!monto || monto <= 0) { mostrarToast('⚠ Ingresá un monto válido'); return; }
+  if (!fecha) { mostrarToast('⚠ Elegí la fecha de la visita'); return; }
+
+  if (!state.historial[clienteId]) state.historial[clienteId] = [];
+  state.historial[clienteId].push({
+    id: 'p_' + Date.now(),
+    fecha, monto, horas
+  });
+  guardarHistorial();
+
+  // Re-render fila y box
+  renderClientes();
+  // Volver a abrir el desplegable
+  const filaHist = document.getElementById('hist-' + clienteId);
+  const filaMain = document.getElementById('main-' + clienteId);
+  if (filaHist && filaMain) {
+    filaMain.classList.add('abierta');
+    filaHist.classList.add('visible');
+  }
+  mostrarToast('✓ Pago registrado correctamente');
+}
+
+function eliminarPago(clienteId, pagoId) {
+  if (!state.historial[clienteId]) return;
+  state.historial[clienteId] = state.historial[clienteId].filter(p => p.id !== pagoId);
+  guardarHistorial();
+  const c = CLIENTES_BASE.find(x => x.id === clienteId);
+  if (c) document.getElementById('box-' + clienteId).innerHTML = renderHistorialBox(c);
+  renderClientes();
+  // Mantener abierto
+  const filaHist = document.getElementById('hist-' + clienteId);
+  const filaMain = document.getElementById('main-' + clienteId);
+  if (filaHist && filaMain) {
+    filaMain.classList.add('abierta');
+    filaHist.classList.add('visible');
+  }
+  mostrarToast('Pago eliminado');
+}
+
+function filtrarClientes(q) {
+  filtroClientes = q.toLowerCase().trim();
+  renderClientes();
+}
+
+// ── AGENDA ────────────────────────────────────────────
+const NOMBRES_DIA = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+
+function toYMD(date) {
+  // Convierte un objeto Date a "YYYY-MM-DD" usando la fecha local (sin UTC)
+  const y = date.getFullYear();
+  const m = String(date.getMonth()+1).padStart(2,'0');
+  const d = String(date.getDate()).padStart(2,'0');
+  return `${y}-${m}-${d}`;
+}
+
+function generarAgendaSemana() {
+  const container = document.getElementById('agendaContainer');
+  const lunes = getLunesNavegado();
+  const label = semanaLabel(lunes);
+
+  // Actualizar el subtítulo de la sección
+  const subtitulo = document.querySelector('#panel-agenda .section-title small');
+  if (subtitulo) subtitulo.textContent = `Semana del ${label}`;
+
+  container.innerHTML = NOMBRES_DIA.map((nombreDia, i) => {
+    const fechaDia = new Date(lunes);
+    fechaDia.setDate(lunes.getDate() + i);
+    const ymd = toYMD(fechaDia); // "YYYY-MM-DD" exacto sin zona horaria
+
+    const turnosDia = state.turnos.filter(t => t.fecha === ymd);
+
+    // Ordenar por hora
+    turnosDia.sort((a,b) => (a.hora||'').localeCompare(b.hora||''));
+
+    const contenido = turnosDia.length
+      ? turnosDia.map(t => `
+          <div class="turno-item">
+            <div class="turno-hora">${t.hora || '—'}</div>
+            <div>
+              <div class="turno-cliente">${t.cliente}</div>
+              <div class="turno-detalle">${t.duracion} · ${t.tipo}</div>
+            </div>
+            <button onclick="eliminarTurno('${t.id}')" title="Eliminar"
+              style="margin-left:auto;background:none;border:none;cursor:pointer;font-size:14px;opacity:0.4;padding:0 4px">✕</button>
+          </div>`).join('')
+      : `<div style="color:#aaa;font-size:13px;padding:8px 0">Sin turnos asignados</div>`;
+
+    const hoyYMD = toYMD(new Date());
+    const esHoy = ymd === hoyYMD;
+
+    return `
+      <div class="agenda-dia" ${esHoy ? 'style="border-left:4px solid var(--verde-vivo)"' : ''}>
+        <div class="agenda-fecha">
+          <div class="dia-num">${fechaDia.getDate()}</div>
+          <div class="dia-texto">${nombreDia}</div>
+          <div style="font-size:11px;color:#aaa;margin-top:4px">${fechaDia.toLocaleDateString('es-AR',{month:'short'})}</div>
+          ${esHoy ? '<div style="font-size:10px;color:var(--verde-vivo);font-weight:600;margin-top:2px">HOY</div>' : ''}
+        </div>
+        <div class="agenda-turnos">${contenido}</div>
+        <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+          <span class="badge ${turnosDia.length >= 3 ? 'urgente' : (turnosDia.length > 0 ? 'pendiente' : 'ok')}">${turnosDia.length}/3 turnos</span>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function cambiarSemana(delta) {
+  semanaOffset += delta;
+  generarAgendaSemana();
+}
+
+function eliminarTurno(id) {
+  state.turnos = state.turnos.filter(t => t.id !== id);
+  guardarState();
+  generarAgendaSemana();
+  mostrarToast('Turno eliminado');
+}
+
+function agregarTurno() {
+  const cliente = document.getElementById('t_cliente').value.trim();
+  const fecha   = document.getElementById('t_fecha').value;      // "YYYY-MM-DD"
+  const hora    = document.getElementById('t_hora').value;
+  const duracion = document.getElementById('t_duracion').value;
+  const tipo    = document.getElementById('t_tipo').value;
+
+  if (!cliente) { mostrarToast('⚠ Escribí el nombre del cliente'); return; }
+  if (!fecha)   { mostrarToast('⚠ Elegí una fecha'); return; }
+
+  const id = 't_' + Date.now();
+  state.turnos.push({ id, cliente, fecha, hora, duracion, tipo });
+  guardarState();
+
+  // Si la semana navegada no contiene esa fecha, ir a ella
+  const lunes = lunesDe(fecha);
+  const lunesNav = getLunesNavegado();
+  const diffSemanas = Math.round((lunes - lunesNav) / (7*24*3600*1000));
+  if (diffSemanas !== 0) semanaOffset += diffSemanas;
+
+  generarAgendaSemana();
+  document.getElementById('t_cliente').value = '';
+  document.getElementById('t_hora').value = '';
+  mostrarToast('✓ Turno agregado correctamente');
+}
+
+function exportarAgenda() {
+  const lunes = getLunesNavegado();
+  const label = semanaLabel(lunes);
+  const turnosSemana = state.turnos.filter(t => {
+    const lMDY = toYMD(lunes);
+    const sabado = new Date(lunes); sabado.setDate(lunes.getDate()+5);
+    return t.fecha >= lMDY && t.fecha <= toYMD(sabado);
+  });
+  const texto = `📅 AGENDA JARDINERÍA 2.0 — Semana del ${label}\n\n` +
+    (turnosSemana.length
+      ? turnosSemana.map(t => `• ${t.fecha} ${t.hora ? t.hora : ''} — ${t.cliente} (${t.duracion})`).join('\n')
+      : '(sin turnos cargados esta semana)');
+  copiar(texto);
+}
+
+// ── MENSAJES WHATSAPP ─────────────────────────────────
+const plantillas = {
+  cobro: (nombre) => `Hola ${nombre} 👋, te escribo de Jardinería 2.0.
+
+Quería avisarte que tenés un saldo pendiente por los trabajos realizados. Cuando puedas, te agradecería que lo regularices.
+
+Podés transferir a Mercado Pago o banco, o avisame si preferís otro medio.
+
+¡Gracias y que tengas un buen día! 🌿`,
+
+  turno: (nombre) => `Hola ${nombre} 👋, te escribe Jardinería 2.0.
+
+Estamos organizando la agenda de la semana y quería coordinar tu próximo mantenimiento.
+
+¿Qué días y horarios te quedan bien?
+
+¡Quedamos en contacto! 🌿`,
+
+  prospecto: (nombre) => `Hola ${nombre || ''} 👋, te escribe Jardinería 2.0.
+
+Para poder prepararte un presupuesto, necesito algunos datos:
+
+📍 Dirección exacta del trabajo
+🌿 Tipo de trabajo (poda, mantenimiento, desmalezado, otro)
+📐 Tamaño aproximado del jardín (o podés mandarnos fotos/video)
+🔁 ¿Cada cuánto necesitarías el servicio?
+🕐 ¿Qué días y horarios tenés disponibles?
+
+¡Con eso te armo el presupuesto rápido! 🌿`,
+
+  lluvia: (nombre, nuevaFecha) => `Hola ${nombre} 👋, te habla Jardinería 2.0.
+
+Por las condiciones climáticas de hoy, lamentablemente tenemos que reprogramar tu turno.
+
+Te propongo reagendarlo para ${nuevaFecha || 'esta semana'}. ¿Te queda bien?
+
+¡Disculpá las molestias y gracias por entender! 🌿`
+};
+
+function generarMensajesUrgentes() {
+  const container = document.getElementById('mensajesWA');
+  const urgentes = [
+    { cliente: 'Maricel', tipo: 'cobro', nota: '$116.625 pendiente' },
+    { cliente: 'Alberto', tipo: 'cobro', nota: '$50.750 pendiente' },
+    { cliente: 'Ariel', tipo: 'cobro', nota: '$43.500 pendiente' },
+  ];
+
+  container.innerHTML = urgentes.map(u => crearBoxMensaje(u.cliente, u.tipo, u.nota)).join('');
+}
+
+function crearBoxMensaje(cliente, tipo, nota) {
+  const msg = plantillas[tipo](cliente);
+  const id = 'msg_' + Math.random().toString(36).substr(2,9);
+  return `
+    <div class="whatsapp-box">
+      <div class="cliente-nombre">
+        💬 ${cliente}
+        ${nota ? `<span class="badge urgente">${nota}</span>` : ''}
+      </div>
+      <div class="mensaje-wa" id="${id}">${msg}</div>
+      <div class="wa-meta">
+        <button class="copy-btn" onclick="copiarMensaje('${id}')">Copiar mensaje</button>
+        <span class="badge info" style="font-size:11px">${tipo === 'cobro' ? '💰 Cobro' : tipo === 'turno' ? '📅 Turno' : tipo === 'prospecto' ? '🌱 Prospecto' : '☁ Lluvia'}</span>
+      </div>
+    </div>`;
+}
+
+function generarMensaje(cliente, tipo) {
+  const container = document.getElementById('mensajesWA');
+  const box = crearBoxMensaje(cliente, tipo, '');
+  container.insertAdjacentHTML('afterbegin', box);
+  
+  // Ir al tab de WhatsApp
+  document.querySelectorAll('nav button')[5].click();
+  document.querySelectorAll('.panel')[5].scrollIntoView({ behavior: 'smooth' });
+}
+
+function copiarMensaje(id) {
+  const el = document.getElementById(id);
+  copiar(el.textContent.trim());
+}
+
+function copiar(texto) {
+  navigator.clipboard.writeText(texto).then(() => mostrarToast('✓ Copiado al portapapeles'));
+}
+
+// ── CLASIFICAR WA ──────────────────────────────────────
+function clasificarWA() {
+  const texto = document.getElementById('transcripcionWA').value.trim();
+  if (!texto) { alert('Pegá el texto del chat primero.'); return; }
+
+  const container = document.getElementById('resultadoClasificacion');
+  
+  // Análisis simple por palabras clave
+  const categorias = [];
+  const lineas = texto.split('\n').filter(l => l.trim());
+  
+  const palabrasClave = {
+    'cobro': ['pago', 'transferencia', 'te debo', 'cuánto', 'precio', 'presupuesto', 'cobro', 'factura', 'debe', 'saldo'],
+    'lluvia': ['lluvia', 'llovió', 'llueve', 'reprogramar', 'cancelar', 'clima', 'mojado', 'tormenta'],
+    'turno': ['cuándo', 'cuando', 'turno', 'visita', 'pasar', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'semana'],
+    'prospecto': ['jardín', 'poda', 'desmalezar', 'mantenimiento', 'nuevo', 'presupuesto', 'interesa', 'precio'],
+  };
+
+  let tablaHTML = `
+    <div class="section-title" style="margin-bottom:12px">📊 Clasificación automática</div>
+    <div class="tabla-wrap"><div class="tabla-scroll">
+    <table>
+      <thead><tr><th>Fragmento</th><th>Categoría detectada</th><th>Acción sugerida</th></tr></thead>
+      <tbody>`;
+
+  lineas.slice(0, 20).forEach(linea => {
+    if (linea.length < 5) return;
+    let cat = 'Sin acción necesaria';
+    let accion = '—';
+    
+    const lMin = linea.toLowerCase();
+    if (palabrasClave.cobro.some(p => lMin.includes(p))) { cat = '💰 Cobro / Deuda'; accion = 'Gestionar pago'; }
+    else if (palabrasClave.lluvia.some(p => lMin.includes(p))) { cat = '☁ Reprogramar por lluvia'; accion = 'Proponer nueva fecha'; }
+    else if (palabrasClave.turno.some(p => lMin.includes(p))) { cat = '📅 Turno a confirmar'; accion = 'Pasar a Calendar'; }
+    else if (palabrasClave.prospecto.some(p => lMin.includes(p))) { cat = '🌱 Prospecto nuevo'; accion = 'Pedir datos mínimos'; }
+    
+    tablaHTML += `<tr>
+      <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${linea}">${linea.substring(0,80)}${linea.length>80?'...':''}</td>
+      <td><span class="badge ${cat.includes('Cobro')?'urgente':cat.includes('lluvia')?'pendiente':cat.includes('Turno')?'info':cat.includes('Prospecto')?'ok':''}">${cat}</span></td>
+      <td>${accion}</td>
+    </tr>`;
+  });
+
+  tablaHTML += `</tbody></table></div></div>
+  <div class="alerta aviso" style="margin-top:12px">
+    <div class="alerta-icon">⚠</div>
+    <div class="alerta-texto">
+      <strong>Clasificación automática básica.</strong>
+      Revisá los resultados y ajustá manualmente. Para análisis más profundo, pegá solo un chat a la vez con el contexto claro.
+    </div>
+  </div>`;
+
+  container.innerHTML = tablaHTML;
+}
+
+// ── PROSPECTOS ─────────────────────────────────────────
+function mostrarFormProspecto() {
+  document.getElementById('formProspecto').style.display = 'block';
+  document.getElementById('formProspecto').scrollIntoView({ behavior: 'smooth' });
+}
+
+function agregarProspecto() {
+  const nombre = document.getElementById('p_nombre').value.trim();
+  if (!nombre) { alert('Completá al menos el nombre.'); return; }
+  
+  const p = {
+    nombre,
+    zona: document.getElementById('p_zona').value || 'dato pendiente',
+    tipo: document.getElementById('p_tipo').value || 'dato pendiente',
+    frecuencia: document.getElementById('p_frecuencia').value || 'Sin definir',
+    disponibilidad: document.getElementById('p_disponibilidad').value || 'dato pendiente',
+    estado: document.getElementById('p_estado').value,
+    notas: document.getElementById('p_notas').value
+  };
+  
+  state.prospectos.push(p);
+  guardarState();
+  renderProspectos();
+  document.getElementById('formProspecto').style.display = 'none';
+  ['p_nombre','p_zona','p_disponibilidad','p_notas'].forEach(id => document.getElementById(id).value = '');
+  mostrarToast('✓ Prospecto guardado');
+}
+
+function renderProspectos() {
+  const tbody = document.getElementById('tablaProspectos');
+  if (!state.prospectos.length) {
+    tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state"><div class="icon">🌱</div><p>No hay prospectos registrados</p></div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = state.prospectos.map((p, i) => `
+    <tr>
+      <td><strong>${p.nombre}</strong></td>
+      <td>${p.zona}</td>
+      <td>${p.tipo}</td>
+      <td>${p.frecuencia}</td>
+      <td><span class="badge ${p.estado.includes('Presupuesto')?'pendiente':'info'}">${p.estado}</span></td>
+      <td></td>
+      <td><span class="badge pendiente">A gestionar</span></td>
+      <td><button class="btn" style="padding:4px 10px;font-size:11px" onclick="generarMensaje('${p.nombre}','prospecto')">💬 WA</button></td>
+    </tr>`).join('');
+}
+
+// ── COBROS ────────────────────────────────────────────
+function registrarCobro() {
+  const cliente = document.getElementById('c_cliente').value.trim();
+  const monto = document.getElementById('c_monto').value;
+  if (!cliente || !monto) { alert('Completá cliente y monto.'); return; }
+  
+  const cobro = {
+    cliente,
+    monto: parseInt(monto),
+    fecha: document.getElementById('c_fecha').value,
+    medio: document.getElementById('c_medio').value,
+    tipo: document.getElementById('c_tipo').value
+  };
+  
+  state.cobrosHoy.push(cobro);
+  guardarState();
+  renderCobrosHoy();
+  document.getElementById('c_cliente').value = '';
+  document.getElementById('c_monto').value = '';
+  mostrarToast('✓ Cobro registrado');
+}
+
+function renderCobrosHoy() {
+  const container = document.getElementById('registrosCargados');
+  if (!state.cobrosHoy.length) {
+    container.innerHTML = `<div class="section-title" style="margin-bottom:12px">📋 Cargado hoy</div><div class="empty-state"><div class="icon">📝</div><p>Todavía no cargaste nada hoy</p></div>`;
+    return;
+  }
+  const total = state.cobrosHoy.reduce((s,c) => s + c.monto, 0);
+  container.innerHTML = `
+    <div class="section-title" style="margin-bottom:12px">📋 Cargado hoy — Total: $${total.toLocaleString('es-AR')}</div>
+    <div class="tabla-wrap"><div class="tabla-scroll">
+    <table>
+      <thead><tr><th>Cliente</th><th>Monto</th><th>Fecha</th><th>Medio</th><th>Tipo</th></tr></thead>
+      <tbody>${state.cobrosHoy.map(c => `
+        <tr>
+          <td>${c.cliente}</td>
+          <td style="font-family:'DM Mono',monospace;color:#2e7d32;font-weight:600">+$${c.monto.toLocaleString('es-AR')}</td>
+          <td>${c.fecha}</td>
+          <td>${c.medio}</td>
+          <td>${c.tipo}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table></div></div>`;
+}
+
+// ── EXPORTAR ───────────────────────────────────────────
+function exportarCobros() {
+  if (!state.cobrosHoy.length) { mostrarToast('⚠ No hay cobros cargados'); return; }
+  const texto = state.cobrosHoy.map(c => 
+    `${c.fecha}\t${c.tipo}\t${c.cliente}\t\t${c.monto}\t\t${c.medio}`
+  ).join('\n');
+  copiar('Fecha\tCuenta\tDetalle\tIngresos\tEgresos\tSaldo\tMedio\n' + texto);
+}
+
+function exportarClientes() {
+  const texto = `CLIENTES FIJOS JARDINERÍA 2.0\n${'─'.repeat(50)}\n` +
+    ['Maricel Brunas - Los Garabatos 1612 - $116.625 ADEUDA',
+     'Alberto Lambertti - Libertador Norte 1451 - $50.750 ADEUDA',
+     'Ariel - dato pendiente - $43.500 ADEUDA',
+     'Gerardo Martini - Los Paraisos 1397 - Al día',
+     'Graciela Santana - Cullen 153 - Al día',
+     'Florencia Lambertti - Florencio Sanchez 1900 - Al día',
+     'Valeria Heredia - Juan B. Justo 1520 - Al día',
+     'Mariano Armando - Juan de Garay 1138 - Al día',
+     'Victoria Tortossa - Roca 2034 - Al día',
+     'Cindy - Mitre 780 - Al día',
+     'Agueda Allasino - Córdoba 664 - Al día',
+     'Noe - Echeverria 1042 - Al día',
+     'Andrea Rinaudi - dato pendiente - Al día',
+     'Vision del Futuro - A. Olmos 127 - Al día',
+     '... y 28 clientes más'].join('\n');
+  copiar(texto);
+}
+
+function exportarDeudas() {
+  const texto = `CUENTAS POR COBRAR — JARDINERÍA 2.0\n${'─'.repeat(40)}\n` +
+    `MARICEL: $116.625\nALBERTO: $50.750\nARIEL: $43.500\nTOTAL: $210.875\n\n` +
+    `CUENTAS A PAGAR (PROVEEDORES)\n${'─'.repeat(40)}\n` +
+    `El Sol (fact. 1232): $5.000 pendiente\nMarquez (fact. 2355): $16.000 pendiente\nPelegrini (fact. 4325): $30.000 pendiente\nVertice (fact. 43554): $100.000 pendiente\nTOTAL PAGAR: $151.000`;
+  copiar(texto);
+}
+
+// ── TOAST ──────────────────────────────────────────────
+function mostrarToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+</script>
+</body>
+</html>
