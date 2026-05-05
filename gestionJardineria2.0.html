@@ -482,6 +482,23 @@
   .empty-state .icon { font-size: 48px; margin-bottom: 12px; }
   .empty-state p { font-size: 14px; }
 
+  /* SEMÁFORO ESPERA */
+  .semaforo {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600;
+  }
+  .semaforo.verde  { background:#e8f5e9; color:#2e7d32; }
+  .semaforo.amarillo { background:#fff8e1; color:#e65100; }
+  .semaforo.rojo   { background:#fdecea; color:#c0392b; }
+  .espera-card {
+    background: var(--blanco); border-radius: 12px; padding: 16px 20px;
+    margin-bottom: 10px; box-shadow: var(--sombra); border: var(--borde);
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  }
+  .espera-card .ec-nombre { font-weight: 600; font-size: 14px; flex: 1; min-width: 140px; }
+  .espera-card .ec-nota   { font-size: 12px; color: #888; flex: 2; min-width: 180px; }
+  .espera-card .ec-acciones { display:flex; gap:8px; flex-shrink:0; }
+
   @media (max-width: 640px) {
     main { padding: 16px; }
     .header-inner { padding: 12px 16px; }
@@ -513,6 +530,7 @@
     <button onclick="cambiarPanel('whatsapp', this)">💬 WhatsApp</button>
     <button onclick="cambiarPanel('cargar', this)">➕ Cargar Info</button>
     <button onclick="cambiarPanel('movimientos', this)">📥 Movimientos</button>
+    <button onclick="cambiarPanel('espera', this)">⏳ En espera</button>
   </nav>
 </header>
 
@@ -588,6 +606,8 @@
       Buen mes anterior. El negocio viene con tendencia positiva desde el cierre 2025.
     </div>
   </div>
+
+  <div id="alertasDinamicas"></div>
 
   <div class="sep"></div>
 
@@ -1106,6 +1126,52 @@
   </div>
 </div>
 
+<!-- ══════════════════════════════════════════════════════ EN ESPERA -->
+<div class="panel" id="panel-espera">
+  <div class="section-header">
+    <div class="section-title">En espera <small>Clientes sin fecha asignada aún</small></div>
+    <button class="btn" onclick="toggleFormEspera()">+ Agregar a la lista</button>
+  </div>
+
+  <div class="alerta info">
+    <div class="alerta-icon">⏳</div>
+    <div class="alerta-texto">
+      <strong>Semáforo de tiempo de espera:</strong>
+      🟢 Menos de 5 días · 🟡 Más de 5 días · 🔴 Más de 10 días (tratar con urgencia)
+    </div>
+  </div>
+
+  <div id="formEspera" style="display:none;margin-bottom:20px">
+    <div class="tabla-wrap" style="padding:20px">
+      <div class="section-title" style="margin-bottom:14px;font-size:16px">Agregar cliente a la lista de espera</div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Cliente</label>
+          <select id="esp_cliente">
+            <option value="">— Seleccioná un cliente —</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Tipo de trabajo</label>
+          <input type="text" id="esp_trabajo" placeholder="Ej: poda, mantenimiento...">
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:14px">
+        <label>Notas / contexto</label>
+        <textarea id="esp_notas" rows="2" placeholder="Ej: cliente quiere lunes a la mañana, jardín grande..."></textarea>
+      </div>
+      <div style="display:flex;gap:10px">
+        <button class="btn" onclick="agregarAEspera()">Guardar en lista</button>
+        <button class="btn secundario" onclick="toggleFormEspera()">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="listaEsperaContainer">
+    <div class="empty-state"><div class="icon">⏳</div><p>No hay clientes en lista de espera</p></div>
+  </div>
+</div>
+
 <!-- ══════════════════════════════════════════════════════ MOVIMIENTOS -->
 <div class="panel" id="panel-movimientos">
   <div class="section-header">
@@ -1164,17 +1230,19 @@
 function cargarState() {
   try {
     return {
-      prospectos: JSON.parse(localStorage.getItem('j2_prospectos') || '[]'),
-      turnos:     JSON.parse(localStorage.getItem('j2_turnos')     || '[]'),
-      cobrosHoy:  JSON.parse(localStorage.getItem('j2_cobros')     || '[]'),
+      prospectos:   JSON.parse(localStorage.getItem('j2_prospectos')   || '[]'),
+      turnos:       JSON.parse(localStorage.getItem('j2_turnos')       || '[]'),
+      cobrosHoy:    JSON.parse(localStorage.getItem('j2_cobros')       || '[]'),
+      listaEspera:  JSON.parse(localStorage.getItem('j2_listaespera')  || '[]'),
     };
-  } catch(e) { return { prospectos:[], turnos:[], cobrosHoy:[] }; }
+  } catch(e) { return { prospectos:[], turnos:[], cobrosHoy:[], listaEspera:[] }; }
 }
 function guardarState() {
   try {
-    localStorage.setItem('j2_prospectos', JSON.stringify(state.prospectos));
-    localStorage.setItem('j2_turnos',     JSON.stringify(state.turnos));
-    localStorage.setItem('j2_cobros',     JSON.stringify(state.cobrosHoy));
+    localStorage.setItem('j2_prospectos',  JSON.stringify(state.prospectos));
+    localStorage.setItem('j2_turnos',      JSON.stringify(state.turnos));
+    localStorage.setItem('j2_cobros',      JSON.stringify(state.cobrosHoy));
+    localStorage.setItem('j2_listaespera', JSON.stringify(state.listaEspera));
   } catch(e) {}
 }
 const state = cargarState();
@@ -1236,6 +1304,8 @@ document.addEventListener('DOMContentLoaded', () => {
   renderCobrosHoy();
   renderClientes();
   poblarSelectCliente();
+  renderListaEspera();
+  renderAlertasDinamicas();
 });
 
 // ── NAVEGACIÓN ─────────────────────────────────────────
@@ -1245,6 +1315,7 @@ function cambiarPanel(id, btn) {
   document.getElementById('panel-'+id).classList.add('active');
   btn.classList.add('active');
   if (id === 'movimientos') renderMovimientos();
+  if (id === 'espera') renderListaEspera();
 }
 
 // ── DATOS BASE CLIENTES ────────────────────────────────
@@ -2003,12 +2074,12 @@ function registrarCobro() {
 function renderCobrosHoy() {
   const container = document.getElementById('registrosCargados');
   if (!state.cobrosHoy.length) {
-    container.innerHTML = `<div class="section-title" style="margin-bottom:12px">📋 Cargado hoy</div><div class="empty-state"><div class="icon">📝</div><p>Todavía no cargaste nada hoy</p></div>`;
+    container.innerHTML = `<div class="section-title" style="margin-bottom:12px">📋 Historial de cobros registrados</div><div class="empty-state"><div class="icon">📝</div><p>Todavía no registraste cobros</p></div>`;
     return;
   }
   const total = state.cobrosHoy.reduce((s,c) => s + c.monto, 0);
   container.innerHTML = `
-    <div class="section-title" style="margin-bottom:12px">📋 Cargado hoy — Total: $${total.toLocaleString('es-AR')}</div>
+    <div class="section-title" style="margin-bottom:12px">📋 Historial de cobros registrados — Total acumulado: $${total.toLocaleString('es-AR')}</div>
     <div class="tabla-wrap"><div class="tabla-scroll">
     <table>
       <thead><tr><th>Cliente</th><th>Monto</th><th>Fecha</th><th>Medio</th><th>Tipo</th><th></th></tr></thead>
@@ -2182,6 +2253,138 @@ function exportarDeudas() {
     ['',''],['Proveedor','Saldo pendiente'],
     ['El Sol','5000'],['Marquez','16000'],['Pelegrini','30000'],['Vertice','100000']];
   descargarCSV('deudas.csv', filas.map(r => r.map(v=>`"${v}"`).join(',')).join('\n'));
+}
+
+// ── ALERTAS DINÁMICAS (turnos vencidos + espera urgente) ──
+function diasDesde(fechaStr) {
+  if (!fechaStr) return 0;
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const f   = new Date(fechaStr + 'T00:00:00');
+  return Math.floor((hoy - f) / 86400000);
+}
+
+function renderAlertasDinamicas() {
+  const cont = document.getElementById('alertasDinamicas');
+  if (!cont) return;
+  const alertas = [];
+
+  // Turnos no realizados con fecha vencida > 3 días
+  const hoyStr = toYMD(new Date());
+  state.turnos.forEach(t => {
+    if (!t.realizado && t.fecha && t.fecha < hoyStr) {
+      const dias = diasDesde(t.fecha);
+      if (dias > 3) {
+        alertas.push(`<div class="alerta urgente">
+          <div class="alerta-icon">🔴</div>
+          <div class="alerta-texto">
+            <strong>Turno pendiente hace ${dias} días — ${t.cliente}</strong>
+            Programado para ${t.fecha} (${t.duracion}). Marcalo como realizado o reprogramalo.
+          </div>
+        </div>`);
+      }
+    }
+  });
+
+  // Clientes en espera con semáforo rojo (>10 días)
+  state.listaEspera.forEach(e => {
+    const dias = diasDesde(e.fechaAgregado);
+    if (dias > 10) {
+      alertas.push(`<div class="alerta urgente">
+        <div class="alerta-icon">🔴</div>
+        <div class="alerta-texto">
+          <strong>Lista de espera urgente — ${e.nombreCliente} (${dias} días sin fecha)</strong>
+          ${e.trabajo ? e.trabajo + ' · ' : ''}${e.notas || 'Sin notas'}. Asignar turno cuanto antes.
+        </div>
+      </div>`);
+    }
+  });
+
+  cont.innerHTML = alertas.join('');
+}
+
+// ── LISTA DE ESPERA ────────────────────────────────────
+function semaforo(fechaAgregado) {
+  const dias = diasDesde(fechaAgregado);
+  if (dias <= 5)  return { clase: 'verde',    icono: '🟢', texto: `${dias}d — OK` };
+  if (dias <= 10) return { clase: 'amarillo',  icono: '🟡', texto: `${dias}d — Atender pronto` };
+  return              { clase: 'rojo',     icono: '🔴', texto: `${dias}d — URGENTE` };
+}
+
+function toggleFormEspera() {
+  const f = document.getElementById('formEspera');
+  f.style.display = f.style.display === 'none' ? 'block' : 'none';
+  if (f.style.display === 'block') poblarSelectEspera();
+}
+
+function poblarSelectEspera() {
+  const sel = document.getElementById('esp_cliente');
+  if (!sel) return;
+  const ordenados = [...clientes].sort((a,b) => a.nombre.localeCompare(b.nombre));
+  sel.innerHTML = '<option value="">— Seleccioná un cliente —</option>' +
+    ordenados.map(c => `<option value="${c.id}" data-nombre="${c.nombre}">${c.nombre}</option>`).join('');
+}
+
+function agregarAEspera() {
+  const sel = document.getElementById('esp_cliente');
+  const clienteId  = sel.value;
+  const nombreCliente = sel.options[sel.selectedIndex]?.dataset.nombre || sel.options[sel.selectedIndex]?.text || '';
+  if (!clienteId) { mostrarToast('⚠ Seleccioná un cliente'); return; }
+
+  state.listaEspera.push({
+    id: 'esp_' + Date.now(),
+    clienteId,
+    nombreCliente,
+    trabajo:       document.getElementById('esp_trabajo').value.trim(),
+    notas:         document.getElementById('esp_notas').value.trim(),
+    fechaAgregado: toYMD(new Date())
+  });
+  guardarState();
+  renderListaEspera();
+  renderAlertasDinamicas();
+  toggleFormEspera();
+  document.getElementById('esp_trabajo').value = '';
+  document.getElementById('esp_notas').value   = '';
+  mostrarToast('✓ Cliente agregado a la lista de espera');
+}
+
+function eliminarDeEspera(id) {
+  state.listaEspera = state.listaEspera.filter(e => e.id !== id);
+  guardarState();
+  renderListaEspera();
+  renderAlertasDinamicas();
+  mostrarToast('Eliminado de la lista de espera');
+}
+
+function moverAAgendaDesdeEspera(id) {
+  const e = state.listaEspera.find(x => x.id === id);
+  if (!e) return;
+  agendarTurnoCliente(e.nombreCliente);
+  eliminarDeEspera(id);
+  mostrarToast('✓ Abrí la agenda para asignarle fecha');
+}
+
+function renderListaEspera() {
+  const cont = document.getElementById('listaEsperaContainer');
+  if (!cont) return;
+
+  if (!state.listaEspera.length) {
+    cont.innerHTML = `<div class="empty-state"><div class="icon">⏳</div><p>No hay clientes en lista de espera</p></div>`;
+    return;
+  }
+
+  const ordenados = [...state.listaEspera].sort((a,b) => diasDesde(b.fechaAgregado) - diasDesde(a.fechaAgregado));
+  cont.innerHTML = ordenados.map(e => {
+    const s = semaforo(e.fechaAgregado);
+    return `<div class="espera-card">
+      <span class="semaforo ${s.clase}">${s.icono} ${s.texto}</span>
+      <div class="ec-nombre">${e.nombreCliente}</div>
+      <div class="ec-nota">${e.trabajo ? '<strong>' + e.trabajo + '</strong> · ' : ''}${e.notas || '—'}</div>
+      <div class="ec-acciones">
+        <button class="btn" style="font-size:12px;padding:6px 12px" onclick="moverAAgendaDesdeEspera('${e.id}')">📅 Agendar</button>
+        <button class="btn secundario" style="font-size:12px;padding:6px 10px" onclick="eliminarDeEspera('${e.id}')">✕</button>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 // ── TOAST ──────────────────────────────────────────────
