@@ -960,8 +960,8 @@
   <div class="cards-grid">
     <div class="card rojo">
       <div class="card-label">Total por Cobrar</div>
-      <div class="card-valor">$210.875</div>
-      <div class="card-sub">3 clientes con saldo pendiente</div>
+      <div class="card-valor" id="totalPorCobrarValor">$0</div>
+      <div class="card-sub" id="totalPorCobrarSub">—</div>
     </div>
     <div class="card tierra">
       <div class="card-label">Cuentas a Pagar (Proveedores)</div>
@@ -975,30 +975,9 @@
     <div class="tabla-scroll">
     <table>
       <thead>
-        <tr><th>Cliente</th><th>Monto adeudado</th><th>Producto/Servicio</th><th>Urgencia</th><th>Acción WhatsApp</th></tr>
+        <tr><th>Cliente</th><th>Monto adeudado</th><th>Dirección</th><th>Urgencia</th><th>Acciones</th></tr>
       </thead>
-      <tbody>
-        <tr class="prioridad-alta">
-          <td><strong>MARICEL Brunas</strong></td>
-          <td style="font-family:'DM Mono',monospace;font-weight:600;color:var(--rojo)">$116.625</td>
-          <td>Mantenimiento mensual</td>
-          <td><span class="badge urgente">🔴 Urgente</span></td>
-          <td><button class="btn" style="padding:5px 12px;font-size:12px" onclick="generarMensaje('Maricel','cobro')">💬 Mensaje cobro</button></td>
-        </tr>
-        <tr class="prioridad-alta">
-          <td><strong>ALBERTO Lambertti</strong></td>
-          <td style="font-family:'DM Mono',monospace;font-weight:600;color:var(--rojo)">$50.750</td>
-          <td>Mantenimiento mensual</td>
-          <td><span class="badge urgente">🔴 Urgente</span></td>
-          <td><button class="btn" style="padding:5px 12px;font-size:12px" onclick="generarMensaje('Alberto','cobro')">💬 Mensaje cobro</button></td>
-        </tr>
-        <tr class="prioridad-alta">
-          <td><strong>ARIEL</strong></td>
-          <td style="font-family:'DM Mono',monospace;font-weight:600;color:var(--rojo)">$43.500</td>
-          <td>Mantenimiento mensual</td>
-          <td><span class="badge urgente">🔴 Urgente</span></td>
-          <td><button class="btn" style="padding:5px 12px;font-size:12px" onclick="generarMensaje('Ariel','cobro')">💬 Mensaje cobro</button></td>
-        </tr>
+      <tbody id="tbodyCobrosPanel">
       </tbody>
     </table>
     </div>
@@ -1306,6 +1285,7 @@ document.addEventListener('DOMContentLoaded', () => {
   poblarSelectCliente();
   renderListaEspera();
   renderAlertasDinamicas();
+  renderCobrosPanel();
 });
 
 // ── NAVEGACIÓN ─────────────────────────────────────────
@@ -1316,6 +1296,7 @@ function cambiarPanel(id, btn) {
   btn.classList.add('active');
   if (id === 'movimientos') renderMovimientos();
   if (id === 'espera') renderListaEspera();
+  if (id === 'cobros') renderCobrosPanel();
 }
 
 // ── DATOS BASE CLIENTES ────────────────────────────────
@@ -2253,6 +2234,109 @@ function exportarDeudas() {
     ['',''],['Proveedor','Saldo pendiente'],
     ['El Sol','5000'],['Marquez','16000'],['Pelegrini','30000'],['Vertice','100000']];
   descargarCSV('deudas.csv', filas.map(r => r.map(v=>`"${v}"`).join(',')).join('\n'));
+}
+
+// ── COBROS PANEL ───────────────────────────────────────
+function renderCobrosPanel() {
+  const tbody = document.getElementById('tbodyCobrosPanel');
+  if (!tbody) return;
+
+  const conDeuda = clientes.filter(c => c.deuda > 0);
+  const total    = conDeuda.reduce((s,c) => s + c.deuda, 0);
+
+  // Actualizar card
+  const valEl = document.getElementById('totalPorCobrarValor');
+  const subEl = document.getElementById('totalPorCobrarSub');
+  if (valEl) valEl.textContent = '$' + total.toLocaleString('es-AR');
+  if (subEl) subEl.textContent = conDeuda.length
+    ? conDeuda.map(c => c.nombre.split(' ')[0] + ' $' + c.deuda.toLocaleString('es-AR')).join(' · ')
+    : 'Sin deudas pendientes';
+
+  if (!conDeuda.length) {
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:#aaa;padding:24px">✓ No hay deudas pendientes de clientes</td></tr>`;
+    return;
+  }
+
+  const hoy = new Date().toISOString().split('T')[0];
+  tbody.innerHTML = conDeuda.map(c => `
+    <tr class="prioridad-alta" id="fila-cobro-${c.id}">
+      <td><strong>${c.nombre}</strong></td>
+      <td style="font-family:'DM Mono',monospace;font-weight:600;color:var(--rojo)">$${c.deuda.toLocaleString('es-AR')}</td>
+      <td style="font-size:12px;color:#666">${c.dir}</td>
+      <td><span class="badge urgente">🔴 Urgente</span></td>
+      <td style="display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn" style="padding:5px 12px;font-size:12px;background:var(--verde-vivo)"
+          onclick="mostrarFormCobroPendiente('${c.id}')">✓ Ya cobré</button>
+        <button class="btn secundario" style="padding:5px 12px;font-size:12px"
+          onclick="generarMensaje('${c.nombre.split(' ')[0]}','cobro')">💬 WA</button>
+      </td>
+    </tr>
+    <tr id="form-pendiente-${c.id}" style="display:none">
+      <td colspan="5" style="padding:0">
+        <div style="background:#f0fdf0;padding:14px 20px;border-top:1px dashed #a3e6a3">
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+            <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:120px">
+              <label style="font-size:10px;font-weight:600;text-transform:uppercase;color:#777">Monto cobrado</label>
+              <input type="number" id="cp_monto_${c.id}" value="${c.deuda}"
+                style="border:1px solid rgba(26,46,26,0.18);border-radius:7px;padding:7px 10px;font-size:13px;font-family:'DM Sans',sans-serif">
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:120px">
+              <label style="font-size:10px;font-weight:600;text-transform:uppercase;color:#777">Fecha</label>
+              <input type="date" id="cp_fecha_${c.id}" value="${hoy}"
+                style="border:1px solid rgba(26,46,26,0.18);border-radius:7px;padding:7px 10px;font-size:13px;font-family:'DM Sans',sans-serif">
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:130px">
+              <label style="font-size:10px;font-weight:600;text-transform:uppercase;color:#777">Medio</label>
+              <select id="cp_medio_${c.id}"
+                style="border:1px solid rgba(26,46,26,0.18);border-radius:7px;padding:7px 10px;font-size:13px;font-family:'DM Sans',sans-serif">
+                <option>Mercado Pago</option>
+                <option>Transferencia bancaria</option>
+                <option>Efectivo</option>
+              </select>
+            </div>
+            <button class="btn" onclick="confirmarCobroPendiente('${c.id}')">✓ Confirmar</button>
+            <button class="btn secundario" onclick="document.getElementById('form-pendiente-${c.id}').style.display='none'">Cancelar</button>
+          </div>
+        </div>
+      </td>
+    </tr>`).join('');
+}
+
+function mostrarFormCobroPendiente(clienteId) {
+  const fila = document.getElementById('form-pendiente-' + clienteId);
+  if (!fila) return;
+  fila.style.display = fila.style.display === 'none' ? 'table-row' : 'none';
+}
+
+function confirmarCobroPendiente(clienteId) {
+  const monto = parseInt(document.getElementById('cp_monto_' + clienteId).value);
+  const fecha = document.getElementById('cp_fecha_' + clienteId).value;
+  const medio = document.getElementById('cp_medio_' + clienteId).value;
+
+  if (!monto || monto <= 0) { mostrarToast('⚠ Ingresá un monto válido'); return; }
+  if (!fecha) { mostrarToast('⚠ Elegí una fecha'); return; }
+
+  const c = clientes.find(x => x.id === clienteId);
+  if (!c) return;
+
+  // Reducir deuda del cliente
+  c.deuda = Math.max(0, c.deuda - monto);
+  guardarClientes();
+
+  // Guardar en historial del cliente (aparece en su ficha desplegable)
+  if (!state.historial[clienteId]) state.historial[clienteId] = [];
+  state.historial[clienteId].push({ id: 'p_' + Date.now(), fecha, monto, horas: 0 });
+  guardarHistorial();
+
+  // Guardar también en historial general de cobros
+  state.cobrosHoy.push({ cliente: c.nombre, monto, fecha, medio, tipo: 'Cobro deuda anterior' });
+  guardarState();
+
+  renderCobrosPanel();
+  renderClientes();
+  renderCobrosHoy();
+  renderAlertasDinamicas();
+  mostrarToast('✓ Cobro registrado y actualizado en la ficha del cliente');
 }
 
 // ── ALERTAS DINÁMICAS (turnos vencidos + espera urgente) ──
