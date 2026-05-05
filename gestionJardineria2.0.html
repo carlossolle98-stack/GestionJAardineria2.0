@@ -1053,7 +1053,9 @@
     <div class="form-grid">
       <div class="form-group">
         <label>Cliente</label>
-        <input type="text" id="c_cliente" placeholder="Nombre del cliente">
+        <select id="c_cliente">
+          <option value="">— Seleccioná un cliente —</option>
+        </select>
       </div>
       <div class="form-group">
         <label>Monto cobrado</label>
@@ -1233,6 +1235,7 @@ document.addEventListener('DOMContentLoaded', () => {
   renderProspectos();
   renderCobrosHoy();
   renderClientes();
+  poblarSelectCliente();
 });
 
 // ── NAVEGACIÓN ─────────────────────────────────────────
@@ -1606,6 +1609,16 @@ function filtrarClientes(q) {
   renderClientes();
 }
 
+function poblarSelectCliente() {
+  const sel = document.getElementById('c_cliente');
+  if (!sel) return;
+  const valorActual = sel.value;
+  const ordenados = [...clientes].sort((a,b) => a.nombre.localeCompare(b.nombre));
+  sel.innerHTML = '<option value="">— Seleccioná un cliente —</option>' +
+    ordenados.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('');
+  sel.value = valorActual;
+}
+
 function toggleFormCliente() {
   const form = document.getElementById('formNuevoCliente');
   form.style.display = form.style.display === 'none' ? 'block' : 'none';
@@ -1631,6 +1644,7 @@ function agregarCliente() {
   clientes.push(nuevo);
   guardarClientes();
   renderClientes();
+  poblarSelectCliente();
   toggleFormCliente();
   ['nc_nombre','nc_dir'].forEach(id => document.getElementById(id).value = '');
   mostrarToast('✓ Cliente agregado correctamente');
@@ -1955,24 +1969,35 @@ function renderProspectos() {
 
 // ── COBROS ────────────────────────────────────────────
 function registrarCobro() {
-  const cliente = document.getElementById('c_cliente').value.trim();
+  const sel = document.getElementById('c_cliente');
+  const clienteId = sel.value;
+  const clienteNombre = sel.options[sel.selectedIndex]?.text || '';
   const monto = document.getElementById('c_monto').value;
-  if (!cliente || !monto) { alert('Completá cliente y monto.'); return; }
-  
-  const cobro = {
-    cliente,
-    monto: parseInt(monto),
-    fecha: document.getElementById('c_fecha').value,
-    medio: document.getElementById('c_medio').value,
-    tipo: document.getElementById('c_tipo').value
-  };
-  
-  state.cobrosHoy.push(cobro);
+  if (!clienteId || !monto) { mostrarToast('⚠ Seleccioná un cliente e ingresá el monto'); return; }
+
+  const fecha = document.getElementById('c_fecha').value;
+  const medio = document.getElementById('c_medio').value;
+  const tipo  = document.getElementById('c_tipo').value;
+
+  // Guardar en lista "cargado hoy"
+  state.cobrosHoy.push({ cliente: clienteNombre, monto: parseInt(monto), fecha, medio, tipo });
   guardarState();
+
+  // Guardar también en el historial del cliente (aparece en su ficha)
+  if (!state.historial[clienteId]) state.historial[clienteId] = [];
+  state.historial[clienteId].push({
+    id: 'p_' + Date.now(),
+    fecha,
+    monto: parseInt(monto),
+    horas: 0
+  });
+  guardarHistorial();
+
   renderCobrosHoy();
-  document.getElementById('c_cliente').value = '';
+  renderClientes();
+  sel.value = '';
   document.getElementById('c_monto').value = '';
-  mostrarToast('✓ Cobro registrado');
+  mostrarToast('✓ Cobro registrado y vinculado al cliente');
 }
 
 function renderCobrosHoy() {
