@@ -512,6 +512,7 @@
     <button onclick="cambiarPanel('cobros', this)">💰 Cobros</button>
     <button onclick="cambiarPanel('whatsapp', this)">💬 WhatsApp</button>
     <button onclick="cambiarPanel('cargar', this)">➕ Cargar Info</button>
+    <button onclick="cambiarPanel('movimientos', this)">📥 Movimientos</button>
   </nav>
 </header>
 
@@ -1103,6 +1104,55 @@
   </div>
 </div>
 
+<!-- ══════════════════════════════════════════════════════ MOVIMIENTOS -->
+<div class="panel" id="panel-movimientos">
+  <div class="section-header">
+    <div class="section-title">Movimientos <small>Todos los registros de la app</small></div>
+    <button class="btn" onclick="descargarTodo()">⬇ Descargar todo (CSV)</button>
+  </div>
+
+  <div class="alerta info">
+    <div class="alerta-icon">💡</div>
+    <div class="alerta-texto">
+      <strong>Los archivos CSV se abren directamente en Excel.</strong>
+      Descargá cada sección por separado o todo junto. Los datos reflejan lo cargado en la app hasta ahora.
+    </div>
+  </div>
+
+  <div class="section-title" style="margin:20px 0 12px">💵 Historial de cobros por cliente</div>
+  <div class="tabla-wrap">
+    <div class="tabla-scroll">
+    <table id="tablaMovCobros">
+      <thead><tr><th>Cliente</th><th>Fecha</th><th>Monto</th><th>Horas</th><th>$/hora</th></tr></thead>
+      <tbody id="tbodyMovCobros"><tr><td colspan="5" style="color:#bbb;text-align:center;padding:16px">Sin cobros registrados</td></tr></tbody>
+    </table>
+    </div>
+  </div>
+  <button class="btn secundario" style="margin-bottom:20px;font-size:12px" onclick="descargarCSV('cobros.csv', csvCobros())">⬇ Descargar cobros CSV</button>
+
+  <div class="section-title" style="margin-bottom:12px">📅 Turnos agendados</div>
+  <div class="tabla-wrap">
+    <div class="tabla-scroll">
+    <table>
+      <thead><tr><th>Fecha</th><th>Hora</th><th>Cliente</th><th>Duración</th><th>Tipo</th><th>Estado</th></tr></thead>
+      <tbody id="tbodyMovTurnos"><tr><td colspan="6" style="color:#bbb;text-align:center;padding:16px">Sin turnos registrados</td></tr></tbody>
+    </table>
+    </div>
+  </div>
+  <button class="btn secundario" style="margin-bottom:20px;font-size:12px" onclick="descargarCSV('turnos.csv', csvTurnos())">⬇ Descargar turnos CSV</button>
+
+  <div class="section-title" style="margin-bottom:12px">🌱 Prospectos</div>
+  <div class="tabla-wrap">
+    <div class="tabla-scroll">
+    <table>
+      <thead><tr><th>Nombre</th><th>Zona</th><th>Tipo</th><th>Frecuencia</th><th>Estado</th><th>Notas</th></tr></thead>
+      <tbody id="tbodyMovProspectos"><tr><td colspan="6" style="color:#bbb;text-align:center;padding:16px">Sin prospectos registrados</td></tr></tbody>
+    </table>
+    </div>
+  </div>
+  <button class="btn secundario" style="margin-bottom:20px;font-size:12px" onclick="descargarCSV('prospectos.csv', csvProspectos())">⬇ Descargar prospectos CSV</button>
+</div>
+
 </main>
 
 <div id="toast">✓ Copiado al portapapeles</div>
@@ -1191,6 +1241,7 @@ function cambiarPanel(id, btn) {
   document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
   document.getElementById('panel-'+id).classList.add('active');
   btn.classList.add('active');
+  if (id === 'movimientos') renderMovimientos();
 }
 
 // ── DATOS BASE CLIENTES ────────────────────────────────
@@ -1294,7 +1345,7 @@ function renderClientes() {
 
     const accion = tieneDeuda
       ? `<button class="btn" style="padding:4px 10px;font-size:11px" onclick="event.stopPropagation();generarMensaje('${c.nombre.split(' ')[0]}','cobro')">💬 Cobrar</button>`
-      : `<button class="btn secundario" style="padding:4px 10px;font-size:11px" onclick="event.stopPropagation();generarMensaje('${c.nombre.split(' ')[0]}','turno')">📅 Turno</button>`;
+      : `<button class="btn secundario" style="padding:4px 10px;font-size:11px" onclick="event.stopPropagation();agendarTurnoCliente('${c.nombre}')">📅 Turno</button>`;
 
     const totalStr = total > 0
       ? `<span style="font-family:'DM Mono',monospace;font-weight:600;color:#2e7d32">$${total.toLocaleString('es-AR')}</span><br><span style="font-size:10px;color:#aaa">(${pagos.length} pago${pagos.length!==1?'s':''})</span>`
@@ -1627,14 +1678,18 @@ function generarAgendaSemana() {
 
     const contenido = turnosDia.length
       ? turnosDia.map(t => `
-          <div class="turno-item">
+          <div class="turno-item" style="${t.realizado ? 'opacity:0.5' : ''}">
             <div class="turno-hora">${t.hora || '—'}</div>
-            <div>
-              <div class="turno-cliente">${t.cliente}</div>
+            <div style="flex:1">
+              <div class="turno-cliente" style="${t.realizado ? 'text-decoration:line-through' : ''}">${t.cliente}</div>
               <div class="turno-detalle">${t.duracion} · ${t.tipo}</div>
             </div>
+            <button onclick="toggleRealizado('${t.id}')" title="${t.realizado ? 'Marcar pendiente' : 'Marcar realizado'}"
+              style="background:${t.realizado ? '#e8f5e9' : 'white'};border:1px solid ${t.realizado ? '#4caf50' : '#ccc'};border-radius:6px;cursor:pointer;font-size:11px;padding:3px 8px;color:${t.realizado ? '#2e7d32' : '#999'};white-space:nowrap">
+              ${t.realizado ? '✓ Hecho' : '○ Pendiente'}
+            </button>
             <button onclick="eliminarTurno('${t.id}')" title="Eliminar"
-              style="margin-left:auto;background:none;border:none;cursor:pointer;font-size:14px;opacity:0.4;padding:0 4px">✕</button>
+              style="background:none;border:none;cursor:pointer;font-size:14px;opacity:0.4;padding:0 4px">✕</button>
           </div>`).join('')
       : `<div style="color:#aaa;font-size:13px;padding:8px 0">Sin turnos asignados</div>`;
 
@@ -1931,54 +1986,177 @@ function renderCobrosHoy() {
     <div class="section-title" style="margin-bottom:12px">📋 Cargado hoy — Total: $${total.toLocaleString('es-AR')}</div>
     <div class="tabla-wrap"><div class="tabla-scroll">
     <table>
-      <thead><tr><th>Cliente</th><th>Monto</th><th>Fecha</th><th>Medio</th><th>Tipo</th></tr></thead>
-      <tbody>${state.cobrosHoy.map(c => `
+      <thead><tr><th>Cliente</th><th>Monto</th><th>Fecha</th><th>Medio</th><th>Tipo</th><th></th></tr></thead>
+      <tbody>${state.cobrosHoy.map((c, i) => `
         <tr>
           <td>${c.cliente}</td>
           <td style="font-family:'DM Mono',monospace;color:#2e7d32;font-weight:600">+$${c.monto.toLocaleString('es-AR')}</td>
           <td>${c.fecha}</td>
           <td>${c.medio}</td>
           <td>${c.tipo}</td>
+          <td><button onclick="eliminarCobro(${i})" title="Eliminar" style="background:none;border:1px solid rgba(192,57,43,0.3);border-radius:6px;cursor:pointer;font-size:12px;padding:3px 8px;color:var(--rojo)">🗑</button></td>
         </tr>`).join('')}
       </tbody>
     </table></div></div>`;
 }
 
-// ── EXPORTAR ───────────────────────────────────────────
+// ── ELIMINAR COBRO ─────────────────────────────────────
+function eliminarCobro(idx) {
+  state.cobrosHoy.splice(idx, 1);
+  guardarState();
+  renderCobrosHoy();
+  mostrarToast('Cobro eliminado');
+}
+
+// ── TURNO REALIZADO ────────────────────────────────────
+function toggleRealizado(id) {
+  const t = state.turnos.find(x => x.id === id);
+  if (!t) return;
+  t.realizado = !t.realizado;
+  guardarState();
+  generarAgendaSemana();
+}
+
+// ── AGENDAR TURNO DESDE CLIENTE ────────────────────────
+function agendarTurnoCliente(nombre) {
+  document.getElementById('t_cliente').value = nombre;
+  const btnAgenda = document.querySelector('nav button[onclick*="agenda"]');
+  if (btnAgenda) btnAgenda.click();
+  setTimeout(() => {
+    const form = document.getElementById('t_cliente');
+    if (form) form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, 200);
+}
+
+// ── EXPORTAR CSV ───────────────────────────────────────
+function descargarCSV(nombre, contenido) {
+  const bom = '﻿'; // BOM para que Excel lo abra con tildes correctas
+  const blob = new Blob([bom + contenido], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = nombre;
+  a.click();
+  URL.revokeObjectURL(url);
+  mostrarToast('✓ Archivo descargado');
+}
+
+function csvCobros() {
+  const filas = [['Cliente','Fecha','Monto','Horas','$/hora']];
+  Object.entries(state.historial).forEach(([cid, pagos]) => {
+    const c = clientes.find(x => x.id === cid);
+    const nombre = c ? c.nombre : cid;
+    pagos.forEach(p => {
+      const vh = p.horas && p.horas > 0 ? Math.round(p.monto / p.horas) : '';
+      filas.push([nombre, p.fecha || '', p.monto, p.horas || '', vh]);
+    });
+  });
+  // también los cobros de cargar-info
+  state.cobrosHoy.forEach(c => filas.push([c.cliente, c.fecha, c.monto, '', '']));
+  return filas.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+}
+
+function csvTurnos() {
+  const filas = [['Fecha','Hora','Cliente','Duración','Tipo','Estado']];
+  state.turnos.forEach(t => filas.push([t.fecha, t.hora||'', t.cliente, t.duracion, t.tipo, t.realizado?'Realizado':'Pendiente']));
+  return filas.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+}
+
+function csvProspectos() {
+  const filas = [['Nombre','Zona','Tipo','Frecuencia','Estado','Notas']];
+  state.prospectos.forEach(p => filas.push([p.nombre, p.zona, p.tipo, p.frecuencia, p.estado, p.notas||'']));
+  return filas.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+}
+
+function csvClientes() {
+  const filas = [['#','Nombre','Dirección','Forma de pago','Total cobrado','Visitas','Deuda']];
+  clientes.forEach(c => {
+    const pagos = state.historial[c.id] || [];
+    const total = pagos.reduce((s,p) => s + p.monto, 0);
+    filas.push([c.num, c.nombre, c.dir, c.pago, total, pagos.length, c.deuda]);
+  });
+  return filas.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+}
+
+function descargarTodo() {
+  const fecha = new Date().toISOString().split('T')[0];
+  descargarCSV(`jardineria_cobros_${fecha}.csv`, csvCobros());
+  setTimeout(() => descargarCSV(`jardineria_turnos_${fecha}.csv`, csvTurnos()), 400);
+  setTimeout(() => descargarCSV(`jardineria_prospectos_${fecha}.csv`, csvProspectos()), 800);
+  setTimeout(() => descargarCSV(`jardineria_clientes_${fecha}.csv`, csvClientes()), 1200);
+}
+
+// ── RENDER MOVIMIENTOS ─────────────────────────────────
+function renderMovimientos() {
+  // Cobros
+  const filasCobros = [];
+  Object.entries(state.historial).forEach(([cid, pagos]) => {
+    const c = clientes.find(x => x.id === cid);
+    const nombre = c ? c.nombre : cid;
+    pagos.forEach(p => filasCobros.push({ nombre, ...p }));
+  });
+  filasCobros.sort((a,b) => (b.fecha||'').localeCompare(a.fecha||''));
+  const tbodyCobros = document.getElementById('tbodyMovCobros');
+  if (tbodyCobros) {
+    tbodyCobros.innerHTML = filasCobros.length
+      ? filasCobros.map(p => {
+          const vh = p.horas && p.horas > 0 ? '$' + Math.round(p.monto/p.horas).toLocaleString('es-AR') : '—';
+          return `<tr>
+            <td><strong>${p.nombre}</strong></td>
+            <td>${p.fecha||'—'}</td>
+            <td style="font-family:'DM Mono',monospace;color:#2e7d32;font-weight:600">$${p.monto.toLocaleString('es-AR')}</td>
+            <td style="text-align:center">${p.horas ? p.horas+'h' : '—'}</td>
+            <td style="text-align:center;color:#888">${vh}</td>
+          </tr>`;}).join('')
+      : `<tr><td colspan="5" style="color:#bbb;text-align:center;padding:16px">Sin cobros registrados</td></tr>`;
+  }
+
+  // Turnos
+  const tbodyTurnos = document.getElementById('tbodyMovTurnos');
+  if (tbodyTurnos) {
+    const sorted = [...state.turnos].sort((a,b) => (a.fecha||'').localeCompare(b.fecha||''));
+    tbodyTurnos.innerHTML = sorted.length
+      ? sorted.map(t => `<tr>
+          <td>${t.fecha}</td>
+          <td style="font-family:'DM Mono',monospace">${t.hora||'—'}</td>
+          <td><strong>${t.cliente}</strong></td>
+          <td>${t.duracion}</td>
+          <td>${t.tipo}</td>
+          <td><span class="badge ${t.realizado?'ok':'pendiente'}">${t.realizado?'✓ Realizado':'○ Pendiente'}</span></td>
+        </tr>`).join('')
+      : `<tr><td colspan="6" style="color:#bbb;text-align:center;padding:16px">Sin turnos registrados</td></tr>`;
+  }
+
+  // Prospectos
+  const tbodyProsp = document.getElementById('tbodyMovProspectos');
+  if (tbodyProsp) {
+    tbodyProsp.innerHTML = state.prospectos.length
+      ? state.prospectos.map(p => `<tr>
+          <td><strong>${p.nombre}</strong></td>
+          <td>${p.zona}</td>
+          <td>${p.tipo}</td>
+          <td>${p.frecuencia}</td>
+          <td><span class="badge pendiente">${p.estado}</span></td>
+          <td style="font-size:12px;color:#888">${p.notas||'—'}</td>
+        </tr>`).join('')
+      : `<tr><td colspan="6" style="color:#bbb;text-align:center;padding:16px">Sin prospectos registrados</td></tr>`;
+  }
+}
+
+// ── EXPORTAR PANEL CARGAR INFO (botones existentes) ────
 function exportarCobros() {
   if (!state.cobrosHoy.length) { mostrarToast('⚠ No hay cobros cargados'); return; }
-  const texto = state.cobrosHoy.map(c => 
-    `${c.fecha}\t${c.tipo}\t${c.cliente}\t\t${c.monto}\t\t${c.medio}`
-  ).join('\n');
-  copiar('Fecha\tCuenta\tDetalle\tIngresos\tEgresos\tSaldo\tMedio\n' + texto);
+  descargarCSV('cobros_hoy.csv', csvCobros());
 }
-
 function exportarClientes() {
-  const texto = `CLIENTES FIJOS JARDINERÍA 2.0\n${'─'.repeat(50)}\n` +
-    ['Maricel Brunas - Los Garabatos 1612 - $116.625 ADEUDA',
-     'Alberto Lambertti - Libertador Norte 1451 - $50.750 ADEUDA',
-     'Ariel - dato pendiente - $43.500 ADEUDA',
-     'Gerardo Martini - Los Paraisos 1397 - Al día',
-     'Graciela Santana - Cullen 153 - Al día',
-     'Florencia Lambertti - Florencio Sanchez 1900 - Al día',
-     'Valeria Heredia - Juan B. Justo 1520 - Al día',
-     'Mariano Armando - Juan de Garay 1138 - Al día',
-     'Victoria Tortossa - Roca 2034 - Al día',
-     'Cindy - Mitre 780 - Al día',
-     'Agueda Allasino - Córdoba 664 - Al día',
-     'Noe - Echeverria 1042 - Al día',
-     'Andrea Rinaudi - dato pendiente - Al día',
-     'Vision del Futuro - A. Olmos 127 - Al día',
-     '... y 28 clientes más'].join('\n');
-  copiar(texto);
+  descargarCSV('clientes.csv', csvClientes());
 }
-
 function exportarDeudas() {
-  const texto = `CUENTAS POR COBRAR — JARDINERÍA 2.0\n${'─'.repeat(40)}\n` +
-    `MARICEL: $116.625\nALBERTO: $50.750\nARIEL: $43.500\nTOTAL: $210.875\n\n` +
-    `CUENTAS A PAGAR (PROVEEDORES)\n${'─'.repeat(40)}\n` +
-    `El Sol (fact. 1232): $5.000 pendiente\nMarquez (fact. 2355): $16.000 pendiente\nPelegrini (fact. 4325): $30.000 pendiente\nVertice (fact. 43554): $100.000 pendiente\nTOTAL PAGAR: $151.000`;
-  copiar(texto);
+  const filas = [['Cliente','Monto adeudado'],
+    ['Maricel Brunas','116625'],['Alberto Lambertti','50750'],['Ariel','43500'],
+    ['',''],['Proveedor','Saldo pendiente'],
+    ['El Sol','5000'],['Marquez','16000'],['Pelegrini','30000'],['Vertice','100000']];
+  descargarCSV('deudas.csv', filas.map(r => r.map(v=>`"${v}"`).join(',')).join('\n'));
 }
 
 // ── TOAST ──────────────────────────────────────────────
