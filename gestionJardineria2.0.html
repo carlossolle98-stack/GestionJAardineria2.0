@@ -2303,14 +2303,17 @@ function registrarCobro() {
   const tipo  = document.getElementById('c_tipo').value;
   const horas = parseFloat(document.getElementById('c_horas').value) || 0;
 
-  // Guardar en lista "cargado hoy"
-  state.cobrosHoy.push({ cliente: clienteNombre, monto: parseInt(monto), fecha, medio, tipo, horas });
+  // ID compartido para poder borrar de ambas listas
+  const pagoId = 'p_' + Date.now();
+
+  // Guardar en lista de cobros registrados
+  state.cobrosHoy.push({ cliente: clienteNombre, monto: parseInt(monto), fecha, medio, tipo, horas, pagoId, clienteId });
   guardarState();
 
   // Guardar también en el historial del cliente (aparece en su ficha)
   if (!state.historial[clienteId]) state.historial[clienteId] = [];
   state.historial[clienteId].push({
-    id: 'p_' + Date.now(),
+    id: pagoId,
     fecha,
     monto: parseInt(monto),
     horas
@@ -2358,10 +2361,23 @@ function renderCobrosHoy() {
 
 // ── ELIMINAR COBRO ─────────────────────────────────────
 function eliminarCobro(idx) {
+  const cobro = state.cobrosHoy[idx];
+  // Borrar también del historial del cliente si tiene ID vinculado
+  if (cobro && cobro.clienteId && cobro.pagoId && state.historial[cobro.clienteId]) {
+    state.historial[cobro.clienteId] = state.historial[cobro.clienteId].filter(p => p.id !== cobro.pagoId);
+    guardarHistorial();
+  }
+  // Restar de la cuenta correspondiente
+  if (cobro && cobro.medio) {
+    const cKey = medioACuenta(cobro.medio);
+    state.cuentas[cKey] = Math.max(0, (state.cuentas[cKey]||0) - (cobro.monto||0));
+  }
   state.cobrosHoy.splice(idx, 1);
   guardarState();
   renderCobrosHoy();
-  mostrarToast('Cobro eliminado');
+  renderClientes();
+  renderResumenCards();
+  mostrarToast('Cobro eliminado de historial y ficha del cliente');
 }
 
 // ── TURNO REALIZADO ────────────────────────────────────
@@ -2883,13 +2899,16 @@ function confirmarCobroPendiente(clienteId) {
   c.deuda = Math.max(0, c.deuda - monto);
   guardarClientes();
 
+  // ID compartido para poder borrar de ambas listas
+  const pagoIdP = 'p_' + Date.now();
+
   // Guardar en historial del cliente (aparece en su ficha desplegable)
   if (!state.historial[clienteId]) state.historial[clienteId] = [];
-  state.historial[clienteId].push({ id: 'p_' + Date.now(), fecha, monto, horas: 0 });
+  state.historial[clienteId].push({ id: pagoIdP, fecha, monto, horas: 0 });
   guardarHistorial();
 
   // Guardar también en historial general de cobros
-  state.cobrosHoy.push({ cliente: c.nombre, monto, fecha, medio, tipo: 'Cobro deuda anterior' });
+  state.cobrosHoy.push({ cliente: c.nombre, monto, fecha, medio, tipo: 'Cobro deuda anterior', pagoId: pagoIdP, clienteId });
 
   // Sumar a la cuenta correspondiente
   const cuentaKeyP = medioACuenta(medio);
