@@ -624,15 +624,7 @@
           <th>Mes</th><th>Año</th><th>Ingresos</th><th>Egresos</th><th>Resultado</th><th>Estado</th>
         </tr>
       </thead>
-      <tbody>
-        <tr><td>Noviembre</td><td>2025</td><td>$2.891.303</td><td>$2.528.386</td><td style="color:#2e7d32;font-weight:600">+$362.916</td><td><span class="badge ok">✓ Cerrado</span></td></tr>
-        <tr><td>Diciembre</td><td>2025</td><td>$3.547.370</td><td>$2.772.337</td><td style="color:#2e7d32;font-weight:600">+$775.033</td><td><span class="badge ok">✓ Cerrado</span></td></tr>
-        <tr><td>Enero</td><td>2026</td><td>$2.855.430</td><td>$3.225.075</td><td style="color:var(--rojo);font-weight:600">-$369.644</td><td><span class="badge ok">✓ Cerrado</span></td></tr>
-        <tr><td>Febrero</td><td>2026</td><td>$2.185.217</td><td>$2.171.275</td><td style="color:#2e7d32;font-weight:600">+$13.942</td><td><span class="badge ok">✓ Cerrado</span></td></tr>
-        <tr><td>Marzo</td><td>2026</td><td>$3.445.967</td><td>$3.299.805</td><td style="color:#2e7d32;font-weight:600">+$146.162</td><td><span class="badge ok">✓ Cerrado</span></td></tr>
-        <tr><td>Abril</td><td>2026</td><td>$3.594.950</td><td>$3.299.301</td><td style="color:#2e7d32;font-weight:600">+$295.649</td><td><span class="badge ok">✓ Cerrado</span></td></tr>
-        <tr class="prioridad-alta"><td><strong>Mayo</strong></td><td><strong>2026</strong></td><td style="color:var(--rojo)">$0 (sin cargar)</td><td>$199.755</td><td style="color:var(--rojo);font-weight:600">-$199.755</td><td><span class="badge urgente">⚠ En curso</span></td></tr>
-      </tbody>
+      <tbody id="tbodyUltimos6Meses"></tbody>
     </table>
     </div>
   </div>
@@ -2531,6 +2523,69 @@ function exportarDeudas() {
   descargarCSV('deudas.csv', filas.map(r => r.map(v=>`"${v}"`).join(',')).join('\n'));
 }
 
+// ── HISTÓRICO BASE (meses anteriores al sistema) ───────
+const HISTORIAL_BASE = {
+  '2025-11': { ingresos: 2891303, egresos: 2528386 },
+  '2025-12': { ingresos: 3547370, egresos: 2772337 },
+  '2026-01': { ingresos: 2855430, egresos: 3225075 },
+  '2026-02': { ingresos: 2185217, egresos: 2171275 },
+  '2026-03': { ingresos: 3445967, egresos: 3299805 },
+  '2026-04': { ingresos: 3594950, egresos: 3299301 },
+};
+
+function renderUltimos6Meses() {
+  const tbody = document.getElementById('tbodyUltimos6Meses');
+  if (!tbody) return;
+
+  const hoy = new Date();
+  const mesActual = mesClave();
+  const filas = [];
+
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
+    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    const nombreMes = d.toLocaleDateString('es-AR', { month: 'long' });
+    const year = d.getFullYear();
+
+    // Ingresos del app para ese mes (cobrosHoy es el registro de ingresos)
+    const ingresosApp = state.cobrosHoy
+      .filter(c => c.fecha && c.fecha.startsWith(key))
+      .reduce((s, c) => s + (c.monto||0), 0);
+
+    // Egresos del app para ese mes
+    const egresosApp = state.egresos
+      .filter(e => e.fecha && e.fecha.startsWith(key))
+      .reduce((s, e) => s + (e.monto||0), 0);
+
+    const base = HISTORIAL_BASE[key] || {};
+    const esActual = key === mesActual;
+    const tieneAppData = ingresosApp > 0 || egresosApp > 0;
+
+    // Si hay datos del app los usa; si no, cae al histórico base
+    const ingresos = ingresosApp > 0 ? ingresosApp : (base.ingresos || 0);
+    const egresos  = egresosApp  > 0 ? egresosApp  : (base.egresos  || 0);
+    const resultado = ingresos - egresos;
+    const etiqHist = !tieneAppData && base.ingresos ? '<span style="font-size:10px;color:#bbb;margin-left:4px">(hist.)</span>' : '';
+
+    filas.push(`<tr ${esActual ? 'class="prioridad-alta"' : ''}>
+      <td>${esActual ? '<strong>' + nombreMes + '</strong>' : nombreMes}</td>
+      <td>${year}</td>
+      <td>${ingresos > 0
+        ? `<span style="color:#2e7d32;font-weight:600">$${ingresos.toLocaleString('es-AR')}</span>${etiqHist}`
+        : `<span style="color:var(--rojo);font-size:12px">$0 — sin cargar</span>`}</td>
+      <td>${egresos > 0
+        ? `<span style="font-weight:600">$${egresos.toLocaleString('es-AR')}</span>${etiqHist}`
+        : '<span style="color:#aaa">—</span>'}</td>
+      <td style="font-weight:600;color:${resultado >= 0 ? '#2e7d32' : 'var(--rojo)'}">
+        ${(ingresos > 0 || egresos > 0) ? (resultado >= 0 ? '+' : '') + '$' + resultado.toLocaleString('es-AR') : '—'}
+      </td>
+      <td><span class="badge ${esActual ? 'urgente' : 'ok'}">${esActual ? '⚠ En curso' : '✓ Cerrado'}</span></td>
+    </tr>`);
+  }
+
+  tbody.innerHTML = filas.join('');
+}
+
 // ── HELPERS ────────────────────────────────────────────
 function medioACuenta(medio) {
   if (!medio) return 'efectivo';
@@ -2579,6 +2634,8 @@ function renderResumenCards() {
   const vSub = document.getElementById('res-varios-sub');
   if (vEl) vEl.textContent = '$' + totalVarios.toLocaleString('es-AR');
   if (vSub) vSub.textContent = variosMes.length ? `${variosMes.length} concepto${variosMes.length>1?'s':''}` : 'Sin gastos varios';
+
+  renderUltimos6Meses();
 }
 
 // ── EGRESOS ────────────────────────────────────────────
