@@ -531,6 +531,8 @@
     <button onclick="cambiarPanel('cargar', this)">➕ Cargar Info</button>
     <button onclick="cambiarPanel('movimientos', this)">📥 Movimientos</button>
     <button onclick="cambiarPanel('espera', this)">⏳ En espera</button>
+    <button onclick="cambiarPanel('egresos', this)">💸 Egresos</button>
+    <button onclick="cambiarPanel('finanzas', this)">🏦 Finanzas</button>
   </nav>
 </header>
 
@@ -542,28 +544,28 @@
   <div class="cards-grid">
     <div class="card">
       <div class="card-label">Caja Líquida</div>
-      <div class="card-valor">$1.088.811</div>
-      <div class="card-sub">MP $568.600 · Banco $7.910 · Efectivo $512.300</div>
+      <div class="card-valor" id="res-caja">$0</div>
+      <div class="card-sub" id="res-caja-sub">—</div>
     </div>
     <div class="card rojo">
       <div class="card-label">Cuentas por Cobrar</div>
-      <div class="card-valor">$210.875</div>
-      <div class="card-sub">Maricel $116.625 · Alberto $50.750 · Ariel $43.500</div>
+      <div class="card-valor" id="res-cobrar">$0</div>
+      <div class="card-sub" id="res-cobrar-sub">—</div>
     </div>
     <div class="card amarillo">
       <div class="card-label">Empleados Este Mes</div>
       <div class="card-valor">$68.500</div>
       <div class="card-sub">Carlos C. $44.000 · Aylen $24.500 · Angel $0</div>
     </div>
-    <div class="card azul">
-      <div class="card-label">Resultado Mayo 2026</div>
-      <div class="card-valor rojo-texto" style="color:var(--rojo)">-$199.755</div>
-      <div class="card-sub">Solo ingresos del mes: $0 registrados aún</div>
+    <div class="card" style="border-top-color:var(--azul)">
+      <div class="card-label">Gastos Fijos del Mes</div>
+      <div class="card-valor" id="res-gastos">$0</div>
+      <div class="card-sub" id="res-gastos-sub">Sin gastos registrados</div>
     </div>
     <div class="card tierra">
-      <div class="card-label">Patrimonio Total</div>
-      <div class="card-valor">$9.110.494</div>
-      <div class="card-sub">Activos no líquidos: $8.021.682</div>
+      <div class="card-label">Egresos Varios del Mes</div>
+      <div class="card-valor" id="res-varios">$0</div>
+      <div class="card-sub" id="res-varios-sub">Sin gastos varios</div>
     </div>
   </div>
 
@@ -1151,6 +1153,238 @@
   </div>
 </div>
 
+<!-- ══════════════════════════════════════════════════════ EGRESOS -->
+<div class="panel" id="panel-egresos">
+  <div class="section-header">
+    <div class="section-title">Egresos <small>Gastos fijos y varios</small></div>
+  </div>
+
+  <div class="cards-grid">
+    <div class="card rojo"><div class="card-label">Gastos Fijos del Mes</div><div class="card-valor" id="eg-fijos">$0</div><div class="card-sub" id="eg-fijos-sub">—</div></div>
+    <div class="card amarillo"><div class="card-label">Gastos Varios del Mes</div><div class="card-valor" id="eg-varios">$0</div><div class="card-sub" id="eg-varios-sub">—</div></div>
+    <div class="card tierra"><div class="card-label">Total Egresos del Mes</div><div class="card-valor" id="eg-total">$0</div><div class="card-sub" id="eg-total-sub">—</div></div>
+  </div>
+
+  <div class="section-title" style="margin-bottom:14px">➕ Registrar egreso</div>
+  <div class="tabla-wrap" style="padding:20px">
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Tipo</label>
+        <select id="eg_tipo" onchange="actualizarCategorias()">
+          <option value="fijo">Gasto fijo</option>
+          <option value="varios">Gasto varios</option>
+        </select>
+      </div>
+      <div class="form-group" id="eg_cat_group">
+        <label>Categoría</label>
+        <select id="eg_categoria">
+          <option>Monotributo</option>
+          <option>Seguro</option>
+          <option>Mutual</option>
+          <option>Marketing</option>
+          <option>ChatGPT</option>
+          <option>Claude</option>
+          <option>Otro</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Concepto / Detalle</label>
+        <input type="text" id="eg_concepto" placeholder="Ej: Seguro camioneta, cuota club...">
+      </div>
+      <div class="form-group">
+        <label>Monto</label>
+        <input type="number" id="eg_monto" placeholder="Ej: 15000">
+      </div>
+      <div class="form-group">
+        <label>Fecha</label>
+        <input type="date" id="eg_fecha">
+      </div>
+      <div class="form-group">
+        <label>Cuenta de pago</label>
+        <select id="eg_cuenta">
+          <option value="mp">Mercado Pago</option>
+          <option value="banco">Banco</option>
+          <option value="efectivo">Efectivo</option>
+        </select>
+      </div>
+    </div>
+    <button class="btn" onclick="registrarEgreso()">Registrar egreso</button>
+  </div>
+
+  <div class="section-title" style="margin:20px 0 12px">📋 Historial de egresos</div>
+  <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+    <button class="btn secundario" style="font-size:12px" onclick="filtrarEgresos('todos')">Todos</button>
+    <button class="btn secundario" style="font-size:12px" onclick="filtrarEgresos('fijo')">Solo fijos</button>
+    <button class="btn secundario" style="font-size:12px" onclick="filtrarEgresos('varios')">Solo varios</button>
+    <button class="btn secundario" style="font-size:12px" onclick="descargarCSV('egresos.csv',csvEgresos())">⬇ CSV</button>
+  </div>
+  <div class="tabla-wrap">
+    <div class="tabla-scroll">
+    <table>
+      <thead><tr><th>Fecha</th><th>Tipo</th><th>Categoría</th><th>Concepto</th><th>Monto</th><th>Cuenta</th><th></th></tr></thead>
+      <tbody id="tbodyEgresos"><tr><td colspan="7" style="color:#bbb;text-align:center;padding:16px">Sin egresos registrados</td></tr></tbody>
+    </table>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════ FINANZAS -->
+<div class="panel" id="panel-finanzas">
+  <div class="section-header">
+    <div class="section-title">Finanzas <small>Cuentas · Transferencias · Inversiones</small></div>
+  </div>
+
+  <!-- SALDOS DE CUENTAS -->
+  <div class="section-title" style="margin-bottom:12px">💳 Saldos de cuentas</div>
+  <div class="cards-grid" style="margin-bottom:8px">
+    <div class="card">
+      <div class="card-label">Mercado Pago</div>
+      <div class="card-valor" id="saldo-mp">$0</div>
+      <button class="btn secundario" style="font-size:11px;padding:4px 10px;margin-top:8px" onclick="editarCuenta('mp')">✏ Actualizar</button>
+    </div>
+    <div class="card azul">
+      <div class="card-label">Banco</div>
+      <div class="card-valor" id="saldo-banco">$0</div>
+      <button class="btn secundario" style="font-size:11px;padding:4px 10px;margin-top:8px" onclick="editarCuenta('banco')">✏ Actualizar</button>
+    </div>
+    <div class="card tierra">
+      <div class="card-label">Efectivo</div>
+      <div class="card-valor" id="saldo-efectivo">$0</div>
+      <button class="btn secundario" style="font-size:11px;padding:4px 10px;margin-top:8px" onclick="editarCuenta('efectivo')">✏ Actualizar</button>
+    </div>
+  </div>
+  <div id="formEditarCuenta" style="display:none;margin-bottom:20px">
+    <div class="tabla-wrap" style="padding:16px 20px">
+      <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+        <div class="form-group" style="flex:1;min-width:160px">
+          <label id="editarCuentaLabel">Nuevo saldo</label>
+          <input type="number" id="editarCuentaMonto" placeholder="Nuevo saldo">
+        </div>
+        <button class="btn" onclick="guardarCuenta()">Guardar</button>
+        <button class="btn secundario" onclick="document.getElementById('formEditarCuenta').style.display='none'">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="sep"></div>
+
+  <!-- TRANSFERENCIA ENTRE CUENTAS -->
+  <div class="section-title" style="margin-bottom:12px">🔄 Transferencia entre cuentas</div>
+  <div class="tabla-wrap" style="padding:20px;margin-bottom:20px">
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Desde</label>
+        <select id="tr_de">
+          <option value="mp">Mercado Pago</option>
+          <option value="banco">Banco</option>
+          <option value="efectivo">Efectivo</option>
+          <option value="cocos">COCOS Capital</option>
+          <option value="servente">Servente & Cía</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Hacia</label>
+        <select id="tr_para">
+          <option value="banco">Banco</option>
+          <option value="mp">Mercado Pago</option>
+          <option value="efectivo">Efectivo</option>
+          <option value="cocos">COCOS Capital</option>
+          <option value="servente">Servente & Cía</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Monto</label>
+        <input type="number" id="tr_monto" placeholder="Ej: 50000">
+      </div>
+      <div class="form-group">
+        <label>Fecha</label>
+        <input type="date" id="tr_fecha">
+      </div>
+      <div class="form-group">
+        <label>Nota</label>
+        <input type="text" id="tr_nota" placeholder="Ej: paso a banco para pagar proveedor">
+      </div>
+    </div>
+    <button class="btn" onclick="registrarTransferencia()">Registrar transferencia</button>
+  </div>
+  <div class="tabla-wrap" style="margin-bottom:24px">
+    <div class="tabla-scroll">
+    <table>
+      <thead><tr><th>Fecha</th><th>Desde</th><th>Hacia</th><th>Monto</th><th>Nota</th><th></th></tr></thead>
+      <tbody id="tbodyTransferencias"><tr><td colspan="6" style="color:#bbb;text-align:center;padding:16px">Sin transferencias registradas</td></tr></tbody>
+    </table>
+    </div>
+  </div>
+
+  <div class="sep"></div>
+
+  <!-- INVERSIONES -->
+  <div class="section-title" style="margin-bottom:12px">📈 Inversiones</div>
+  <div class="cards-grid" style="margin-bottom:16px">
+    <div class="card azul">
+      <div class="card-label">COCOS Capital</div>
+      <div class="card-valor" id="inv-cocos">$0</div>
+      <button class="btn secundario" style="font-size:11px;padding:4px 10px;margin-top:8px" onclick="movimientoInversion('cocos')">+ / - Movimiento</button>
+    </div>
+    <div class="card azul">
+      <div class="card-label">Servente & Cía</div>
+      <div class="card-valor" id="inv-servente">$0</div>
+      <button class="btn secundario" style="font-size:11px;padding:4px 10px;margin-top:8px" onclick="movimientoInversion('servente')">+ / - Movimiento</button>
+    </div>
+    <div class="card tierra">
+      <div class="card-label">USD · Precio actual</div>
+      <div class="card-valor" id="inv-usd-precio">$0</div>
+      <div class="card-sub" id="inv-usd-cantidad">0 USD</div>
+      <button class="btn secundario" style="font-size:11px;padding:4px 10px;margin-top:8px" onclick="editarUSD()">✏ Actualizar</button>
+    </div>
+    <div class="card verde" style="--card-color:var(--verde-vivo)">
+      <div class="card-label">Valor total USD (ARS)</div>
+      <div class="card-valor" id="inv-usd-total">$0</div>
+      <div class="card-sub" id="inv-usd-total-sub">—</div>
+    </div>
+  </div>
+
+  <div id="formInversion" style="display:none;margin-bottom:20px">
+    <div class="tabla-wrap" style="padding:16px 20px">
+      <div class="section-title" style="margin-bottom:12px;font-size:15px" id="formInversionTitulo">Movimiento</div>
+      <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+        <div class="form-group" style="flex:1;min-width:130px">
+          <label>Tipo</label>
+          <select id="inv_tipo"><option value="entrada">+ Ingreso</option><option value="salida">- Retiro</option></select>
+        </div>
+        <div class="form-group" style="flex:1;min-width:130px">
+          <label>Monto (ARS)</label>
+          <input type="number" id="inv_monto" placeholder="Ej: 100000">
+        </div>
+        <div class="form-group" style="flex:1;min-width:130px">
+          <label>Fecha</label>
+          <input type="date" id="inv_fecha">
+        </div>
+        <button class="btn" onclick="confirmarMovimientoInversion()">Confirmar</button>
+        <button class="btn secundario" onclick="document.getElementById('formInversion').style.display='none'">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="formUSD" style="display:none;margin-bottom:20px">
+    <div class="tabla-wrap" style="padding:16px 20px">
+      <div class="section-title" style="margin-bottom:12px;font-size:15px">Actualizar USD</div>
+      <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+        <div class="form-group" style="flex:1;min-width:130px">
+          <label>Precio del dólar (ARS)</label>
+          <input type="number" id="usd_precio" placeholder="Ej: 1200">
+        </div>
+        <div class="form-group" style="flex:1;min-width:130px">
+          <label>Cantidad de USD</label>
+          <input type="number" id="usd_cantidad" placeholder="Ej: 200" step="0.01">
+        </div>
+        <button class="btn" onclick="guardarUSD()">Guardar</button>
+        <button class="btn secundario" onclick="document.getElementById('formUSD').style.display='none'">Cancelar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ══════════════════════════════════════════════════════ MOVIMIENTOS -->
 <div class="panel" id="panel-movimientos">
   <div class="section-header">
@@ -1206,22 +1440,36 @@
 
 <script>
 // ── ESTADO GLOBAL ──────────────────────────────────────
+const CUENTAS_DEFAULT = { mp: 568600, banco: 7910, efectivo: 512300 };
+const INVERSIONES_DEFAULT = { cocos: 0, servente: 0, usd: { cantidad: 200, precio: 0 } };
+
 function cargarState() {
   try {
     return {
-      prospectos:   JSON.parse(localStorage.getItem('j2_prospectos')   || '[]'),
-      turnos:       JSON.parse(localStorage.getItem('j2_turnos')       || '[]'),
-      cobrosHoy:    JSON.parse(localStorage.getItem('j2_cobros')       || '[]'),
-      listaEspera:  JSON.parse(localStorage.getItem('j2_listaespera')  || '[]'),
+      prospectos:     JSON.parse(localStorage.getItem('j2_prospectos')     || '[]'),
+      turnos:         JSON.parse(localStorage.getItem('j2_turnos')         || '[]'),
+      cobrosHoy:      JSON.parse(localStorage.getItem('j2_cobros')         || '[]'),
+      listaEspera:    JSON.parse(localStorage.getItem('j2_listaespera')    || '[]'),
+      egresos:        JSON.parse(localStorage.getItem('j2_egresos')        || '[]'),
+      transferencias: JSON.parse(localStorage.getItem('j2_transferencias') || '[]'),
+      cuentas:        JSON.parse(localStorage.getItem('j2_cuentas')        || JSON.stringify(CUENTAS_DEFAULT)),
+      inversiones:    JSON.parse(localStorage.getItem('j2_inversiones')    || JSON.stringify(INVERSIONES_DEFAULT)),
     };
-  } catch(e) { return { prospectos:[], turnos:[], cobrosHoy:[], listaEspera:[] }; }
+  } catch(e) {
+    return { prospectos:[], turnos:[], cobrosHoy:[], listaEspera:[], egresos:[], transferencias:[],
+             cuentas: CUENTAS_DEFAULT, inversiones: INVERSIONES_DEFAULT };
+  }
 }
 function guardarState() {
   try {
-    localStorage.setItem('j2_prospectos',  JSON.stringify(state.prospectos));
-    localStorage.setItem('j2_turnos',      JSON.stringify(state.turnos));
-    localStorage.setItem('j2_cobros',      JSON.stringify(state.cobrosHoy));
-    localStorage.setItem('j2_listaespera', JSON.stringify(state.listaEspera));
+    localStorage.setItem('j2_prospectos',     JSON.stringify(state.prospectos));
+    localStorage.setItem('j2_turnos',         JSON.stringify(state.turnos));
+    localStorage.setItem('j2_cobros',         JSON.stringify(state.cobrosHoy));
+    localStorage.setItem('j2_listaespera',    JSON.stringify(state.listaEspera));
+    localStorage.setItem('j2_egresos',        JSON.stringify(state.egresos));
+    localStorage.setItem('j2_transferencias', JSON.stringify(state.transferencias));
+    localStorage.setItem('j2_cuentas',        JSON.stringify(state.cuentas));
+    localStorage.setItem('j2_inversiones',    JSON.stringify(state.inversiones));
   } catch(e) {}
 }
 const state = cargarState();
@@ -1286,6 +1534,12 @@ document.addEventListener('DOMContentLoaded', () => {
   renderListaEspera();
   renderAlertasDinamicas();
   renderCobrosPanel();
+  renderResumenCards();
+
+  const hoyStr = new Date().toISOString().split('T')[0];
+  document.getElementById('eg_fecha').value = hoyStr;
+  document.getElementById('tr_fecha').value = hoyStr;
+  document.getElementById('inv_fecha').value = hoyStr;
 });
 
 // ── NAVEGACIÓN ─────────────────────────────────────────
@@ -1297,6 +1551,8 @@ function cambiarPanel(id, btn) {
   if (id === 'movimientos') renderMovimientos();
   if (id === 'espera') renderListaEspera();
   if (id === 'cobros') renderCobrosPanel();
+  if (id === 'egresos') renderEgresos('todos');
+  if (id === 'finanzas') renderFinanzas();
 }
 
 // ── DATOS BASE CLIENTES ────────────────────────────────
@@ -2234,6 +2490,278 @@ function exportarDeudas() {
     ['',''],['Proveedor','Saldo pendiente'],
     ['El Sol','5000'],['Marquez','16000'],['Pelegrini','30000'],['Vertice','100000']];
   descargarCSV('deudas.csv', filas.map(r => r.map(v=>`"${v}"`).join(',')).join('\n'));
+}
+
+// ── RESUMEN CARDS DINÁMICAS ────────────────────────────
+function mesClave() {
+  const h = new Date();
+  return `${h.getFullYear()}-${String(h.getMonth()+1).padStart(2,'0')}`;
+}
+
+function renderResumenCards() {
+  // Caja líquida
+  const c = state.cuentas;
+  const totalCaja = (c.mp||0) + (c.banco||0) + (c.efectivo||0);
+  const cEl = document.getElementById('res-caja');
+  const cSub = document.getElementById('res-caja-sub');
+  if (cEl) cEl.textContent = '$' + totalCaja.toLocaleString('es-AR');
+  if (cSub) cSub.textContent = `MP $${(c.mp||0).toLocaleString('es-AR')} · Banco $${(c.banco||0).toLocaleString('es-AR')} · Efectivo $${(c.efectivo||0).toLocaleString('es-AR')}`;
+
+  // Cuentas por cobrar
+  const deudaTotal = clientes.reduce((s,cl) => s + (cl.deuda||0), 0);
+  const conDeuda = clientes.filter(cl => cl.deuda > 0);
+  const cobEl = document.getElementById('res-cobrar');
+  const cobSub = document.getElementById('res-cobrar-sub');
+  if (cobEl) cobEl.textContent = '$' + deudaTotal.toLocaleString('es-AR');
+  if (cobSub) cobSub.textContent = conDeuda.map(cl => cl.nombre.split(' ')[0] + ' $' + cl.deuda.toLocaleString('es-AR')).join(' · ') || 'Sin deudas';
+
+  // Gastos fijos del mes
+  const mc = mesClave();
+  const fijosMes = state.egresos.filter(e => e.tipo === 'fijo' && e.fecha && e.fecha.startsWith(mc));
+  const totalFijos = fijosMes.reduce((s,e) => s + e.monto, 0);
+  const gEl = document.getElementById('res-gastos');
+  const gSub = document.getElementById('res-gastos-sub');
+  if (gEl) gEl.textContent = '$' + totalFijos.toLocaleString('es-AR');
+  if (gSub) gSub.textContent = fijosMes.length ? fijosMes.map(e => e.categoria).join(' · ') : 'Sin gastos fijos';
+
+  // Gastos varios del mes
+  const variosMes = state.egresos.filter(e => e.tipo === 'varios' && e.fecha && e.fecha.startsWith(mc));
+  const totalVarios = variosMes.reduce((s,e) => s + e.monto, 0);
+  const vEl = document.getElementById('res-varios');
+  const vSub = document.getElementById('res-varios-sub');
+  if (vEl) vEl.textContent = '$' + totalVarios.toLocaleString('es-AR');
+  if (vSub) vSub.textContent = variosMes.length ? `${variosMes.length} concepto${variosMes.length>1?'s':''}` : 'Sin gastos varios';
+}
+
+// ── EGRESOS ────────────────────────────────────────────
+const NOMBRES_CUENTA = { mp:'Mercado Pago', banco:'Banco', efectivo:'Efectivo', cocos:'COCOS Capital', servente:'Servente & Cía' };
+
+function actualizarCategorias() {
+  const tipo = document.getElementById('eg_tipo').value;
+  const g = document.getElementById('eg_cat_group');
+  if (g) g.style.display = tipo === 'fijo' ? 'block' : 'none';
+}
+
+function registrarEgreso() {
+  const tipo     = document.getElementById('eg_tipo').value;
+  const cat      = tipo === 'fijo' ? document.getElementById('eg_categoria').value : 'Varios';
+  const concepto = document.getElementById('eg_concepto').value.trim();
+  const monto    = parseInt(document.getElementById('eg_monto').value);
+  const fecha    = document.getElementById('eg_fecha').value;
+  const cuenta   = document.getElementById('eg_cuenta').value;
+
+  if (!monto || monto <= 0) { mostrarToast('⚠ Ingresá un monto válido'); return; }
+  if (!fecha) { mostrarToast('⚠ Elegí una fecha'); return; }
+
+  state.egresos.push({ id:'eg_'+Date.now(), fecha, tipo, categoria: cat, concepto: concepto||cat, monto, cuenta });
+
+  // Descontar de la cuenta correspondiente
+  if (state.cuentas[cuenta] !== undefined) {
+    state.cuentas[cuenta] = Math.max(0, (state.cuentas[cuenta]||0) - monto);
+  }
+
+  guardarState();
+  renderEgresos('todos');
+  renderResumenCards();
+  renderFinanzas();
+  document.getElementById('eg_concepto').value = '';
+  document.getElementById('eg_monto').value = '';
+  mostrarToast('✓ Egreso registrado');
+}
+
+let filtroEgresosActual = 'todos';
+function filtrarEgresos(tipo) {
+  filtroEgresosActual = tipo;
+  renderEgresos(tipo);
+}
+
+function renderEgresos(filtro) {
+  filtroEgresosActual = filtro || filtroEgresosActual;
+  const mc = mesClave();
+
+  // Cards del panel
+  const fijos  = state.egresos.filter(e => e.tipo==='fijo'   && e.fecha && e.fecha.startsWith(mc));
+  const varios = state.egresos.filter(e => e.tipo==='varios'  && e.fecha && e.fecha.startsWith(mc));
+  const tf = fijos.reduce((s,e)=>s+e.monto,0);
+  const tv = varios.reduce((s,e)=>s+e.monto,0);
+  const setT = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
+  setT('eg-fijos',  '$'+tf.toLocaleString('es-AR'));
+  setT('eg-varios', '$'+tv.toLocaleString('es-AR'));
+  setT('eg-total',  '$'+(tf+tv).toLocaleString('es-AR'));
+  setT('eg-fijos-sub',  fijos.length  ? fijos.map(e=>e.categoria).join(' · ')  : '—');
+  setT('eg-varios-sub', varios.length ? varios.length+' concepto'+(varios.length>1?'s':'') : '—');
+  setT('eg-total-sub',  (fijos.length+varios.length)+' registro'+(fijos.length+varios.length!==1?'s':''));
+
+  // Tabla historial
+  const tbody = document.getElementById('tbodyEgresos');
+  if (!tbody) return;
+  let lista = [...state.egresos].sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
+  if (filtroEgresosActual !== 'todos') lista = lista.filter(e=>e.tipo===filtroEgresosActual);
+
+  tbody.innerHTML = lista.length ? lista.map(e=>`
+    <tr>
+      <td style="font-family:'DM Mono',monospace;font-size:12px">${e.fecha}</td>
+      <td><span class="badge ${e.tipo==='fijo'?'info':'pendiente'}">${e.tipo==='fijo'?'Fijo':'Varios'}</span></td>
+      <td>${e.categoria}</td>
+      <td>${e.concepto}</td>
+      <td style="font-family:'DM Mono',monospace;font-weight:600;color:var(--rojo)">-$${e.monto.toLocaleString('es-AR')}</td>
+      <td>${NOMBRES_CUENTA[e.cuenta]||e.cuenta}</td>
+      <td><button onclick="eliminarEgreso('${e.id}')" style="background:none;border:1px solid rgba(192,57,43,0.3);border-radius:6px;cursor:pointer;font-size:12px;padding:3px 8px;color:var(--rojo)">🗑</button></td>
+    </tr>`).join('')
+  : `<tr><td colspan="7" style="color:#bbb;text-align:center;padding:16px">Sin egresos registrados</td></tr>`;
+}
+
+function eliminarEgreso(id) {
+  const e = state.egresos.find(x=>x.id===id);
+  if (!e) return;
+  if (!confirm(`¿Eliminar egreso de $${e.monto.toLocaleString('es-AR')} (${e.concepto})?`)) return;
+  // Devolver el monto a la cuenta
+  if (state.cuentas[e.cuenta] !== undefined) state.cuentas[e.cuenta] += e.monto;
+  state.egresos = state.egresos.filter(x=>x.id!==id);
+  guardarState();
+  renderEgresos(filtroEgresosActual);
+  renderResumenCards();
+  renderFinanzas();
+  mostrarToast('Egreso eliminado');
+}
+
+function csvEgresos() {
+  const filas=[['Fecha','Tipo','Categoría','Concepto','Monto','Cuenta']];
+  state.egresos.forEach(e=>filas.push([e.fecha,e.tipo,e.categoria,e.concepto,e.monto,NOMBRES_CUENTA[e.cuenta]||e.cuenta]));
+  return filas.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+}
+
+// ── FINANZAS ───────────────────────────────────────────
+let cuentaEditando = null;
+
+function renderFinanzas() {
+  const c = state.cuentas;
+  const inv = state.inversiones;
+  const setT = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
+
+  setT('saldo-mp',      '$'+(c.mp||0).toLocaleString('es-AR'));
+  setT('saldo-banco',   '$'+(c.banco||0).toLocaleString('es-AR'));
+  setT('saldo-efectivo','$'+(c.efectivo||0).toLocaleString('es-AR'));
+  setT('inv-cocos',     '$'+(inv.cocos||0).toLocaleString('es-AR'));
+  setT('inv-servente',  '$'+(inv.servente||0).toLocaleString('es-AR'));
+  setT('inv-usd-precio','$'+(inv.usd?.precio||0).toLocaleString('es-AR'));
+  setT('inv-usd-cantidad', (inv.usd?.cantidad||0)+' USD');
+  const totalUSD = (inv.usd?.cantidad||0) * (inv.usd?.precio||0);
+  setT('inv-usd-total', '$'+totalUSD.toLocaleString('es-AR'));
+  setT('inv-usd-total-sub', `${inv.usd?.cantidad||0} USD × $${(inv.usd?.precio||0).toLocaleString('es-AR')}`);
+
+  // Transferencias
+  const tbody = document.getElementById('tbodyTransferencias');
+  if (tbody) {
+    const lista = [...state.transferencias].sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
+    tbody.innerHTML = lista.length ? lista.map(t=>`
+      <tr>
+        <td style="font-family:'DM Mono',monospace;font-size:12px">${t.fecha}</td>
+        <td>${NOMBRES_CUENTA[t.de]||t.de}</td>
+        <td>${NOMBRES_CUENTA[t.para]||t.para}</td>
+        <td style="font-family:'DM Mono',monospace;font-weight:600">$${t.monto.toLocaleString('es-AR')}</td>
+        <td style="font-size:12px;color:#666">${t.nota||'—'}</td>
+        <td><button onclick="eliminarTransferencia('${t.id}')" style="background:none;border:1px solid rgba(192,57,43,0.3);border-radius:6px;cursor:pointer;font-size:12px;padding:3px 8px;color:var(--rojo)">🗑</button></td>
+      </tr>`).join('')
+    : `<tr><td colspan="6" style="color:#bbb;text-align:center;padding:16px">Sin transferencias registradas</td></tr>`;
+  }
+}
+
+function editarCuenta(cual) {
+  cuentaEditando = cual;
+  const nombres = { mp:'Mercado Pago', banco:'Banco', efectivo:'Efectivo' };
+  document.getElementById('editarCuentaLabel').textContent = 'Nuevo saldo — ' + nombres[cual];
+  document.getElementById('editarCuentaMonto').value = state.cuentas[cual] || 0;
+  document.getElementById('formEditarCuenta').style.display = 'block';
+}
+
+function guardarCuenta() {
+  const monto = parseInt(document.getElementById('editarCuentaMonto').value);
+  if (isNaN(monto)) { mostrarToast('⚠ Ingresá un monto válido'); return; }
+  state.cuentas[cuentaEditando] = monto;
+  guardarState();
+  renderFinanzas();
+  renderResumenCards();
+  document.getElementById('formEditarCuenta').style.display = 'none';
+  mostrarToast('✓ Saldo actualizado');
+}
+
+function registrarTransferencia() {
+  const de    = document.getElementById('tr_de').value;
+  const para  = document.getElementById('tr_para').value;
+  const monto = parseInt(document.getElementById('tr_monto').value);
+  const fecha = document.getElementById('tr_fecha').value;
+  const nota  = document.getElementById('tr_nota').value.trim();
+
+  if (de === para) { mostrarToast('⚠ La cuenta origen y destino no pueden ser la misma'); return; }
+  if (!monto || monto <= 0) { mostrarToast('⚠ Ingresá un monto válido'); return; }
+
+  // Mover saldo entre cuentas si aplica
+  if (state.cuentas[de] !== undefined)   state.cuentas[de]   = Math.max(0, (state.cuentas[de]||0) - monto);
+  if (state.cuentas[para] !== undefined) state.cuentas[para] = (state.cuentas[para]||0) + monto;
+  // Inversiones
+  if (de === 'cocos')    state.inversiones.cocos    = Math.max(0, (state.inversiones.cocos||0) - monto);
+  if (de === 'servente') state.inversiones.servente = Math.max(0, (state.inversiones.servente||0) - monto);
+  if (para === 'cocos')    state.inversiones.cocos    = (state.inversiones.cocos||0) + monto;
+  if (para === 'servente') state.inversiones.servente = (state.inversiones.servente||0) + monto;
+
+  state.transferencias.push({ id:'tr_'+Date.now(), fecha, de, para, monto, nota });
+  guardarState();
+  renderFinanzas();
+  renderResumenCards();
+  document.getElementById('tr_monto').value = '';
+  document.getElementById('tr_nota').value  = '';
+  mostrarToast('✓ Transferencia registrada');
+}
+
+function eliminarTransferencia(id) {
+  state.transferencias = state.transferencias.filter(t=>t.id!==id);
+  guardarState();
+  renderFinanzas();
+  mostrarToast('Transferencia eliminada');
+}
+
+let invEditando = null;
+function movimientoInversion(cual) {
+  invEditando = cual;
+  const nombres = { cocos:'COCOS Capital', servente:'Servente & Cía' };
+  document.getElementById('formInversionTitulo').textContent = 'Movimiento — ' + nombres[cual];
+  document.getElementById('formInversion').style.display = 'block';
+  document.getElementById('formUSD').style.display = 'none';
+}
+
+function confirmarMovimientoInversion() {
+  const tipo  = document.getElementById('inv_tipo').value;
+  const monto = parseInt(document.getElementById('inv_monto').value);
+  if (!monto || monto <= 0) { mostrarToast('⚠ Ingresá un monto válido'); return; }
+  if (tipo === 'entrada') state.inversiones[invEditando] = (state.inversiones[invEditando]||0) + monto;
+  else                    state.inversiones[invEditando] = Math.max(0, (state.inversiones[invEditando]||0) - monto);
+  guardarState();
+  renderFinanzas();
+  renderResumenCards();
+  document.getElementById('formInversion').style.display = 'none';
+  document.getElementById('inv_monto').value = '';
+  mostrarToast('✓ Inversión actualizada');
+}
+
+function editarUSD() {
+  const usd = state.inversiones.usd || {};
+  document.getElementById('usd_precio').value   = usd.precio   || '';
+  document.getElementById('usd_cantidad').value = usd.cantidad || 200;
+  document.getElementById('formUSD').style.display = 'block';
+  document.getElementById('formInversion').style.display = 'none';
+}
+
+function guardarUSD() {
+  const precio   = parseFloat(document.getElementById('usd_precio').value);
+  const cantidad = parseFloat(document.getElementById('usd_cantidad').value);
+  if (isNaN(precio) || isNaN(cantidad)) { mostrarToast('⚠ Ingresá valores válidos'); return; }
+  state.inversiones.usd = { precio, cantidad };
+  guardarState();
+  renderFinanzas();
+  renderResumenCards();
+  document.getElementById('formUSD').style.display = 'none';
+  mostrarToast('✓ USD actualizado');
 }
 
 // ── COBROS PANEL ───────────────────────────────────────
