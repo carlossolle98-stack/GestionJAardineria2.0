@@ -1063,6 +1063,21 @@
         <input type="number" id="c_monto" placeholder="Ej: 45000">
       </div>
       <div class="form-group">
+        <label>Duración (horas)</label>
+        <select id="c_horas">
+          <option value="">— no registrar —</option>
+          <option value="0.5">30 minutos</option>
+          <option value="1">1 hora</option>
+          <option value="1.5">1.5 horas</option>
+          <option value="2">2 horas</option>
+          <option value="2.5">2.5 horas</option>
+          <option value="3">3 horas</option>
+          <option value="4">4 horas (medio día)</option>
+          <option value="6">6 horas</option>
+          <option value="8">8 horas (día completo)</option>
+        </select>
+      </div>
+      <div class="form-group">
         <label>Fecha</label>
         <input type="date" id="c_fecha">
       </div>
@@ -2286,9 +2301,10 @@ function registrarCobro() {
   const fecha = document.getElementById('c_fecha').value;
   const medio = document.getElementById('c_medio').value;
   const tipo  = document.getElementById('c_tipo').value;
+  const horas = parseFloat(document.getElementById('c_horas').value) || 0;
 
   // Guardar en lista "cargado hoy"
-  state.cobrosHoy.push({ cliente: clienteNombre, monto: parseInt(monto), fecha, medio, tipo });
+  state.cobrosHoy.push({ cliente: clienteNombre, monto: parseInt(monto), fecha, medio, tipo, horas });
   guardarState();
 
   // Guardar también en el historial del cliente (aparece en su ficha)
@@ -2297,7 +2313,7 @@ function registrarCobro() {
     id: 'p_' + Date.now(),
     fecha,
     monto: parseInt(monto),
-    horas: 0
+    horas
   });
   guardarHistorial();
 
@@ -2311,6 +2327,7 @@ function registrarCobro() {
   renderClientes();
   sel.value = '';
   document.getElementById('c_monto').value = '';
+  document.getElementById('c_horas').value = '';
   mostrarToast('✓ Cobro registrado y vinculado al cliente');
 }
 
