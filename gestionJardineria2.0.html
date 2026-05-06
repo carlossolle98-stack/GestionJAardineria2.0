@@ -567,6 +567,11 @@
       <div class="card-valor" id="res-varios">$0</div>
       <div class="card-sub" id="res-varios-sub">Sin gastos varios</div>
     </div>
+    <div class="card azul">
+      <div class="card-label">Inversiones</div>
+      <div class="card-valor" id="res-inversiones">$0</div>
+      <div class="card-sub" id="res-inversiones-sub">COCOS · Servente · USD</div>
+    </div>
   </div>
 
   <div class="section-header">
@@ -2637,6 +2642,17 @@ function renderResumenCards() {
   const vSub = document.getElementById('res-varios-sub');
   if (vEl) vEl.textContent = '$' + totalVarios.toLocaleString('es-AR');
   if (vSub) vSub.textContent = variosMes.length ? `${variosMes.length} concepto${variosMes.length>1?'s':''}` : 'Sin gastos varios';
+
+  // Inversiones
+  const inv = state.inversiones;
+  const totalCocos = inv.cocos || 0;
+  const totalServente = inv.servente || 0;
+  const totalUSD = (inv.usd?.cantidad || 0) * (inv.usd?.precio || 0);
+  const totalInv = totalCocos + totalServente + totalUSD;
+  const invEl = document.getElementById('res-inversiones');
+  const invSub = document.getElementById('res-inversiones-sub');
+  if (invEl) invEl.textContent = '$' + totalInv.toLocaleString('es-AR');
+  if (invSub) invSub.textContent = `COCOS $${totalCocos.toLocaleString('es-AR')} · Servente $${totalServente.toLocaleString('es-AR')} · USD $${totalUSD.toLocaleString('es-AR')}`;
 
   renderUltimos6Meses();
 }
