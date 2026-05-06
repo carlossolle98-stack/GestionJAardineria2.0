@@ -2301,6 +2301,12 @@ function registrarCobro() {
   });
   guardarHistorial();
 
+  // Sumar a la cuenta correspondiente
+  const cuentaKeyC = medioACuenta(medio);
+  state.cuentas[cuentaKeyC] = (state.cuentas[cuentaKeyC]||0) + parseInt(monto);
+  guardarState();
+  renderResumenCards();
+
   renderCobrosHoy();
   renderClientes();
   sel.value = '';
@@ -2490,6 +2496,15 @@ function exportarDeudas() {
     ['',''],['Proveedor','Saldo pendiente'],
     ['El Sol','5000'],['Marquez','16000'],['Pelegrini','30000'],['Vertice','100000']];
   descargarCSV('deudas.csv', filas.map(r => r.map(v=>`"${v}"`).join(',')).join('\n'));
+}
+
+// ── HELPERS ────────────────────────────────────────────
+function medioACuenta(medio) {
+  if (!medio) return 'efectivo';
+  const m = medio.toLowerCase();
+  if (m.includes('mercado') || m.includes('mp')) return 'mp';
+  if (m.includes('banco') || m.includes('transfer')) return 'banco';
+  return 'efectivo';
 }
 
 // ── RESUMEN CARDS DINÁMICAS ────────────────────────────
@@ -2858,7 +2873,12 @@ function confirmarCobroPendiente(clienteId) {
 
   // Guardar también en historial general de cobros
   state.cobrosHoy.push({ cliente: c.nombre, monto, fecha, medio, tipo: 'Cobro deuda anterior' });
+
+  // Sumar a la cuenta correspondiente
+  const cuentaKeyP = medioACuenta(medio);
+  state.cuentas[cuentaKeyP] = (state.cuentas[cuentaKeyP]||0) + monto;
   guardarState();
+  renderResumenCards();
 
   renderCobrosPanel();
   renderClientes();
