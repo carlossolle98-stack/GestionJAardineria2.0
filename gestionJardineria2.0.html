@@ -1171,7 +1171,7 @@
 <!-- ══════════════════════════════════════════════════════ EGRESOS -->
 <div class="panel" id="panel-egresos">
   <div class="section-header">
-    <div class="section-title">Egresos <small>Gastos fijos y varios</small></div>
+    <div class="section-title">Egresos <small>Gastos fijos, mercadería y más</small></div>
   </div>
 
   <div class="cards-grid">
@@ -1188,6 +1188,9 @@
         <select id="eg_tipo" onchange="actualizarCategorias()">
           <option value="fijo">Gasto fijo</option>
           <option value="varios">Gasto varios</option>
+          <option value="mercaderia">Compra / Mercadería</option>
+          <option value="inventario">Diferencia de inventario</option>
+          <option value="bancario">Mov. bancario negativo</option>
         </select>
       </div>
       <div class="form-group" id="eg_cat_group">
@@ -1229,8 +1232,11 @@
   <div class="section-title" style="margin:20px 0 12px">📋 Historial de egresos</div>
   <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
     <button class="btn secundario" style="font-size:12px" onclick="filtrarEgresos('todos')">Todos</button>
-    <button class="btn secundario" style="font-size:12px" onclick="filtrarEgresos('fijo')">Solo fijos</button>
-    <button class="btn secundario" style="font-size:12px" onclick="filtrarEgresos('varios')">Solo varios</button>
+    <button class="btn secundario" style="font-size:12px" onclick="filtrarEgresos('fijo')">Fijos</button>
+    <button class="btn secundario" style="font-size:12px" onclick="filtrarEgresos('varios')">Varios</button>
+    <button class="btn secundario" style="font-size:12px" onclick="filtrarEgresos('mercaderia')">Mercadería</button>
+    <button class="btn secundario" style="font-size:12px" onclick="filtrarEgresos('inventario')">Inventario</button>
+    <button class="btn secundario" style="font-size:12px" onclick="filtrarEgresos('bancario')">Bancario</button>
     <button class="btn secundario" style="font-size:12px" onclick="descargarCSV('egresos.csv',csvEgresos())">⬇ CSV</button>
   </div>
   <div class="tabla-wrap">
@@ -2666,9 +2672,11 @@ function actualizarCategorias() {
   if (g) g.style.display = tipo === 'fijo' ? 'block' : 'none';
 }
 
+const LABEL_EGRESO = { fijo:'Fijo', varios:'Varios', mercaderia:'Mercadería', inventario:'Inv. diferencia', bancario:'Mov. bancario' };
+
 function registrarEgreso() {
   const tipo     = document.getElementById('eg_tipo').value;
-  const cat      = tipo === 'fijo' ? document.getElementById('eg_categoria').value : 'Varios';
+  const cat      = tipo === 'fijo' ? document.getElementById('eg_categoria').value : (LABEL_EGRESO[tipo] || 'Varios');
   const concepto = document.getElementById('eg_concepto').value.trim();
   const monto    = parseInt(document.getElementById('eg_monto').value);
   const fecha    = document.getElementById('eg_fecha').value;
@@ -2704,17 +2712,26 @@ function renderEgresos(filtro) {
   const mc = mesClave();
 
   // Cards del panel
-  const fijos  = state.egresos.filter(e => e.tipo==='fijo'   && e.fecha && e.fecha.startsWith(mc));
-  const varios = state.egresos.filter(e => e.tipo==='varios'  && e.fecha && e.fecha.startsWith(mc));
-  const tf = fijos.reduce((s,e)=>s+e.monto,0);
-  const tv = varios.reduce((s,e)=>s+e.monto,0);
+  const fijos      = state.egresos.filter(e => e.tipo==='fijo'        && e.fecha && e.fecha.startsWith(mc));
+  const varios     = state.egresos.filter(e => e.tipo==='varios'       && e.fecha && e.fecha.startsWith(mc));
+  const mercs      = state.egresos.filter(e => e.tipo==='mercaderia'   && e.fecha && e.fecha.startsWith(mc));
+  const invs       = state.egresos.filter(e => e.tipo==='inventario'   && e.fecha && e.fecha.startsWith(mc));
+  const bancs      = state.egresos.filter(e => e.tipo==='bancario'     && e.fecha && e.fecha.startsWith(mc));
+  const tf  = fijos.reduce((s,e)=>s+e.monto,0);
+  const tv  = varios.reduce((s,e)=>s+e.monto,0);
+  const tm  = mercs.reduce((s,e)=>s+e.monto,0);
+  const ti  = invs.reduce((s,e)=>s+e.monto,0);
+  const tb  = bancs.reduce((s,e)=>s+e.monto,0);
+  const total = tf + tv + tm + ti + tb;
+  const totalRegs = fijos.length + varios.length + mercs.length + invs.length + bancs.length;
   const setT = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
   setT('eg-fijos',  '$'+tf.toLocaleString('es-AR'));
   setT('eg-varios', '$'+tv.toLocaleString('es-AR'));
-  setT('eg-total',  '$'+(tf+tv).toLocaleString('es-AR'));
+  setT('eg-total',  '$'+total.toLocaleString('es-AR'));
   setT('eg-fijos-sub',  fijos.length  ? fijos.map(e=>e.categoria).join(' · ')  : '—');
-  setT('eg-varios-sub', varios.length ? varios.length+' concepto'+(varios.length>1?'s':'') : '—');
-  setT('eg-total-sub',  (fijos.length+varios.length)+' registro'+(fijos.length+varios.length!==1?'s':''));
+  const otrosLabel = [mercs.length&&`Merc. $${tm.toLocaleString('es-AR')}`, invs.length&&`Inv. $${ti.toLocaleString('es-AR')}`, bancs.length&&`Banc. $${tb.toLocaleString('es-AR')}`].filter(Boolean);
+  setT('eg-varios-sub', [varios.length&&`Varios $${tv.toLocaleString('es-AR')}`, ...otrosLabel].filter(Boolean).join(' · ') || '—');
+  setT('eg-total-sub',  totalRegs+' registro'+(totalRegs!==1?'s':''));
 
   // Tabla historial
   const tbody = document.getElementById('tbodyEgresos');
@@ -2725,7 +2742,7 @@ function renderEgresos(filtro) {
   tbody.innerHTML = lista.length ? lista.map(e=>`
     <tr>
       <td style="font-family:'DM Mono',monospace;font-size:12px">${e.fecha}</td>
-      <td><span class="badge ${e.tipo==='fijo'?'info':'pendiente'}">${e.tipo==='fijo'?'Fijo':'Varios'}</span></td>
+      <td><span class="badge ${{fijo:'info',varios:'pendiente',mercaderia:'cobrado',inventario:'amarillo',bancario:'gris'}[e.tipo]||'pendiente'}">${LABEL_EGRESO[e.tipo]||e.tipo}</span></td>
       <td>${e.categoria}</td>
       <td>${e.concepto}</td>
       <td style="font-family:'DM Mono',monospace;font-weight:600;color:var(--rojo)">-$${e.monto.toLocaleString('es-AR')}</td>
