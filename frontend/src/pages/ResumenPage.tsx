@@ -118,6 +118,19 @@ export function ResumenPage() {
   const patrimonioTotal = cajaLiquidaTotal + totalInv + totalDeudaPendiente;
   const meses = s.mesesHistoricos;
 
+  const MESES_NUM: Record<string, string> = {
+    enero: '01', febrero: '02', marzo: '03', abril: '04',
+    mayo: '05', junio: '06', julio: '07', agosto: '08',
+    septiembre: '09', octubre: '10', noviembre: '11', diciembre: '12',
+  };
+
+  function egresosLocalesDeMes(mesNombreEs: string, anio: number) {
+    const num = MESES_NUM[mesNombreEs.toLowerCase()];
+    if (!num) return null;
+    const clave = `${anio}-${num}`;
+    return j2.egresos.filter((e) => e.fecha.startsWith(clave)).reduce((s, e) => s + e.monto, 0);
+  }
+
   // Resultado del mes actual: ingresos del backend - todos los egresos locales del mes
   const totalEgresosMes = totalFijos + totalVarios;
   const resultadoMes = data.ingresosMes - totalEgresosMes;
@@ -176,7 +189,7 @@ export function ResumenPage() {
           <div className="card-label">Patrimonio Total</div>
           <div className="card-valor">{money(patrimonioTotal)}</div>
           <div className="card-sub">
-            Caja {money(cajaLiquidaTotal)} · Inv. {money(totalInv)} · C×C {money(data.cuentasPorCobrar.total)}
+            Caja {money(cajaLiquidaTotal)} · Inv. {money(totalInv)} · C×C {money(totalDeudaPendiente)}
           </div>
         </div>
       </div>
@@ -225,21 +238,20 @@ export function ResumenPage() {
               {meses.map((m, idx) => {
                 const isLast = idx === meses.length - 1;
                 const ing = isLast && m.estado?.toLowerCase().includes('curso') ? data.ingresosMes : m.ingresos;
-                const res = ing - m.egresos;
+                const egLocal = egresosLocalesDeMes(m.mes, m.anio);
+                const eg = egLocal !== null ? egLocal : m.egresos;
+                const res = ing - eg;
                 const urgente = m.estado?.toLowerCase().includes('curso');
                 return (
                   <tr key={`${m.mes}-${m.anio}`} className={urgente ? 'prioridad-alta' : undefined}>
-                    <td>
-                      <strong>{m.mes}</strong>
-                    </td>
+                    <td><strong>{m.mes}</strong></td>
                     <td>{m.anio}</td>
                     <td style={ing === 0 && urgente ? { color: 'var(--rojo)' } : undefined}>
                       {ing === 0 && urgente ? `${money(0)} (sin cargar)` : money(ing)}
                     </td>
-                    <td>{money(m.egresos)}</td>
+                    <td>{money(eg)}</td>
                     <td style={{ color: res >= 0 ? '#2e7d32' : 'var(--rojo)', fontWeight: 600 }}>
-                      {res >= 0 ? '+' : ''}
-                      {money(res)}
+                      {res >= 0 ? '+' : ''}{money(res)}
                     </td>
                     <td>
                       <span className={`badge ${urgente ? 'urgente' : 'ok'}`}>
