@@ -64,7 +64,7 @@ export function EgresosPage() {
       categoria: cat,
       concepto: concepto.trim() || cat,
       monto: m,
-      cuenta,
+      cuenta: tipo === 'inventario' ? 'efectivo' : cuenta,
     });
     setConcepto('');
     setMonto('');
