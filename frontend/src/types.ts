@@ -30,6 +30,7 @@ export type Turno = {
   hora: string;
   duracion: string;
   tipo: string;
+  realizado?: boolean;
 };
 
 export type CobroDiario = {
@@ -62,8 +63,49 @@ export type AppSettings = {
 
 export type ResumenPayload = {
   settings: AppSettings | null;
-  cuentasPorCobrar: { total: number; clientes: { nombre: string; deuda: number }[] };
+  cuentasPorCobrar: {
+    total: number;
+    clientes: { _id: string; nombre: string; deuda: number; direccion?: string }[];
+  };
   cuentasPagar: { total: number; proveedores: Proveedor[] };
   ingresosMes: number;
   mesClave: string;
+};
+
+export type J2EgresoTipo = 'fijo' | 'varios' | 'mercaderia' | 'inventario' | 'bancario';
+
+export type J2Egreso = {
+  id: string;
+  fecha: string;
+  tipo: J2EgresoTipo;
+  categoria: string;
+  concepto: string;
+  monto: number;
+  cuenta: 'mp' | 'banco' | 'efectivo';
+};
+
+export type J2Transferencia = {
+  id: string;
+  fecha: string;
+  de: string;
+  para: string;
+  monto: number;
+  nota?: string;
+};
+
+export type J2ListaEspera = {
+  id: string;
+  clienteId: string;
+  nombreCliente: string;
+  trabajo: string;
+  notas: string;
+  fechaAgregado: string;
+};
+
+export type J2Cuentas = { mp: number; banco: number; efectivo: number };
+
+export type J2Inversiones = {
+  cocos: number;
+  servente: number;
+  usd: { cantidad: number; precio: number };
 };

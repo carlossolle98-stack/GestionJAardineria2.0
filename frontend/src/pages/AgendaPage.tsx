@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getJson, sendJson } from '@/lib/api';
 import { todayISO } from '@/lib/format';
@@ -9,6 +10,8 @@ import { useToast } from '@/context/ToastContext';
 export function AgendaPage() {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const loc = useLocation();
+  const nav = useNavigate();
   const [offset, setOffset] = useState(0);
   const { lunes, desde, hasta } = useMemo(() => weekRangeFromOffset(offset), [offset]);
 
@@ -23,6 +26,14 @@ export function AgendaPage() {
   const [tDur, setTDur] = useState('1 hora');
   const [tTipo, setTTipo] = useState('Cliente fijo');
 
+  useEffect(() => {
+    const st = loc.state as { prefillCliente?: string } | null;
+    if (st?.prefillCliente) {
+      setTCliente(st.prefillCliente);
+      nav(loc.pathname, { replace: true, state: {} });
+    }
+  }, [loc.state, loc.pathname, nav]);
+
   const addMut = useMutation({
     mutationFn: () =>
       sendJson<Turno>('/api/turnos', 'POST', {
@@ -34,6 +45,7 @@ export function AgendaPage() {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['turnos'] });
+      qc.invalidateQueries({ queryKey: ['turnos-all'] });
       setTCliente('');
       setTHora('');
       toast('✓ Turno agregado');
@@ -45,8 +57,19 @@ export function AgendaPage() {
     mutationFn: (id: string) => sendJson(`/api/turnos/${id}`, 'DELETE'),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['turnos'] });
+      qc.invalidateQueries({ queryKey: ['turnos-all'] });
       toast('Turno eliminado');
     },
+  });
+
+  const toggleMut = useMutation({
+    mutationFn: (p: { id: string; realizado: boolean }) =>
+      sendJson(`/api/turnos/${p.id}`, 'PATCH', { realizado: p.realizado }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['turnos'] });
+      qc.invalidateQueries({ queryKey: ['turnos-all'] });
+    },
+    onError: (e: Error) => toast(e.message),
   });
 
   const porDia = useMemo(() => {
@@ -127,15 +150,29 @@ export function AgendaPage() {
                 <div style={{ color: '#aaa', fontSize: 13, padding: '8px 0' }}>Sin turnos</div>
               ) : (
                 lista.map((t) => (
-                  <div key={t._id} className="turno-item">
+                  <div key={t._id} className="turno-item" style={{ opacity: t.realizado ? 0.55 : 1 }}>
                     <div className="turno-hora">{t.hora || '—'}</div>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 500 }}>{t.cliente}</div>
+                      <div style={{ fontWeight: 500, textDecoration: t.realizado ? 'line-through' : undefined }}>
+                        {t.cliente}
+                      </div>
                       <div style={{ fontSize: 12, color: '#888' }}>
                         {t.duracion} · {t.tipo}
                       </div>
                     </div>
-                    <button type="button" onClick={() => delMut.mutate(t._id)} style={{ opacity: 0.5, border: 'none', background: 'none', cursor: 'pointer' }}>
+                    <button
+                      type="button"
+                      className="btn secundario sm"
+                      onClick={() => toggleMut.mutate({ id: t._id, realizado: !t.realizado })}
+                      disabled={toggleMut.isPending}
+                    >
+                      {t.realizado ? '✓ Hecho' : '○ Pendiente'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => delMut.mutate(t._id)}
+                      style={{ opacity: 0.5, border: 'none', background: 'none', cursor: 'pointer' }}
+                    >
                       ✕
                     </button>
                   </div>

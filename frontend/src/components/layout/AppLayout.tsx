@@ -8,6 +8,10 @@ const tabs = [
   { to: '/cobros', label: '💰 Cobros' },
   { to: '/whatsapp', label: '💬 WhatsApp' },
   { to: '/cargar', label: '➕ Cargar Info' },
+  { to: '/movimientos', label: '📥 Movimientos' },
+  { to: '/espera', label: '⏳ En espera' },
+  { to: '/egresos', label: '💸 Egresos' },
+  { to: '/finanzas', label: '🏦 Finanzas' },
 ];
 
 export function AppLayout() {

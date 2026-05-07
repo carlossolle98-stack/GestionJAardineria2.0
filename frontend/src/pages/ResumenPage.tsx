@@ -1,13 +1,53 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '@/lib/api';
-import { money } from '@/lib/format';
-import type { ResumenPayload } from '@/types';
+import { money, todayISO } from '@/lib/format';
+import { diasDesde, mesClaveRef } from '@/lib/j2local';
+import { useJ2Local } from '@/context/J2LocalContext';
+import type { ResumenPayload, Turno } from '@/types';
 
 export function ResumenPage() {
+  const j2 = useJ2Local();
+  const mc = mesClaveRef();
+  const fijosMes = j2.egresos.filter((e) => e.tipo === 'fijo' && e.fecha.startsWith(mc));
+  const variosMes = j2.egresos.filter((e) => e.tipo === 'varios' && e.fecha.startsWith(mc));
+  const totalFijos = fijosMes.reduce((s, e) => s + e.monto, 0);
+  const totalVarios = variosMes.reduce((s, e) => s + e.monto, 0);
+  const inv = j2.inversiones;
+  const totalUSD = (inv.usd?.cantidad || 0) * (inv.usd?.precio || 0);
+  const totalInv = (inv.cocos || 0) + (inv.servente || 0) + totalUSD;
+
   const { data, isLoading, error } = useQuery({
     queryKey: ['resumen'],
     queryFn: () => getJson<ResumenPayload>('/api/resumen'),
   });
+
+  const { data: turnos = [] } = useQuery({
+    queryKey: ['turnos-all'],
+    queryFn: () => getJson<Turno[]>('/api/turnos'),
+  });
+
+  const hoy = todayISO();
+  const alertasDyn: { titulo: string; texto: string }[] = [];
+  for (const t of turnos) {
+    if (!t.realizado && t.fecha && t.fecha < hoy) {
+      const dias = diasDesde(t.fecha);
+      if (dias > 3) {
+        alertasDyn.push({
+          titulo: `Turno pendiente hace ${dias} días — ${t.cliente}`,
+          texto: `Programado para ${t.fecha} (${t.duracion}). Marcá realizado o reprogramá.`,
+        });
+      }
+    }
+  }
+  for (const e of j2.listaEspera) {
+    const dias = diasDesde(e.fechaAgregado);
+    if (dias > 10) {
+      alertasDyn.push({
+        titulo: `Lista de espera urgente — ${e.nombreCliente} (${dias} días sin fecha)`,
+        texto: [e.trabajo, e.notas].filter(Boolean).join(' · ') || 'Sin notas',
+      });
+    }
+  }
 
   if (isLoading) return <p style={{ padding: 24 }}>Cargando…</p>;
   if (error) return <p style={{ padding: 24, color: 'var(--rojo)' }}>{String(error)}</p>;
@@ -48,6 +88,27 @@ export function ResumenPage() {
           </div>
           <div className="card-sub">{subEmp}</div>
         </div>
+        <div className="card">
+          <div className="card-label">Gastos Fijos del Mes (app)</div>
+          <div className="card-valor">{money(totalFijos)}</div>
+          <div className="card-sub">
+            {fijosMes.length ? fijosMes.map((e) => e.categoria).join(' · ') : 'Sin gastos fijos'}
+          </div>
+        </div>
+        <div className="card tierra">
+          <div className="card-label">Egresos Varios del Mes (app)</div>
+          <div className="card-valor">{money(totalVarios)}</div>
+          <div className="card-sub">
+            {variosMes.length ? `${variosMes.length} conceptos` : 'Sin gastos varios'}
+          </div>
+        </div>
+        <div className="card">
+          <div className="card-label">Inversiones (app)</div>
+          <div className="card-valor">{money(totalInv)}</div>
+          <div className="card-sub">
+            COCOS {money(inv.cocos || 0)} · Servente {money(inv.servente || 0)} · USD {money(totalUSD)}
+          </div>
+        </div>
         <div className="card azul">
           <div className="card-label">{s.resultadoMesActual.etiqueta}</div>
           <div className="card-valor" style={{ color: s.resultadoMesActual.monto < 0 ? 'var(--rojo)' : '#2e7d32' }}>
@@ -68,6 +129,15 @@ export function ResumenPage() {
       {s.alertas.map((a, i) => (
         <div key={i} className={`alerta ${a.tipo}`}>
           <div>{a.tipo === 'urgente' ? '🔴' : a.tipo === 'aviso' ? '🟡' : a.tipo === 'info' ? '🔵' : '🟢'}</div>
+          <div>
+            <strong style={{ display: 'block', marginBottom: 4 }}>{a.titulo}</strong>
+            {a.texto}
+          </div>
+        </div>
+      ))}
+      {alertasDyn.map((a, i) => (
+        <div key={`d-${i}`} className="alerta urgente">
+          <div>🔴</div>
           <div>
             <strong style={{ display: 'block', marginBottom: 4 }}>{a.titulo}</strong>
             {a.texto}
