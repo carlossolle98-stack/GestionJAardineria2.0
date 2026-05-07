@@ -252,7 +252,7 @@ export function ResumenPage() {
                   ? ingLocal
                   : (isLast && m.estado?.toLowerCase().includes('curso') ? data.ingresosMes : m.ingresos);
                 const egLocal = egresosLocalesDeMes(m.mes, m.anio);
-                const eg = egLocal !== null ? egLocal : m.egresos;
+                const eg = (egLocal !== null && egLocal > 0) ? egLocal : m.egresos;
                 const res = ing - eg;
                 const urgente = m.estado?.toLowerCase().includes('curso');
                 return (
