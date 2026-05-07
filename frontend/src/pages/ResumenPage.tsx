@@ -107,15 +107,14 @@ export function ResumenPage() {
     );
 
   const s = data.settings;
-  const subCaja = `MP ${money(s.cajaLiquida.mercadoPago)} · Banco ${money(s.cajaLiquida.banco)} · Efectivo ${money(
-    s.cajaLiquida.efectivo
-  )}`;
+  const cajaLiquidaTotal = (j2.cuentas.mp || 0) + (j2.cuentas.banco || 0) + (j2.cuentas.efectivo || 0);
+  const subCaja = `MP ${money(j2.cuentas.mp || 0)} · Banco ${money(j2.cuentas.banco || 0)} · Efectivo ${money(j2.cuentas.efectivo || 0)}`;
   const subDeuda =
     data.cuentasPorCobrar.clientes.length > 0
       ? data.cuentasPorCobrar.clientes.map((c) => `${c.nombre.split(' ')[0]} ${money(c.deuda)}`).join(' · ')
       : 'Sin deudas registradas';
+  const patrimonioTotal = cajaLiquidaTotal + totalInv + data.cuentasPorCobrar.total;
   const meses = s.mesesHistoricos;
-  const ultimo = meses[meses.length - 1];
 
   // Resultado del mes actual: ingresos del backend - todos los egresos locales del mes
   const totalEgresosMes = totalFijos + totalVarios;
@@ -128,7 +127,7 @@ export function ResumenPage() {
       <div className="cards-grid">
         <div className="card">
           <div className="card-label">Caja Líquida</div>
-          <div className="card-valor">{money(s.cajaLiquida.total)}</div>
+          <div className="card-valor">{money(cajaLiquidaTotal)}</div>
           <div className="card-sub">{subCaja}</div>
         </div>
         <div className="card rojo">
@@ -142,21 +141,21 @@ export function ResumenPage() {
           <div className="card-sub">{subSueldos || 'Sin sueldos cargados'}</div>
         </div>
         <div className="card">
-          <div className="card-label">Gastos Fijos del Mes (app)</div>
+          <div className="card-label">Gastos Fijos del Mes</div>
           <div className="card-valor">{money(totalFijos)}</div>
           <div className="card-sub">
             {fijosMes.length ? fijosMes.map((e) => e.categoria).join(' · ') : 'Sin gastos fijos'}
           </div>
         </div>
         <div className="card tierra">
-          <div className="card-label">Egresos Varios del Mes (app)</div>
+          <div className="card-label">Egresos Varios del Mes</div>
           <div className="card-valor">{money(totalVarios)}</div>
           <div className="card-sub">
             {variosMes.length ? `${variosMes.length} conceptos` : 'Sin gastos varios'}
           </div>
         </div>
         <div className="card">
-          <div className="card-label">Inversiones (app)</div>
+          <div className="card-label">Inversiones</div>
           <div className="card-valor">{money(totalInv)}</div>
           <div className="card-sub">
             COCOS {money(inv.cocos || 0)} · Servente {money(inv.servente || 0)} · USD {money(totalUSD)}
@@ -173,8 +172,10 @@ export function ResumenPage() {
         </div>
         <div className="card tierra">
           <div className="card-label">Patrimonio Total</div>
-          <div className="card-valor">{money(s.patrimonio.total)}</div>
-          <div className="card-sub">Activos no líquidos: {money(s.patrimonio.activosNoLiquidos)}</div>
+          <div className="card-valor">{money(patrimonioTotal)}</div>
+          <div className="card-sub">
+            Caja {money(cajaLiquidaTotal)} · Inv. {money(totalInv)} · C×C {money(data.cuentasPorCobrar.total)}
+          </div>
         </div>
       </div>
 
