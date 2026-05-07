@@ -1,14 +1,18 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '@/lib/api';
-import { csvEscape, downloadCsv } from '@/lib/j2local';
+import { csvEscape, downloadCsv, NOMBRES_CUENTA } from '@/lib/j2local';
+import { money } from '@/lib/format';
+import { useJ2Local } from '@/context/J2LocalContext';
 import type { Cliente, Prospecto, Turno } from '@/types';
 
-function csvRows(rows: (string | number)[][]) {
+function csvRows(rows: (string | number | undefined)[][]) {
   return rows.map((r) => r.map(csvEscape).join(',')).join('\n');
 }
 
 export function MovimientosPage() {
+  const j2 = useJ2Local();
+
   const { data: clientes = [], isLoading: lc } = useQuery({
     queryKey: ['clientes'],
     queryFn: () => getJson<Cliente[]>('/api/clientes'),
@@ -40,39 +44,58 @@ export function MovimientosPage() {
   const fecha = new Date().toISOString().split('T')[0];
 
   function descargarTodo() {
-    const cob = csvRows([
-      ['Cliente', 'Fecha', 'Monto', 'Horas'],
-      ...filasCobros.map((p) => [p.nombre, p.fecha, p.monto, p.horas ?? '']),
+    // Movimientos locales (movlog)
+    const mov = csvRows([
+      ['Fecha', 'Tipo', 'Concepto', 'Detalle', 'Monto', 'Cuenta'],
+      ...j2.movlog.map((m) => [m.fecha, m.tipo, m.concepto, m.detalle, m.monto, NOMBRES_CUENTA[m.cuenta] || m.cuenta]),
     ]);
-    downloadCsv(`jardineria_cobros_${fecha}.csv`, cob);
+    downloadCsv(`jardineria_movimientos_${fecha}.csv`, mov);
+
+    setTimeout(() => {
+      // Egresos locales
+      const eg = csvRows([
+        ['Fecha', 'Tipo', 'Categoría', 'Concepto', 'Monto', 'Cuenta'],
+        ...j2.egresos.map((e) => [e.fecha, e.tipo, e.categoria, e.concepto, e.monto, NOMBRES_CUENTA[e.cuenta] || e.cuenta]),
+      ]);
+      downloadCsv(`jardineria_egresos_${fecha}.csv`, eg);
+    }, 300);
+
+    setTimeout(() => {
+      // Deudas clientes
+      const deudas = csvRows([
+        ['Fecha', 'Cliente', 'Concepto', 'Monto', 'Estado', 'Fecha cobro', 'Cuenta cobro'],
+        ...j2.deudasClientes.map((d) => [
+          d.fecha, d.nombreCliente, d.concepto, d.monto,
+          d.estado, d.fechaPago || '', NOMBRES_CUENTA[d.cuentaCobro || ''] || d.cuentaCobro || '',
+        ]),
+      ]);
+      downloadCsv(`jardineria_deudas_${fecha}.csv`, deudas);
+    }, 600);
+
+    setTimeout(() => {
+      // Cobros backend
+      const cob = csvRows([
+        ['Cliente', 'Fecha', 'Monto', 'Horas'],
+        ...filasCobros.map((p) => [p.nombre, p.fecha, p.monto, p.horas ?? '']),
+      ]);
+      downloadCsv(`jardineria_cobros_backend_${fecha}.csv`, cob);
+    }, 900);
+
     setTimeout(() => {
       const t = csvRows([
         ['Fecha', 'Hora', 'Cliente', 'Duración', 'Tipo', 'Estado'],
-        ...turnosOrd.map((x) => [
-          x.fecha,
-          x.hora || '',
-          x.cliente,
-          x.duracion,
-          x.tipo,
-          x.realizado ? 'Realizado' : 'Pendiente',
-        ]),
+        ...turnosOrd.map((x) => [x.fecha, x.hora || '', x.cliente, x.duracion, x.tipo, x.realizado ? 'Realizado' : 'Pendiente']),
       ]);
       downloadCsv(`jardineria_turnos_${fecha}.csv`, t);
-    }, 400);
+    }, 1200);
+
     setTimeout(() => {
       const pr = csvRows([
         ['Nombre', 'Zona', 'Tipo', 'Frecuencia', 'Estado', 'Notas'],
-        ...prospectos.map((p) => [
-          p.nombre,
-          p.zona,
-          p.tipoTrabajo,
-          p.frecuencia,
-          p.estado,
-          p.notas || '',
-        ]),
+        ...prospectos.map((p) => [p.nombre, p.zona, p.tipoTrabajo, p.frecuencia, p.estado, p.notas || '']),
       ]);
       downloadCsv(`jardineria_prospectos_${fecha}.csv`, pr);
-    }, 800);
+    }, 1500);
   }
 
   if (lc || lt || lp) return <p style={{ padding: 16 }}>Cargando…</p>;
@@ -91,13 +114,69 @@ export function MovimientosPage() {
       <div className="alerta info">
         <div>💡</div>
         <div>
-          <strong>CSV para Excel.</strong> Podés bajar cada tabla o todo junto.
+          <strong>CSV para Excel.</strong> Se descargan 6 archivos: movimientos, egresos, deudas, cobros, turnos y prospectos.
         </div>
       </div>
 
+      {/* ── Movimientos locales (movlog) ── */}
       <div className="section-title" style={{ margin: '20px 0 12px' }}>
-        💵 Historial de cobros por cliente
+        📋 Movimientos financieros (app)
       </div>
+      <div className="tabla-wrap">
+        <div className="tabla-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Tipo</th>
+                <th>Concepto</th>
+                <th>Detalle</th>
+                <th>Monto</th>
+                <th>Cuenta</th>
+              </tr>
+            </thead>
+            <tbody>
+              {j2.movlog.length === 0 ? (
+                <tr>
+                  <td colSpan={6} style={{ color: '#bbb', textAlign: 'center', padding: 16 }}>Sin movimientos registrados</td>
+                </tr>
+              ) : (
+                j2.movlog.map((m) => (
+                  <tr key={m.id}>
+                    <td style={{ fontFamily: 'DM Mono,monospace', fontSize: 12 }}>{m.fecha}</td>
+                    <td><span className="badge pendiente">{m.tipo}</span></td>
+                    <td><strong>{m.concepto}</strong></td>
+                    <td style={{ fontSize: 12, color: '#666' }}>{m.detalle || '—'}</td>
+                    <td style={{ fontFamily: 'DM Mono,monospace', fontWeight: 600, color: m.monto >= 0 ? '#2e7d32' : 'var(--rojo)' }}>
+                      {m.monto >= 0 ? '+' : ''}{money(m.monto)}
+                    </td>
+                    <td style={{ fontSize: 12 }}>{NOMBRES_CUENTA[m.cuenta] || m.cuenta || '—'}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <button
+        type="button"
+        className="btn secundario sm"
+        style={{ marginBottom: 20 }}
+        onClick={() =>
+          downloadCsv(
+            `movimientos_${fecha}.csv`,
+            csvRows([
+              ['Fecha', 'Tipo', 'Concepto', 'Detalle', 'Monto', 'Cuenta'],
+              ...j2.movlog.map((m) => [m.fecha, m.tipo, m.concepto, m.detalle, m.monto, NOMBRES_CUENTA[m.cuenta] || m.cuenta]),
+            ])
+          )
+        }
+      >
+        ⬇ Descargar movimientos CSV
+      </button>
+
+      {/* ── Cobros backend ── */}
+      <div className="section-title" style={{ marginBottom: 12 }}>💵 Cobros por cliente (servidor)</div>
       <div className="tabla-wrap">
         <div className="tabla-scroll">
           <table>
@@ -113,19 +192,14 @@ export function MovimientosPage() {
             <tbody>
               {filasCobros.length === 0 ? (
                 <tr>
-                  <td colSpan={5} style={{ color: '#bbb', textAlign: 'center', padding: 16 }}>
-                    Sin cobros registrados
-                  </td>
+                  <td colSpan={5} style={{ color: '#bbb', textAlign: 'center', padding: 16 }}>Sin cobros registrados</td>
                 </tr>
               ) : (
                 filasCobros.map((p, i) => {
-                  const vh =
-                    p.horas && p.horas > 0 ? `$${Math.round(p.monto / p.horas).toLocaleString('es-AR')}` : '—';
+                  const vh = p.horas && p.horas > 0 ? `$${Math.round(p.monto / p.horas).toLocaleString('es-AR')}` : '—';
                   return (
                     <tr key={`${p.nombre}-${p.fecha}-${i}`}>
-                      <td>
-                        <strong>{p.nombre}</strong>
-                      </td>
+                      <td><strong>{p.nombre}</strong></td>
                       <td>{p.fecha}</td>
                       <td style={{ fontFamily: 'DM Mono,monospace', color: '#2e7d32', fontWeight: 600 }}>
                         ${p.monto.toLocaleString('es-AR')}
@@ -146,7 +220,7 @@ export function MovimientosPage() {
         style={{ marginBottom: 20 }}
         onClick={() =>
           downloadCsv(
-            'cobros.csv',
+            'cobros_backend.csv',
             csvRows([
               ['Cliente', 'Fecha', 'Monto', 'Horas'],
               ...filasCobros.map((p) => [p.nombre, p.fecha, p.monto, p.horas ?? '']),
@@ -157,9 +231,8 @@ export function MovimientosPage() {
         ⬇ Descargar cobros CSV
       </button>
 
-      <div className="section-title" style={{ marginBottom: 12 }}>
-        📅 Turnos agendados
-      </div>
+      {/* ── Turnos ── */}
+      <div className="section-title" style={{ marginBottom: 12 }}>📅 Turnos agendados</div>
       <div className="tabla-wrap">
         <div className="tabla-scroll">
           <table>
@@ -176,18 +249,14 @@ export function MovimientosPage() {
             <tbody>
               {turnosOrd.length === 0 ? (
                 <tr>
-                  <td colSpan={6} style={{ color: '#bbb', textAlign: 'center', padding: 16 }}>
-                    Sin turnos registrados
-                  </td>
+                  <td colSpan={6} style={{ color: '#bbb', textAlign: 'center', padding: 16 }}>Sin turnos registrados</td>
                 </tr>
               ) : (
                 turnosOrd.map((t) => (
                   <tr key={t._id}>
                     <td>{t.fecha}</td>
                     <td style={{ fontFamily: 'DM Mono,monospace' }}>{t.hora || '—'}</td>
-                    <td>
-                      <strong>{t.cliente}</strong>
-                    </td>
+                    <td><strong>{t.cliente}</strong></td>
                     <td>{t.duracion}</td>
                     <td>{t.tipo}</td>
                     <td>
@@ -211,14 +280,7 @@ export function MovimientosPage() {
             'turnos.csv',
             csvRows([
               ['Fecha', 'Hora', 'Cliente', 'Duración', 'Tipo', 'Estado'],
-              ...turnosOrd.map((x) => [
-                x.fecha,
-                x.hora || '',
-                x.cliente,
-                x.duracion,
-                x.tipo,
-                x.realizado ? 'Realizado' : 'Pendiente',
-              ]),
+              ...turnosOrd.map((x) => [x.fecha, x.hora || '', x.cliente, x.duracion, x.tipo, x.realizado ? 'Realizado' : 'Pendiente']),
             ])
           )
         }
@@ -226,9 +288,8 @@ export function MovimientosPage() {
         ⬇ Descargar turnos CSV
       </button>
 
-      <div className="section-title" style={{ marginBottom: 12 }}>
-        🌱 Prospectos
-      </div>
+      {/* ── Prospectos ── */}
+      <div className="section-title" style={{ marginBottom: 12 }}>🌱 Prospectos</div>
       <div className="tabla-wrap">
         <div className="tabla-scroll">
           <table>
@@ -245,22 +306,16 @@ export function MovimientosPage() {
             <tbody>
               {prospectos.length === 0 ? (
                 <tr>
-                  <td colSpan={6} style={{ color: '#bbb', textAlign: 'center', padding: 16 }}>
-                    Sin prospectos registrados
-                  </td>
+                  <td colSpan={6} style={{ color: '#bbb', textAlign: 'center', padding: 16 }}>Sin prospectos</td>
                 </tr>
               ) : (
                 prospectos.map((p) => (
                   <tr key={p._id}>
-                    <td>
-                      <strong>{p.nombre}</strong>
-                    </td>
+                    <td><strong>{p.nombre}</strong></td>
                     <td>{p.zona}</td>
                     <td>{p.tipoTrabajo}</td>
                     <td>{p.frecuencia}</td>
-                    <td>
-                      <span className="badge pendiente">{p.estado}</span>
-                    </td>
+                    <td><span className="badge pendiente">{p.estado}</span></td>
                     <td style={{ fontSize: 12, color: '#888' }}>{p.notas || '—'}</td>
                   </tr>
                 ))
@@ -277,14 +332,7 @@ export function MovimientosPage() {
             'prospectos.csv',
             csvRows([
               ['Nombre', 'Zona', 'Tipo', 'Frecuencia', 'Estado', 'Notas'],
-              ...prospectos.map((p) => [
-                p.nombre,
-                p.zona,
-                p.tipoTrabajo,
-                p.frecuencia,
-                p.estado,
-                p.notas || '',
-              ]),
+              ...prospectos.map((p) => [p.nombre, p.zona, p.tipoTrabajo, p.frecuencia, p.estado, p.notas || '']),
             ])
           )
         }

@@ -121,3 +121,14 @@ export type J2Inversiones = {
   servente: number;
   usd: { cantidad: number; precio: number };
 };
+
+export type J2DeudaCliente = {
+  id: string;
+  nombreCliente: string;
+  concepto: string;
+  monto: number;
+  fecha: string;
+  estado: 'pendiente' | 'pagado';
+  fechaPago?: string;
+  cuentaCobro?: string;
+};

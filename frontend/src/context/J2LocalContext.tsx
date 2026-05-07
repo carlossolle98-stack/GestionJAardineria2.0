@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type {
   J2Cuentas,
+  J2DeudaCliente,
   J2Egreso,
   J2EgresoTipo,
   J2Empleado,
@@ -12,6 +13,7 @@ import type {
 import {
   EMPLEADOS_DEFAULT,
   loadJ2Cuentas,
+  loadJ2DeudasClientes,
   loadJ2Egresos,
   loadJ2Empleados,
   loadJ2Inversiones,
@@ -30,6 +32,7 @@ type J2Ctx = {
   inversiones: J2Inversiones;
   empleados: J2Empleado[];
   movlog: J2MovLog[];
+  deudasClientes: J2DeudaCliente[];
   addListaEspera: (p: Omit<J2ListaEspera, 'id'>) => void;
   removeListaEspera: (id: string) => void;
   addEgreso: (p: { fecha: string; tipo: J2EgresoTipo; categoria: string; concepto: string; monto: number; cuenta: keyof J2Cuentas }) => void;
@@ -47,6 +50,9 @@ type J2Ctx = {
   registrarMutual: (empNombre: string, monto: number, cuenta: keyof J2Cuentas) => void;
   registrarAguinaldo: (empId: string, monto: number) => void;
   ajustarInteresesAguinaldo: (empId: string, intereses: number) => void;
+  addDeudaCliente: (p: Omit<J2DeudaCliente, 'id' | 'estado'>) => void;
+  pagarDeudaCliente: (id: string, cuenta: keyof J2Cuentas) => void;
+  removeDeudaCliente: (id: string) => void;
 };
 
 const Ctx = createContext<J2Ctx | null>(null);
@@ -64,6 +70,7 @@ export function J2LocalProvider({ children }: { children: ReactNode }) {
     } catch { return [...EMPLEADOS_DEFAULT]; }
   });
   const [movlog, setMovlog] = useState(loadJ2MovLog);
+  const [deudasClientes, setDeudasClientes] = useState(loadJ2DeudasClientes);
 
   useEffect(() => { localStorage.setItem('j2_listaespera', JSON.stringify(listaEspera)); }, [listaEspera]);
   useEffect(() => { localStorage.setItem('j2_egresos', JSON.stringify(egresos)); }, [egresos]);
@@ -72,6 +79,7 @@ export function J2LocalProvider({ children }: { children: ReactNode }) {
   useEffect(() => { localStorage.setItem('j2_inversiones', JSON.stringify(inversiones)); }, [inversiones]);
   useEffect(() => { localStorage.setItem('j2_empleados', JSON.stringify(empleados)); }, [empleados]);
   useEffect(() => { localStorage.setItem('j2_movlog', JSON.stringify(movlog)); }, [movlog]);
+  useEffect(() => { localStorage.setItem('j2_deudas_clientes', JSON.stringify(deudasClientes)); }, [deudasClientes]);
 
   function logMov(tipo: string, concepto: string, detalle: string, monto: number, cuenta: string) {
     const fecha = new Date().toISOString().split('T')[0];
@@ -191,17 +199,41 @@ export function J2LocalProvider({ children }: { children: ReactNode }) {
     logMov('aguinaldo_int', 'Intereses aguinaldo', `emp:${empId}`, intereses, 'cocos');
   }, []);
 
+  const addDeudaCliente = useCallback((p: Omit<J2DeudaCliente, 'id' | 'estado'>) => {
+    setDeudasClientes((s) => [...s, { ...p, id: 'dc_' + Date.now(), estado: 'pendiente' }]);
+    logMov('deuda_nueva', p.nombreCliente, p.concepto, p.monto, '');
+  }, []);
+
+  const pagarDeudaCliente = useCallback((id: string, cuenta: keyof J2Cuentas) => {
+    let found: J2DeudaCliente | undefined;
+    const fechaPago = new Date().toISOString().split('T')[0];
+    setDeudasClientes((s) => {
+      found = s.find((x) => x.id === id);
+      return s.map((x) => x.id === id ? { ...x, estado: 'pagado' as const, fechaPago, cuentaCobro: cuenta } : x);
+    });
+    if (found) {
+      setCuentas((c) => ({ ...c, [cuenta]: (c[cuenta] || 0) + found!.monto }));
+      logMov('cobro_deuda', found.nombreCliente, found.concepto, found.monto, cuenta);
+    }
+  }, []);
+
+  const removeDeudaCliente = useCallback((id: string) => {
+    setDeudasClientes((s) => s.filter((x) => x.id !== id));
+  }, []);
+
   const value = useMemo<J2Ctx>(() => ({
-    listaEspera, egresos, transferencias, cuentas, inversiones, empleados, movlog,
+    listaEspera, egresos, transferencias, cuentas, inversiones, empleados, movlog, deudasClientes,
     addListaEspera, removeListaEspera, addEgreso, removeEgreso, setCuentaSaldo,
     registrarTransferencia, removeTransferencia, comprarUsd, venderUsd, actualizarPrecioUsd,
     movInversion, ingresarPorMedio, addEmpleado, toggleEmpleado,
     registrarMutual, registrarAguinaldo, ajustarInteresesAguinaldo,
-  }), [listaEspera, egresos, transferencias, cuentas, inversiones, empleados, movlog,
+    addDeudaCliente, pagarDeudaCliente, removeDeudaCliente,
+  }), [listaEspera, egresos, transferencias, cuentas, inversiones, empleados, movlog, deudasClientes,
     addListaEspera, removeListaEspera, addEgreso, removeEgreso, setCuentaSaldo,
     registrarTransferencia, removeTransferencia, comprarUsd, venderUsd, actualizarPrecioUsd,
     movInversion, ingresarPorMedio, addEmpleado, toggleEmpleado,
-    registrarMutual, registrarAguinaldo, ajustarInteresesAguinaldo]);
+    registrarMutual, registrarAguinaldo, ajustarInteresesAguinaldo,
+    addDeudaCliente, pagarDeudaCliente, removeDeudaCliente]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

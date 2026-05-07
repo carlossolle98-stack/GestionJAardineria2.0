@@ -109,11 +109,13 @@ export function ResumenPage() {
   const s = data.settings;
   const cajaLiquidaTotal = (j2.cuentas.mp || 0) + (j2.cuentas.banco || 0) + (j2.cuentas.efectivo || 0);
   const subCaja = `MP ${money(j2.cuentas.mp || 0)} · Banco ${money(j2.cuentas.banco || 0)} · Efectivo ${money(j2.cuentas.efectivo || 0)}`;
+  const deudaPendientes = j2.deudasClientes.filter((d) => d.estado === 'pendiente');
+  const totalDeudaPendiente = deudaPendientes.reduce((sum, d) => sum + d.monto, 0);
   const subDeuda =
-    data.cuentasPorCobrar.clientes.length > 0
-      ? data.cuentasPorCobrar.clientes.map((c) => `${c.nombre.split(' ')[0]} ${money(c.deuda)}`).join(' · ')
-      : 'Sin deudas registradas';
-  const patrimonioTotal = cajaLiquidaTotal + totalInv + data.cuentasPorCobrar.total;
+    deudaPendientes.length > 0
+      ? deudaPendientes.map((d) => `${d.nombreCliente.split(' ')[0]} ${money(d.monto)}`).join(' · ')
+      : 'Sin deudas pendientes';
+  const patrimonioTotal = cajaLiquidaTotal + totalInv + totalDeudaPendiente;
   const meses = s.mesesHistoricos;
 
   // Resultado del mes actual: ingresos del backend - todos los egresos locales del mes
@@ -132,7 +134,7 @@ export function ResumenPage() {
         </div>
         <div className="card rojo">
           <div className="card-label">Cuentas por Cobrar</div>
-          <div className="card-valor">{money(data.cuentasPorCobrar.total)}</div>
+          <div className="card-valor">{money(totalDeudaPendiente)}</div>
           <div className="card-sub">{subDeuda}</div>
         </div>
         <div className="card amarillo">
