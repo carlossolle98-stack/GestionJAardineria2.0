@@ -141,17 +141,14 @@ export function CargarPage() {
           </div>
           <div className="form-group">
             <label>Horas trabajadas</label>
-            <select value={cHoras} onChange={(e) => setCHoras(e.target.value)}>
-              <option value="">— sin cargar —</option>
-              <option value="0.5">0.5 h</option>
-              <option value="1">1 h</option>
-              <option value="1.5">1.5 h</option>
-              <option value="2">2 h</option>
-              <option value="3">3 h</option>
-              <option value="4">4 h</option>
-              <option value="6">6 h</option>
-              <option value="8">8 h</option>
-            </select>
+            <input
+              type="number"
+              step="any"
+              min="0"
+              value={cHoras}
+              onChange={(e) => setCHoras(e.target.value)}
+              placeholder="Ej: 1.5 o 3.5"
+            />
           </div>
           <div className="form-group">
             <label>Fecha</label>
