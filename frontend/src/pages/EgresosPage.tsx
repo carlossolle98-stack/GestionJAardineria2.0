@@ -56,7 +56,7 @@ export function EgresosPage() {
     }
     const cat =
       tipo === 'fijo' ? categoria
-      : tipo === 'sueldo' ? (empleado || 'Sueldo')
+      : tipo === 'sueldo' ? (empleado || empleadosActivos[0]?.nombre || 'Sueldo')
       : LABEL_EGRESO[tipo] || 'Varios';
     j2.addEgreso({
       fecha,
@@ -134,7 +134,17 @@ export function EgresosPage() {
         <div className="form-grid">
           <div className="form-group">
             <label>Tipo</label>
-            <select value={tipo} onChange={(e) => setTipo(e.target.value as J2EgresoTipo)}>
+            <select
+              value={tipo}
+              onChange={(e) => {
+                const t = e.target.value as J2EgresoTipo;
+                setTipo(t);
+                // Al elegir sueldo, pre-seleccionar el primer empleado activo si el state está vacío
+                if (t === 'sueldo' && !empleado && empleadosActivos.length > 0) {
+                  setEmpleado(empleadosActivos[0].nombre);
+                }
+              }}
+            >
               <option value="fijo">Gasto fijo</option>
               <option value="varios">Gasto varios</option>
               <option value="sueldo">Sueldo / Empleado</option>
