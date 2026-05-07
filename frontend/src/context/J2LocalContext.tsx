@@ -89,14 +89,16 @@ export function J2LocalProvider({ children }: { children: ReactNode }) {
   const addEgreso = useCallback((p: { fecha: string; tipo: J2EgresoTipo; categoria: string; concepto: string; monto: number; cuenta: keyof J2Cuentas }) => {
     const row: J2Egreso = { id: 'eg_' + Date.now(), ...p, concepto: p.concepto || p.categoria };
     setEgresos((s) => [...s, row]);
-    setCuentas((c) => ({ ...c, [p.cuenta]: Math.max(0, (c[p.cuenta] || 0) - p.monto) }));
+    if (p.tipo !== 'inventario') {
+      setCuentas((c) => ({ ...c, [p.cuenta]: Math.max(0, (c[p.cuenta] || 0) - p.monto) }));
+    }
     logMov('egreso', p.categoria, p.concepto, -p.monto, p.cuenta);
   }, []);
 
   const removeEgreso = useCallback((id: string) => {
     let removed: J2Egreso | undefined;
     setEgresos((s) => { removed = s.find((x) => x.id === id); return s.filter((x) => x.id !== id); });
-    if (removed) {
+    if (removed && removed.tipo !== 'inventario') {
       setCuentas((c) => ({ ...c, [removed!.cuenta]: (c[removed!.cuenta] || 0) + removed!.monto }));
     }
   }, []);

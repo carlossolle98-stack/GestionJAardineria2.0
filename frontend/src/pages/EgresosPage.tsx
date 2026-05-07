@@ -176,14 +176,16 @@ export function EgresosPage() {
             <label>Fecha</label>
             <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
           </div>
-          <div className="form-group">
-            <label>Cuenta de pago</label>
-            <select value={cuenta} onChange={(e) => setCuenta(e.target.value as 'mp' | 'banco' | 'efectivo')}>
-              <option value="mp">Mercado Pago</option>
-              <option value="banco">Banco</option>
-              <option value="efectivo">Efectivo</option>
-            </select>
-          </div>
+          {tipo !== 'inventario' && (
+            <div className="form-group">
+              <label>Cuenta de pago</label>
+              <select value={cuenta} onChange={(e) => setCuenta(e.target.value as 'mp' | 'banco' | 'efectivo')}>
+                <option value="mp">Mercado Pago</option>
+                <option value="banco">Banco</option>
+                <option value="efectivo">Efectivo</option>
+              </select>
+            </div>
+          )}
         </div>
         <button type="button" className="btn" onClick={registrar}>
           Registrar egreso
