@@ -54,9 +54,13 @@ export function EgresosPage() {
       toast('⚠ Elegí una fecha');
       return;
     }
+    if (tipo === 'sueldo' && !empleado) {
+      toast('⚠ Seleccioná un empleado');
+      return;
+    }
     const cat =
       tipo === 'fijo' ? categoria
-      : tipo === 'sueldo' ? (empleado || empleadosActivos[0]?.nombre || 'Sueldo')
+      : tipo === 'sueldo' ? empleado
       : LABEL_EGRESO[tipo] || 'Varios';
     j2.addEgreso({
       fecha,
@@ -166,11 +170,8 @@ export function EgresosPage() {
           {tipo === 'sueldo' && (
             <div className="form-group">
               <label>Empleado</label>
-              <select
-                value={empleado || empleadosActivos[0]?.nombre || ''}
-                onChange={(e) => setEmpleado(e.target.value)}
-              >
-                {empleadosActivos.length === 0 && <option value="">Sin empleados activos</option>}
+              <select value={empleado} onChange={(e) => setEmpleado(e.target.value)}>
+                <option value="">— Seleccioná un empleado —</option>
                 {empleadosActivos.map((e) => (
                   <option key={e.id} value={e.nombre}>{e.nombre}</option>
                 ))}
