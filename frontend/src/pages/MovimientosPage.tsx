@@ -240,6 +240,72 @@ export function MovimientosPage() {
         ⬇ Descargar cobros CSV
       </button>
 
+      {/* ── Deudas clientes ── */}
+      <div className="section-title" style={{ marginBottom: 12 }}>💳 Deudas por cobrar (registro)</div>
+      <div className="tabla-wrap">
+        <div className="tabla-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Cliente</th>
+                <th>Concepto</th>
+                <th>Monto</th>
+                <th>Estado</th>
+                <th>Fecha cobro</th>
+                <th>Medio</th>
+              </tr>
+            </thead>
+            <tbody>
+              {j2.deudasClientes.length === 0 ? (
+                <tr>
+                  <td colSpan={7} style={{ color: '#bbb', textAlign: 'center', padding: 16 }}>Sin deudas registradas</td>
+                </tr>
+              ) : (
+                [...j2.deudasClientes]
+                  .sort((a, b) => b.fecha.localeCompare(a.fecha))
+                  .map((d) => (
+                    <tr key={d.id}>
+                      <td style={{ fontFamily: 'DM Mono,monospace', fontSize: 12 }}>{d.fecha}</td>
+                      <td><strong>{d.nombreCliente}</strong></td>
+                      <td style={{ fontSize: 12, color: '#666' }}>{d.concepto}</td>
+                      <td style={{ fontFamily: 'DM Mono,monospace', fontWeight: 600, color: d.estado === 'pendiente' ? 'var(--rojo)' : '#2e7d32' }}>
+                        {money(d.monto)}
+                      </td>
+                      <td>
+                        <span className={`badge ${d.estado === 'pendiente' ? 'urgente' : 'ok'}`}>
+                          {d.estado === 'pendiente' ? '⏳ Pendiente' : '✓ Cobrado'}
+                        </span>
+                      </td>
+                      <td style={{ fontFamily: 'DM Mono,monospace', fontSize: 12 }}>{d.fechaPago || '—'}</td>
+                      <td style={{ fontSize: 12 }}>{NOMBRES_CUENTA[d.cuentaCobro || ''] || d.cuentaCobro || '—'}</td>
+                    </tr>
+                  ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <button
+        type="button"
+        className="btn secundario sm"
+        style={{ marginBottom: 20 }}
+        onClick={() =>
+          downloadCsv(
+            `deudas_clientes_${fecha}.csv`,
+            csvRows([
+              ['Fecha', 'Cliente', 'Concepto', 'Monto', 'Estado', 'Fecha cobro', 'Medio'],
+              ...j2.deudasClientes.map((d) => [
+                d.fecha, d.nombreCliente, d.concepto, d.monto,
+                d.estado, d.fechaPago || '', NOMBRES_CUENTA[d.cuentaCobro || ''] || d.cuentaCobro || '',
+              ]),
+            ])
+          )
+        }
+      >
+        ⬇ Descargar deudas CSV
+      </button>
+
       {/* ── Turnos ── */}
       <div className="section-title" style={{ marginBottom: 12 }}>📅 Turnos agendados</div>
       <div className="tabla-wrap">

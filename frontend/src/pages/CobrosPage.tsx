@@ -1,9 +1,7 @@
 import { Fragment, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getJson, sendJson } from '@/lib/api';
 import { money, todayISO } from '@/lib/format';
-import { mensajeWa, copiar } from '@/lib/whatsapp';
 import type { ResumenPayload, Cliente } from '@/types';
 import { useToast } from '@/context/ToastContext';
 import { useJ2Local } from '@/context/J2LocalContext';
@@ -11,7 +9,6 @@ import { NOMBRES_CUENTA } from '@/lib/j2local';
 
 export function CobrosPage() {
   const { toast } = useToast();
-  const nav = useNavigate();
   const qc = useQueryClient();
   const j2 = useJ2Local();
 
@@ -28,11 +25,41 @@ export function CobrosPage() {
   const pagadas = j2.deudasClientes.filter((d) => d.estado === 'pagado');
   const totalPendiente = pendientes.reduce((s, d) => s + d.monto, 0);
 
-  function registrarDeuda() {
+  // Clientes formales (para datalist + sync badge)
+  const { data: clientesData = [] } = useQuery({
+    queryKey: ['clientes'],
+    queryFn: () => getJson<Cliente[]>('/api/clientes'),
+  });
+
+  // Proveedores (sección independiente al final)
+  const { data, isLoading } = useQuery({
+    queryKey: ['resumen'],
+    queryFn: () => getJson<ResumenPayload>('/api/resumen'),
+  });
+  const proveedores = data?.cuentasPagar.proveedores ?? [];
+
+  // Busca cliente formal por nombre (case-insensitive)
+  function buscarFormal(nombre: string) {
+    return clientesData.find(
+      (c) => c.nombre.toLowerCase() === nombre.trim().toLowerCase()
+    ) ?? null;
+  }
+
+  async function registrarDeuda() {
     const m = parseInt(dcMonto, 10);
     if (!dcNombre.trim()) { toast('⚠ Ingresá el nombre del cliente'); return; }
     if (!m || m <= 0) { toast('⚠ Ingresá un monto válido'); return; }
     if (!dcFecha) { toast('⚠ Elegí una fecha'); return; }
+
+    // Si coincide con cliente formal → actualizar badge en ficha del cliente
+    const formal = buscarFormal(dcNombre);
+    if (formal) {
+      await sendJson(`/api/clientes/${formal._id}`, 'PATCH', {
+        deuda: (formal.deuda || 0) + m,
+      }).catch(() => {});
+      qc.invalidateQueries({ queryKey: ['clientes'] });
+    }
+
     j2.addDeudaCliente({
       nombreCliente: dcNombre.trim(),
       concepto: dcConcepto.trim() || 'Servicio de jardinería',
@@ -43,67 +70,24 @@ export function CobrosPage() {
     toast('✓ Deuda registrada');
   }
 
-  function confirmarPago(id: string) {
+  async function confirmarPago(id: string) {
+    const deuda = j2.deudasClientes.find((d) => d.id === id);
     j2.pagarDeudaCliente(id, pagoCuenta);
     setOpenPagoId(null);
+
+    // Si coincide con cliente formal → reducir badge en ficha del cliente
+    if (deuda) {
+      const formal = buscarFormal(deuda.nombreCliente);
+      if (formal) {
+        await sendJson(`/api/clientes/${formal._id}`, 'PATCH', {
+          deuda: Math.max(0, (formal.deuda || 0) - deuda.monto),
+        }).catch(() => {});
+        qc.invalidateQueries({ queryKey: ['clientes'] });
+      }
+    }
+
     toast(`✓ Cobro registrado → ${NOMBRES_CUENTA[pagoCuenta]}`);
   }
-
-  // ── Backend cobros ───────────────────────────────────────────
-  const [openId, setOpenId] = useState<string | null>(null);
-  const [cpMonto, setCpMonto] = useState('');
-  const [cpFecha, setCpFecha] = useState(todayISO());
-  const [cpMedio, setCpMedio] = useState('Mercado Pago');
-
-  const { data: clientesData = [] } = useQuery({
-    queryKey: ['clientes'],
-    queryFn: () => getJson<Cliente[]>('/api/clientes'),
-  });
-
-  const { data, isLoading } = useQuery({
-    queryKey: ['resumen'],
-    queryFn: () => getJson<ResumenPayload>('/api/resumen'),
-  });
-
-  const cobrarMut = useMutation({
-    mutationFn: async (p: {
-      id: string;
-      nombre: string;
-      deuda: number;
-      monto: number;
-      fecha: string;
-      medio: string;
-    }) => {
-      const { id, nombre, deuda, monto, fecha, medio } = p;
-      await sendJson(`/api/clientes/${id}/pagos`, 'POST', { fecha, monto, horas: 0 });
-      await sendJson(`/api/clientes/${id}`, 'PATCH', { deuda: Math.max(0, deuda - monto) });
-      await sendJson('/api/cobros-diarios', 'POST', {
-        cliente: nombre,
-        monto,
-        fecha,
-        medio,
-        tipo: 'Cobro deuda anterior',
-      });
-    },
-    onSuccess: (_d, vars) => {
-      j2.ingresarPorMedio(vars.medio, vars.monto);
-      qc.invalidateQueries({ queryKey: ['resumen'] });
-      qc.invalidateQueries({ queryKey: ['clientes'] });
-      setOpenId(null);
-      toast('✓ Cobro registrado y actualizado en la ficha del cliente');
-    },
-    onError: (e: Error) => toast(e.message),
-  });
-
-  function confirmarBackend(c: { _id: string; nombre: string; deuda: number }) {
-    const m = parseInt(cpMonto, 10);
-    if (!m || m <= 0) { toast('⚠ Ingresá un monto válido'); return; }
-    if (!cpFecha) { toast('⚠ Elegí una fecha'); return; }
-    cobrarMut.mutate({ id: c._id, nombre: c.nombre, deuda: c.deuda, monto: m, fecha: cpFecha, medio: cpMedio });
-  }
-
-  const conDeudaBackend = data?.cuentasPorCobrar.clientes ?? [];
-  const proveedores = data?.cuentasPagar.proveedores ?? [];
 
   return (
     <>
@@ -288,101 +272,11 @@ export function CobrosPage() {
 
       <div className="sep" />
 
-      {/* ── Sección backend (clientes formales) ── */}
+      {/* ── Proveedores ── */}
       {isLoading ? (
-        <p style={{ padding: 16, color: '#888' }}>Cargando datos del servidor…</p>
+        <p style={{ padding: 16, color: '#888' }}>Cargando proveedores…</p>
       ) : (
         <>
-          <div className="section-title" style={{ marginBottom: 12 }}>👥 Clientes formales con deuda (servidor)</div>
-          <div className="tabla-wrap">
-            <div className="tabla-scroll">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Cliente</th>
-                    <th>Monto</th>
-                    <th>Dirección</th>
-                    <th>Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {conDeudaBackend.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} style={{ textAlign: 'center', color: '#aaa', padding: 24 }}>
-                        ✓ Sin deudas en el servidor
-                      </td>
-                    </tr>
-                  ) : (
-                    conDeudaBackend.map((c) => (
-                      <Fragment key={c._id}>
-                        <tr className="prioridad-alta">
-                          <td><strong>{c.nombre}</strong></td>
-                          <td style={{ fontFamily: 'DM Mono,monospace', fontWeight: 600, color: 'var(--rojo)' }}>{money(c.deuda)}</td>
-                          <td style={{ fontSize: 12, color: '#666' }}>{c.direccion || '—'}</td>
-                          <td>
-                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                              <button
-                                type="button"
-                                className="btn sm"
-                                onClick={() => {
-                                  setOpenId((id) => (id === c._id ? null : c._id));
-                                  setCpMonto(String(c.deuda));
-                                  setCpFecha(todayISO());
-                                }}
-                              >
-                                ✓ Ya cobré
-                              </button>
-                              <button
-                                type="button"
-                                className="btn secundario sm"
-                                onClick={() => { void copiar(mensajeWa('cobro', c.nombre.split(' ')[0]), toast); nav('/whatsapp'); }}
-                              >
-                                💬 WA
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                        {openId === c._id && (
-                          <tr>
-                            <td colSpan={4} style={{ padding: 0 }}>
-                              <div style={{ background: '#f0fdf0', padding: '14px 20px', borderTop: '1px dashed #a3e6a3' }}>
-                                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-                                  <div className="form-group" style={{ flex: 1, minWidth: 120 }}>
-                                    <label>Monto cobrado</label>
-                                    <input type="number" value={cpMonto} onChange={(e) => setCpMonto(e.target.value)} />
-                                  </div>
-                                  <div className="form-group" style={{ flex: 1, minWidth: 120 }}>
-                                    <label>Fecha</label>
-                                    <input type="date" value={cpFecha} onChange={(e) => setCpFecha(e.target.value)} />
-                                  </div>
-                                  <div className="form-group" style={{ flex: 1, minWidth: 130 }}>
-                                    <label>Medio</label>
-                                    <select value={cpMedio} onChange={(e) => setCpMedio(e.target.value)}>
-                                      <option>Mercado Pago</option>
-                                      <option>Transferencia bancaria</option>
-                                      <option>Efectivo</option>
-                                    </select>
-                                  </div>
-                                  <button type="button" className="btn sm" disabled={cobrarMut.isPending} onClick={() => confirmarBackend(c)}>
-                                    ✓ Confirmar
-                                  </button>
-                                  <button type="button" className="btn secundario sm" onClick={() => setOpenId(null)}>
-                                    Cancelar
-                                  </button>
-                                </div>
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      </Fragment>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div className="sep" />
           <div className="section-title" style={{ marginBottom: 12 }}>Proveedores</div>
           <div className="tabla-wrap">
             <div className="tabla-scroll">
@@ -397,15 +291,19 @@ export function CobrosPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {proveedores.map((p) => (
-                    <tr key={p._id}>
-                      <td>{p.nombre}</td>
-                      <td>{p.factura}</td>
-                      <td>{money(p.deudaTotal)}</td>
-                      <td style={{ fontWeight: 600, color: p.saldoActual > 0 ? 'var(--rojo)' : undefined }}>{money(p.saldoActual)}</td>
-                      <td><span className="badge pendiente">{p.estado}</span></td>
-                    </tr>
-                  ))}
+                  {proveedores.length === 0 ? (
+                    <tr><td colSpan={5} style={{ textAlign: 'center', color: '#aaa', padding: 16 }}>Sin proveedores con deuda</td></tr>
+                  ) : (
+                    proveedores.map((p) => (
+                      <tr key={p._id}>
+                        <td>{p.nombre}</td>
+                        <td>{p.factura}</td>
+                        <td>{money(p.deudaTotal)}</td>
+                        <td style={{ fontWeight: 600, color: p.saldoActual > 0 ? 'var(--rojo)' : undefined }}>{money(p.saldoActual)}</td>
+                        <td><span className="badge pendiente">{p.estado}</span></td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>

@@ -50,6 +50,15 @@ export function ClientesPage() {
     onError: (e: Error) => toast(e.message),
   });
 
+  const limpiarDeuda = useMutation({
+    mutationFn: (id: string) => sendJson(`/api/clientes/${id}`, 'PATCH', { deuda: 0 }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['clientes'] });
+      toast('✓ Deuda del cliente limpiada');
+    },
+    onError: (e: Error) => toast(e.message),
+  });
+
   const lista = useMemo(() => data, [data]);
 
   function waCobro(nombre: string) {
@@ -199,15 +208,30 @@ export function ClientesPage() {
                         )}
                       </td>
                       <td onClick={(e) => e.stopPropagation()}>
-                        {c.deuda > 0 ? (
-                          <button type="button" className="btn sm" onClick={() => waCobro(c.nombre)}>
-                            💬 Cobrar
-                          </button>
-                        ) : (
-                          <button type="button" className="btn secundario sm" onClick={() => waTurno(c.nombre)}>
-                            📅 Turno
-                          </button>
-                        )}
+                        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                          {c.deuda > 0 ? (
+                            <>
+                              <button type="button" className="btn sm" onClick={() => waCobro(c.nombre)}>
+                                💬 Cobrar
+                              </button>
+                              <button
+                                type="button"
+                                className="btn secundario sm"
+                                style={{ fontSize: 11 }}
+                                onClick={() => {
+                                  if (confirm(`¿Limpiar deuda de ${c.nombre}? (queda en $0)`))
+                                    limpiarDeuda.mutate(c._id);
+                                }}
+                              >
+                                🗑 Deuda
+                              </button>
+                            </>
+                          ) : (
+                            <button type="button" className="btn secundario sm" onClick={() => waTurno(c.nombre)}>
+                              📅 Turno
+                            </button>
+                          )}
+                        </div>
                       </td>
                       <td onClick={(e) => e.stopPropagation()}>
                         <button
