@@ -114,12 +114,14 @@ export function ResumenPage() {
     data.cuentasPorCobrar.clientes.length > 0
       ? data.cuentasPorCobrar.clientes.map((c) => `${c.nombre.split(' ')[0]} ${money(c.deuda)}`).join(' · ')
       : 'Sin deudas registradas';
-  const subEmp = s.empleadosEsteMes.map((e) => `${e.nombre} ${money(e.monto)}`).join(' · ');
   const meses = s.mesesHistoricos;
   const ultimo = meses[meses.length - 1];
-  const ingresoUltimo =
-    ultimo?.estado?.toLowerCase().includes('curso') ? data.ingresosMes : ultimo?.ingresos ?? 0;
-  const resultadoUltimo = ingresoUltimo - (ultimo?.egresos ?? 0);
+
+  // Resultado del mes actual: ingresos del backend - todos los egresos locales del mes
+  const totalEgresosMes = totalFijos + totalVarios;
+  const resultadoMes = data.ingresosMes - totalEgresosMes;
+  const mesNombre = new Date(mc + '-02').toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
+  const mesLabel = mesNombre.charAt(0).toUpperCase() + mesNombre.slice(1);
 
   return (
     <>
@@ -161,11 +163,13 @@ export function ResumenPage() {
           </div>
         </div>
         <div className="card azul">
-          <div className="card-label">{s.resultadoMesActual.etiqueta}</div>
-          <div className="card-valor" style={{ color: s.resultadoMesActual.monto < 0 ? 'var(--rojo)' : '#2e7d32' }}>
-            {money(s.resultadoMesActual.monto)}
+          <div className="card-label">Resultado {mesLabel}</div>
+          <div className="card-valor" style={{ color: resultadoMes < 0 ? 'var(--rojo)' : '#2e7d32' }}>
+            {resultadoMes >= 0 ? '+' : ''}{money(resultadoMes)}
           </div>
-          <div className="card-sub">{s.resultadoMesActual.sub}</div>
+          <div className="card-sub">
+            Ingresos {money(data.ingresosMes)} · Egresos {money(totalEgresosMes)}
+          </div>
         </div>
         <div className="card tierra">
           <div className="card-label">Patrimonio Total</div>
@@ -248,7 +252,7 @@ export function ResumenPage() {
       </div>
       <p style={{ fontSize: 12, color: '#888' }}>
         Mes en curso ({data.mesClave}): ingresos combinados visitas + cargas diarias = {money(data.ingresosMes)} ·
-        resultado fila = {money(resultadoUltimo)}
+        resultado fila = {money(resultadoMes)}
       </p>
       <div
         style={{
