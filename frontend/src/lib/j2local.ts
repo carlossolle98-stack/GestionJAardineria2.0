@@ -1,4 +1,9 @@
-import type { J2Cuentas, J2Egreso, J2EgresoTipo, J2Inversiones, J2ListaEspera, J2Transferencia } from '@/types';
+import type { J2Cuentas, J2Egreso, J2EgresoTipo, J2Empleado, J2Inversiones, J2ListaEspera, J2MovLog, J2Transferencia } from '@/types';
+
+export const EMPLEADOS_DEFAULT: J2Empleado[] = [
+  { id: 'emp_angel', nombre: 'Ángel', activo: false },
+  { id: 'emp_carlos', nombre: 'Carlos', activo: true },
+];
 
 export const CUENTAS_DEFAULT: J2Cuentas = { mp: 568600, banco: 7910, efectivo: 512300 };
 export const INVERSIONES_DEFAULT: J2Inversiones = {
@@ -18,6 +23,7 @@ export const NOMBRES_CUENTA: Record<string, string> = {
 export const LABEL_EGRESO: Record<J2EgresoTipo, string> = {
   fijo: 'Fijo',
   varios: 'Varios',
+  sueldo: 'Sueldo',
   mercaderia: 'Mercadería',
   inventario: 'Inv. diferencia',
   bancario: 'Mov. bancario',
@@ -89,6 +95,23 @@ export function loadJ2Inversiones(): J2Inversiones {
     return s ? JSON.parse(s) : { ...INVERSIONES_DEFAULT };
   } catch {
     return { ...INVERSIONES_DEFAULT };
+  }
+}
+
+export function loadJ2Empleados(): J2Empleado[] {
+  try {
+    const s = localStorage.getItem('j2_empleados');
+    return s ? JSON.parse(s) : [...EMPLEADOS_DEFAULT];
+  } catch {
+    return [...EMPLEADOS_DEFAULT];
+  }
+}
+
+export function loadJ2MovLog(): J2MovLog[] {
+  try {
+    return JSON.parse(localStorage.getItem('j2_movlog') || '[]');
+  } catch {
+    return [];
   }
 }
 

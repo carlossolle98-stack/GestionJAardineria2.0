@@ -14,6 +14,7 @@ import { MovimientosPage } from '@/pages/MovimientosPage';
 import { EsperaPage } from '@/pages/EsperaPage';
 import { EgresosPage } from '@/pages/EgresosPage';
 import { FinanzasPage } from '@/pages/FinanzasPage';
+import { EmpleadosPage } from '@/pages/EmpleadosPage';
 
 const qc = new QueryClient();
 
@@ -36,6 +37,7 @@ export default function App() {
                 <Route path="espera" element={<EsperaPage />} />
                 <Route path="egresos" element={<EgresosPage />} />
                 <Route path="finanzas" element={<FinanzasPage />} />
+                <Route path="empleados" element={<EmpleadosPage />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Route>
             </Routes>

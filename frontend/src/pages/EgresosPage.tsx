@@ -13,24 +13,29 @@ export function EgresosPage() {
   const mc = mesClaveRef();
   const [tipo, setTipo] = useState<J2EgresoTipo>('fijo');
   const [categoria, setCategoria] = useState(CATS_FIJO[0]);
+  const [empleado, setEmpleado] = useState('');
   const [concepto, setConcepto] = useState('');
   const [monto, setMonto] = useState('');
   const [fecha, setFecha] = useState(todayISO());
   const [cuenta, setCuenta] = useState<'mp' | 'banco' | 'efectivo'>('mp');
   const [filtro, setFiltro] = useState<'todos' | J2EgresoTipo>('todos');
 
+  const empleadosActivos = j2.empleados.filter((e) => e.activo);
+
   const stats = useMemo(() => {
-    const fijos = j2.egresos.filter((e) => e.tipo === 'fijo' && e.fecha.startsWith(mc));
-    const varios = j2.egresos.filter((e) => e.tipo === 'varios' && e.fecha.startsWith(mc));
-    const mercs = j2.egresos.filter((e) => e.tipo === 'mercaderia' && e.fecha.startsWith(mc));
-    const invs = j2.egresos.filter((e) => e.tipo === 'inventario' && e.fecha.startsWith(mc));
-    const bancs = j2.egresos.filter((e) => e.tipo === 'bancario' && e.fecha.startsWith(mc));
+    const fijos   = j2.egresos.filter((e) => e.tipo === 'fijo'        && e.fecha.startsWith(mc));
+    const varios  = j2.egresos.filter((e) => e.tipo === 'varios'       && e.fecha.startsWith(mc));
+    const sueldos = j2.egresos.filter((e) => e.tipo === 'sueldo'       && e.fecha.startsWith(mc));
+    const mercs   = j2.egresos.filter((e) => e.tipo === 'mercaderia'   && e.fecha.startsWith(mc));
+    const invs    = j2.egresos.filter((e) => e.tipo === 'inventario'   && e.fecha.startsWith(mc));
+    const bancs   = j2.egresos.filter((e) => e.tipo === 'bancario'     && e.fecha.startsWith(mc));
     const tf = fijos.reduce((s, e) => s + e.monto, 0);
     const tv = varios.reduce((s, e) => s + e.monto, 0);
+    const ts = sueldos.reduce((s, e) => s + e.monto, 0);
     const tm = mercs.reduce((s, e) => s + e.monto, 0);
     const ti = invs.reduce((s, e) => s + e.monto, 0);
     const tb = bancs.reduce((s, e) => s + e.monto, 0);
-    return { fijos, varios, mercs, invs, bancs, tf, tv, tm, ti, tb, total: tf + tv + tm + ti + tb };
+    return { fijos, varios, sueldos, mercs, invs, bancs, tf, tv, ts, tm, ti, tb, total: tf + tv + ts + tm + ti + tb };
   }, [j2.egresos, mc]);
 
   const lista = useMemo(() => {
@@ -50,7 +55,9 @@ export function EgresosPage() {
       return;
     }
     const cat =
-      tipo === 'fijo' ? categoria : LABEL_EGRESO[tipo] || 'Varios';
+      tipo === 'fijo' ? categoria
+      : tipo === 'sueldo' ? (empleado || 'Sueldo')
+      : LABEL_EGRESO[tipo] || 'Varios';
     j2.addEgreso({
       fecha,
       tipo,
@@ -80,7 +87,7 @@ export function EgresosPage() {
   }
 
   const totalRegs =
-    stats.fijos.length + stats.varios.length + stats.mercs.length + stats.invs.length + stats.bancs.length;
+    stats.fijos.length + stats.varios.length + stats.sueldos.length + stats.mercs.length + stats.invs.length + stats.bancs.length;
 
   return (
     <>
@@ -100,10 +107,11 @@ export function EgresosPage() {
         </div>
         <div className="card amarillo">
           <div className="card-label">Gastos Varios del Mes</div>
-          <div className="card-valor">${stats.tv.toLocaleString('es-AR')}</div>
+          <div className="card-valor">${(stats.tv + stats.ts + stats.tm + stats.ti + stats.tb).toLocaleString('es-AR')}</div>
           <div className="card-sub">
             {[
               stats.varios.length && `Varios $${stats.tv.toLocaleString('es-AR')}`,
+              stats.sueldos.length && `Sueldos $${stats.ts.toLocaleString('es-AR')}`,
               stats.mercs.length && `Merc. $${stats.tm.toLocaleString('es-AR')}`,
               stats.invs.length && `Inv. $${stats.ti.toLocaleString('es-AR')}`,
               stats.bancs.length && `Banc. $${stats.tb.toLocaleString('es-AR')}`,
@@ -129,6 +137,7 @@ export function EgresosPage() {
             <select value={tipo} onChange={(e) => setTipo(e.target.value as J2EgresoTipo)}>
               <option value="fijo">Gasto fijo</option>
               <option value="varios">Gasto varios</option>
+              <option value="sueldo">Sueldo / Empleado</option>
               <option value="mercaderia">Compra / Mercadería</option>
               <option value="inventario">Diferencia de inventario</option>
               <option value="bancario">Mov. bancario negativo</option>
@@ -140,6 +149,17 @@ export function EgresosPage() {
               <select value={categoria} onChange={(e) => setCategoria(e.target.value)}>
                 {CATS_FIJO.map((c) => (
                   <option key={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          {tipo === 'sueldo' && (
+            <div className="form-group">
+              <label>Empleado</label>
+              <select value={empleado} onChange={(e) => setEmpleado(e.target.value)}>
+                {empleadosActivos.length === 0 && <option value="">Sin empleados activos</option>}
+                {empleadosActivos.map((e) => (
+                  <option key={e.id} value={e.nombre}>{e.nombre}</option>
                 ))}
               </select>
             </div>
@@ -174,7 +194,7 @@ export function EgresosPage() {
         📋 Historial de egresos
       </div>
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-        {(['todos', 'fijo', 'varios', 'mercaderia', 'inventario', 'bancario'] as const).map((f) => (
+        {(['todos', 'fijo', 'varios', 'sueldo', 'mercaderia', 'inventario', 'bancario'] as const).map((f) => (
           <button key={f} type="button" className="btn secundario sm" onClick={() => setFiltro(f)}>
             {f === 'todos' ? 'Todos' : LABEL_EGRESO[f]}
           </button>

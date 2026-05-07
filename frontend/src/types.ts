@@ -72,7 +72,19 @@ export type ResumenPayload = {
   mesClave: string;
 };
 
-export type J2EgresoTipo = 'fijo' | 'varios' | 'mercaderia' | 'inventario' | 'bancario';
+export type J2EgresoTipo = 'fijo' | 'varios' | 'sueldo' | 'mercaderia' | 'inventario' | 'bancario';
+
+export type J2Empleado = { id: string; nombre: string; activo: boolean };
+
+export type J2MovLog = {
+  id: string;
+  fecha: string;
+  tipo: string;
+  concepto: string;
+  detalle: string;
+  monto: number;
+  cuenta: string;
+};
 
 export type J2Egreso = {
   id: string;

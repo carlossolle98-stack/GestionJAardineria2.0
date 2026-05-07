@@ -12,6 +12,7 @@ const tabs = [
   { to: '/espera', label: '⏳ En espera' },
   { to: '/egresos', label: '💸 Egresos' },
   { to: '/finanzas', label: '🏦 Finanzas' },
+  { to: '/empleados', label: '👷 Empleados' },
 ];
 
 export function AppLayout() {
