@@ -128,21 +128,14 @@ export function ResumenPage() {
     const num = MESES_NUM[mesNombreEs.toLowerCase()];
     if (!num) return null;
     const clave = `${anio}-${num}`;
-    const gastos = j2.egresos.filter((e) => e.fecha.startsWith(clave)).reduce((s, e) => s + e.monto, 0);
-    const deudas = j2.deudasClientes
-      .filter((d) => d.estado === 'pendiente' && d.fecha.startsWith(clave))
-      .reduce((s, d) => s + d.monto, 0);
-    return gastos + deudas;
+    return j2.egresos.filter((e) => e.fecha.startsWith(clave)).reduce((s, e) => s + e.monto, 0);
   }
 
   // Ingresos y resultado del mes — 100% local
   const ingresosMesLocal = j2.ingresos
     .filter((i) => i.fecha.startsWith(mc))
     .reduce((s, i) => s + i.monto, 0);
-  const deudaspendientesMes = j2.deudasClientes
-    .filter((d) => d.estado === 'pendiente' && d.fecha.startsWith(mc))
-    .reduce((s, d) => s + d.monto, 0);
-  const totalEgresosMes = totalFijos + totalVarios + deudaspendientesMes;
+  const totalEgresosMes = totalFijos + totalVarios;
   const resultadoMes = ingresosMesLocal - totalEgresosMes;
   const mesNombre = new Date(mc + '-02').toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
   const mesLabel = mesNombre.charAt(0).toUpperCase() + mesNombre.slice(1);
@@ -199,7 +192,7 @@ export function ResumenPage() {
             {resultadoMes >= 0 ? '+' : ''}{money(resultadoMes)}
           </div>
           <div className="card-sub">
-            Ingresos {money(ingresosMesLocal)} · Gastos {money(totalFijos + totalVarios)}{deudaspendientesMes > 0 ? ` · C×C ${money(deudaspendientesMes)}` : ''}
+            Ingresos {money(ingresosMesLocal)} · Egresos {money(totalEgresosMes)}
           </div>
         </div>
         <div className="card tierra">
