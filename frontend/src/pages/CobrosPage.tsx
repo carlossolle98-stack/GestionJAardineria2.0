@@ -28,29 +28,11 @@ export function CobrosPage() {
   const pagadas = j2.deudasClientes.filter((d) => d.estado === 'pagado');
   const totalPendiente = pendientes.reduce((s, d) => s + d.monto, 0);
 
-  // Busca un cliente formal por nombre (case-insensitive)
-  function buscarFormal(nombre: string) {
-    return clientesData.find(
-      (c) => c.nombre.toLowerCase() === nombre.trim().toLowerCase()
-    ) ?? null;
-  }
-
-  async function registrarDeuda() {
+  function registrarDeuda() {
     const m = parseInt(dcMonto, 10);
     if (!dcNombre.trim()) { toast('⚠ Ingresá el nombre del cliente'); return; }
     if (!m || m <= 0) { toast('⚠ Ingresá un monto válido'); return; }
     if (!dcFecha) { toast('⚠ Elegí una fecha'); return; }
-
-    // Si el nombre coincide con un cliente formal, sumarle la deuda en la BD
-    const formal = buscarFormal(dcNombre);
-    if (formal) {
-      await sendJson(`/api/clientes/${formal._id}`, 'PATCH', {
-        deuda: (formal.deuda || 0) + m,
-      }).catch(() => {});
-      qc.invalidateQueries({ queryKey: ['resumen'] });
-      qc.invalidateQueries({ queryKey: ['clientes'] });
-    }
-
     j2.addDeudaCliente({
       nombreCliente: dcNombre.trim(),
       concepto: dcConcepto.trim() || 'Servicio de jardinería',
@@ -58,26 +40,12 @@ export function CobrosPage() {
       fecha: dcFecha,
     });
     setDcNombre(''); setDcConcepto(''); setDcMonto('');
-    toast(formal ? '✓ Deuda registrada y ficha del cliente actualizada' : '✓ Deuda registrada');
+    toast('✓ Deuda registrada');
   }
 
-  async function confirmarPago(id: string) {
-    const deuda = j2.deudasClientes.find((d) => d.id === id);
+  function confirmarPago(id: string) {
     j2.pagarDeudaCliente(id, pagoCuenta);
     setOpenPagoId(null);
-
-    // Si el cliente también existe como formal, reducir su deuda en la BD
-    if (deuda) {
-      const formal = buscarFormal(deuda.nombreCliente);
-      if (formal) {
-        await sendJson(`/api/clientes/${formal._id}`, 'PATCH', {
-          deuda: Math.max(0, (formal.deuda || 0) - deuda.monto),
-        }).catch(() => {});
-        qc.invalidateQueries({ queryKey: ['resumen'] });
-        qc.invalidateQueries({ queryKey: ['clientes'] });
-      }
-    }
-
     toast(`✓ Cobro registrado → ${NOMBRES_CUENTA[pagoCuenta]}`);
   }
 
