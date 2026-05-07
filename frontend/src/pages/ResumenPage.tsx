@@ -1,11 +1,16 @@
-import { useQuery } from '@tanstack/react-query';
-import { getJson } from '@/lib/api';
+import { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { getJson, postAdminSeed } from '@/lib/api';
+import { useToast } from '@/context/ToastContext';
 import { money, todayISO } from '@/lib/format';
 import { diasDesde, mesClaveRef } from '@/lib/j2local';
 import { useJ2Local } from '@/context/J2LocalContext';
 import type { ResumenPayload, Turno } from '@/types';
 
 export function ResumenPage() {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const [seedBusy, setSeedBusy] = useState(false);
   const j2 = useJ2Local();
   const mc = mesClaveRef();
   const fijosMes = j2.egresos.filter((e) => e.tipo === 'fijo' && e.fecha.startsWith(mc));
@@ -49,9 +54,48 @@ export function ResumenPage() {
     }
   }
 
+  async function ejecutarSeedServidor() {
+    const secret = window.prompt('ADMIN_SEED_SECRET (variable en Railway / backend):');
+    if (secret == null || secret === '') return;
+    if (
+      !window.confirm(
+        'Se borran en el servidor: clientes, proveedores y ajustes globales, y se vuelven a cargar los datos por defecto. ¿Seguro?'
+      )
+    )
+      return;
+    setSeedBusy(true);
+    try {
+      const r = await postAdminSeed(secret, { force: true });
+      toast(`Seed OK · ${r.totals.clientes} clientes`);
+      await qc.invalidateQueries({ queryKey: ['resumen'] });
+      await qc.invalidateQueries({ queryKey: ['turnos-all'] });
+      await qc.invalidateQueries({ queryKey: ['clientes'] });
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSeedBusy(false);
+    }
+  }
+
   if (isLoading) return <p style={{ padding: 24 }}>Cargando…</p>;
-  if (error) return <p style={{ padding: 24, color: 'var(--rojo)' }}>{String(error)}</p>;
-  if (!data?.settings) return <p style={{ padding: 24 }}>Sin configuración. Ejecutá seed en el backend.</p>;
+  if (error)
+    return (
+      <div style={{ padding: 24 }}>
+        <p style={{ color: 'var(--rojo)' }}>{String(error)}</p>
+        <button type="button" className="btn secundario" style={{ marginTop: 12 }} disabled={seedBusy} onClick={ejecutarSeedServidor}>
+          {seedBusy ? '…' : 'Cargar datos iniciales (seed)'}
+        </button>
+      </div>
+    );
+  if (!data?.settings)
+    return (
+      <div style={{ padding: 24 }}>
+        <p>Sin configuración en el servidor.</p>
+        <button type="button" className="btn" style={{ marginTop: 12 }} disabled={seedBusy} onClick={ejecutarSeedServidor}>
+          {seedBusy ? '…' : 'Cargar datos iniciales (seed)'}
+        </button>
+      </div>
+    );
 
   const s = data.settings;
   const subCaja = `MP ${money(s.cajaLiquida.mercadoPago)} · Banco ${money(s.cajaLiquida.banco)} · Efectivo ${money(
@@ -199,6 +243,23 @@ export function ResumenPage() {
         Mes en curso ({data.mesClave}): ingresos combinados visitas + cargas diarias = {money(data.ingresosMes)} ·
         resultado fila = {money(resultadoUltimo)}
       </p>
+      <div
+        style={{
+          marginTop: 24,
+          paddingTop: 16,
+          borderTop: '1px solid rgba(26,46,26,0.1)',
+        }}
+      >
+        <button
+          type="button"
+          className="btn secundario"
+          style={{ fontSize: 12 }}
+          disabled={seedBusy}
+          onClick={ejecutarSeedServidor}
+        >
+          {seedBusy ? '…' : 'Reiniciar datos demo en servidor (seed)'}
+        </button>
+      </div>
     </>
   );
 }

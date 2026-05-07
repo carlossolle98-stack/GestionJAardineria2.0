@@ -15,6 +15,26 @@ export async function getJson<T>(path: string): Promise<T> {
   return res.json();
 }
 
+export async function postAdminSeed(
+  secret: string,
+  opts?: { force?: boolean }
+): Promise<{
+  ok: boolean;
+  force: boolean;
+  insertedClientes: number;
+  insertedProveedores: number;
+  settingsUpserted: boolean;
+  totals: { clientes: number; proveedores: number };
+}> {
+  const res = await fetch(`${base()}/api/admin/seed`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ secret, force: opts?.force !== false }),
+  });
+  if (!res.ok) throw new Error(await parseErr(res));
+  return res.json();
+}
+
 export async function sendJson<T>(
   path: string,
   method: string,
