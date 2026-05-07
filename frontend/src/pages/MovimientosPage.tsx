@@ -52,6 +52,15 @@ export function MovimientosPage() {
     downloadCsv(`jardineria_movimientos_${fecha}.csv`, mov);
 
     setTimeout(() => {
+      // Ingresos locales
+      const ing = csvRows([
+        ['Fecha', 'Cliente', 'Concepto', 'Monto', 'Medio'],
+        ...j2.ingresos.map((i) => [i.fecha, i.cliente, i.concepto, i.monto, i.medio]),
+      ]);
+      downloadCsv(`jardineria_ingresos_${fecha}.csv`, ing);
+    }, 150);
+
+    setTimeout(() => {
       // Egresos locales
       const eg = csvRows([
         ['Fecha', 'Tipo', 'Categoría', 'Concepto', 'Monto', 'Cuenta'],

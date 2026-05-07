@@ -1,4 +1,4 @@
-import type { J2Cuentas, J2DeudaCliente, J2Egreso, J2EgresoTipo, J2Empleado, J2Inversiones, J2ListaEspera, J2MovLog, J2Transferencia } from '@/types';
+import type { J2Cuentas, J2DeudaCliente, J2Egreso, J2EgresoTipo, J2Empleado, J2Ingreso, J2Inversiones, J2ListaEspera, J2MovLog, J2Transferencia } from '@/types';
 
 export const EMPLEADOS_DEFAULT: J2Empleado[] = [
   { id: 'emp_angel', nombre: 'Ángel', activo: false, aguinaldo: 0 },
@@ -104,6 +104,14 @@ export function loadJ2Empleados(): J2Empleado[] {
     return s ? JSON.parse(s) : [...EMPLEADOS_DEFAULT];
   } catch {
     return [...EMPLEADOS_DEFAULT];
+  }
+}
+
+export function loadJ2Ingresos(): J2Ingreso[] {
+  try {
+    return JSON.parse(localStorage.getItem('j2_ingresos') || '[]');
+  } catch {
+    return [];
   }
 }
 

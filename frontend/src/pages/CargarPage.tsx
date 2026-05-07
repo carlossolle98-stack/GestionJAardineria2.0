@@ -4,10 +4,12 @@ import { getJson, sendJson } from '@/lib/api';
 import { money, todayISO } from '@/lib/format';
 import type { Cliente, CobroDiario } from '@/types';
 import { useToast } from '@/context/ToastContext';
+import { useJ2Local } from '@/context/J2LocalContext';
 
 export function CargarPage() {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const j2 = useJ2Local();
   const fechaHoy = todayISO();
 
   const { data: cobros = [] } = useQuery({
@@ -36,8 +38,16 @@ export function CargarPage() {
         tipo: cTipo,
       }),
     onSuccess: () => {
+      j2.addIngreso({
+        fecha: cFecha,
+        cliente: cCliente.trim(),
+        concepto: cTipo,
+        monto: Number(cMonto),
+        medio: cMedio,
+      });
       qc.invalidateQueries({ queryKey: ['cobros-diarios'] });
       qc.invalidateQueries({ queryKey: ['resumen'] });
+      qc.invalidateQueries({ queryKey: ['clientes'] });
       setCCliente('');
       setCMonto('');
       toast('✓ Cobro registrado');

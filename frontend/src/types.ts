@@ -122,6 +122,15 @@ export type J2Inversiones = {
   usd: { cantidad: number; precio: number };
 };
 
+export type J2Ingreso = {
+  id: string;
+  fecha: string;
+  cliente: string;
+  concepto: string;
+  monto: number;
+  medio: string;
+};
+
 export type J2DeudaCliente = {
   id: string;
   nombreCliente: string;

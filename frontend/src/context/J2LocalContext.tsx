@@ -5,6 +5,7 @@ import type {
   J2Egreso,
   J2EgresoTipo,
   J2Empleado,
+  J2Ingreso,
   J2Inversiones,
   J2ListaEspera,
   J2MovLog,
@@ -16,6 +17,7 @@ import {
   loadJ2DeudasClientes,
   loadJ2Egresos,
   loadJ2Empleados,
+  loadJ2Ingresos,
   loadJ2Inversiones,
   loadJ2ListaEspera,
   loadJ2MovLog,
@@ -27,6 +29,7 @@ import {
 type J2Ctx = {
   listaEspera: J2ListaEspera[];
   egresos: J2Egreso[];
+  ingresos: J2Ingreso[];
   transferencias: J2Transferencia[];
   cuentas: J2Cuentas;
   inversiones: J2Inversiones;
@@ -37,6 +40,8 @@ type J2Ctx = {
   removeListaEspera: (id: string) => void;
   addEgreso: (p: { fecha: string; tipo: J2EgresoTipo; categoria: string; concepto: string; monto: number; cuenta: keyof J2Cuentas }) => void;
   removeEgreso: (id: string) => void;
+  addIngreso: (p: Omit<J2Ingreso, 'id'>) => void;
+  removeIngreso: (id: string) => void;
   setCuentaSaldo: (k: keyof J2Cuentas, monto: number, motivo: string) => void;
   registrarTransferencia: (p: { de: string; para: string; monto: number; fecha: string; nota: string }) => void;
   removeTransferencia: (id: string) => void;
@@ -60,6 +65,7 @@ const Ctx = createContext<J2Ctx | null>(null);
 export function J2LocalProvider({ children }: { children: ReactNode }) {
   const [listaEspera, setListaEspera] = useState(loadJ2ListaEspera);
   const [egresos, setEgresos] = useState(loadJ2Egresos);
+  const [ingresos, setIngresos] = useState(loadJ2Ingresos);
   const [transferencias, setTransferencias] = useState(loadJ2Transferencias);
   const [cuentas, setCuentas] = useState(loadJ2Cuentas);
   const [inversiones, setInversiones] = useState(loadJ2Inversiones);
@@ -74,6 +80,7 @@ export function J2LocalProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => { localStorage.setItem('j2_listaespera', JSON.stringify(listaEspera)); }, [listaEspera]);
   useEffect(() => { localStorage.setItem('j2_egresos', JSON.stringify(egresos)); }, [egresos]);
+  useEffect(() => { localStorage.setItem('j2_ingresos', JSON.stringify(ingresos)); }, [ingresos]);
   useEffect(() => { localStorage.setItem('j2_transferencias', JSON.stringify(transferencias)); }, [transferencias]);
   useEffect(() => { localStorage.setItem('j2_cuentas', JSON.stringify(cuentas)); }, [cuentas]);
   useEffect(() => { localStorage.setItem('j2_inversiones', JSON.stringify(inversiones)); }, [inversiones]);
@@ -108,6 +115,22 @@ export function J2LocalProvider({ children }: { children: ReactNode }) {
     setEgresos((s) => { removed = s.find((x) => x.id === id); return s.filter((x) => x.id !== id); });
     if (removed && removed.tipo !== 'inventario') {
       setCuentas((c) => ({ ...c, [removed!.cuenta]: (c[removed!.cuenta] || 0) + removed!.monto }));
+    }
+  }, []);
+
+  const addIngreso = useCallback((p: Omit<J2Ingreso, 'id'>) => {
+    setIngresos((s) => [...s, { ...p, id: 'ing_' + Date.now() }]);
+    const k = medioACuenta(p.medio);
+    setCuentas((c) => ({ ...c, [k]: (c[k] || 0) + p.monto }));
+    logMov('ingreso', p.cliente || 'Cobro', p.concepto, p.monto, k);
+  }, []);
+
+  const removeIngreso = useCallback((id: string) => {
+    let removed: J2Ingreso | undefined;
+    setIngresos((s) => { removed = s.find((x) => x.id === id); return s.filter((x) => x.id !== id); });
+    if (removed) {
+      const k = medioACuenta(removed.medio);
+      setCuentas((c) => ({ ...c, [k]: Math.max(0, (c[k] || 0) - removed!.monto) }));
     }
   }, []);
 
@@ -212,7 +235,17 @@ export function J2LocalProvider({ children }: { children: ReactNode }) {
       return s.map((x) => x.id === id ? { ...x, estado: 'pagado' as const, fechaPago, cuentaCobro: cuenta } : x);
     });
     if (found) {
-      setCuentas((c) => ({ ...c, [cuenta]: (c[cuenta] || 0) + found!.monto }));
+      // addIngreso handles caja update + movlog
+      const ing: Omit<J2Ingreso, 'id'> = {
+        fecha: fechaPago,
+        cliente: found.nombreCliente,
+        concepto: found.concepto,
+        monto: found.monto,
+        medio: cuenta,
+      };
+      setIngresos((s) => [...s, { ...ing, id: 'ing_' + Date.now() }]);
+      const k = medioACuenta(cuenta);
+      setCuentas((c) => ({ ...c, [k]: (c[k] || 0) + found!.monto }));
       logMov('cobro_deuda', found.nombreCliente, found.concepto, found.monto, cuenta);
     }
   }, []);
@@ -222,14 +255,14 @@ export function J2LocalProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<J2Ctx>(() => ({
-    listaEspera, egresos, transferencias, cuentas, inversiones, empleados, movlog, deudasClientes,
-    addListaEspera, removeListaEspera, addEgreso, removeEgreso, setCuentaSaldo,
+    listaEspera, egresos, ingresos, transferencias, cuentas, inversiones, empleados, movlog, deudasClientes,
+    addListaEspera, removeListaEspera, addEgreso, removeEgreso, addIngreso, removeIngreso, setCuentaSaldo,
     registrarTransferencia, removeTransferencia, comprarUsd, venderUsd, actualizarPrecioUsd,
     movInversion, ingresarPorMedio, addEmpleado, toggleEmpleado,
     registrarMutual, registrarAguinaldo, ajustarInteresesAguinaldo,
     addDeudaCliente, pagarDeudaCliente, removeDeudaCliente,
-  }), [listaEspera, egresos, transferencias, cuentas, inversiones, empleados, movlog, deudasClientes,
-    addListaEspera, removeListaEspera, addEgreso, removeEgreso, setCuentaSaldo,
+  }), [listaEspera, egresos, ingresos, transferencias, cuentas, inversiones, empleados, movlog, deudasClientes,
+    addListaEspera, removeListaEspera, addEgreso, removeEgreso, addIngreso, removeIngreso, setCuentaSaldo,
     registrarTransferencia, removeTransferencia, comprarUsd, venderUsd, actualizarPrecioUsd,
     movInversion, ingresarPorMedio, addEmpleado, toggleEmpleado,
     registrarMutual, registrarAguinaldo, ajustarInteresesAguinaldo,

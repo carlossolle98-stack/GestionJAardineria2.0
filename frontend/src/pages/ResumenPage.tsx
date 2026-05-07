@@ -131,11 +131,21 @@ export function ResumenPage() {
     return j2.egresos.filter((e) => e.fecha.startsWith(clave)).reduce((s, e) => s + e.monto, 0);
   }
 
-  // Resultado del mes actual: ingresos del backend - todos los egresos locales del mes
+  // Ingresos y resultado del mes — 100% local
+  const ingresosMesLocal = j2.ingresos
+    .filter((i) => i.fecha.startsWith(mc))
+    .reduce((s, i) => s + i.monto, 0);
   const totalEgresosMes = totalFijos + totalVarios;
-  const resultadoMes = data.ingresosMes - totalEgresosMes;
+  const resultadoMes = ingresosMesLocal - totalEgresosMes;
   const mesNombre = new Date(mc + '-02').toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
   const mesLabel = mesNombre.charAt(0).toUpperCase() + mesNombre.slice(1);
+
+  function ingresosLocalesDeMes(mesNombreEs: string, anio: number) {
+    const num = MESES_NUM[mesNombreEs.toLowerCase()];
+    if (!num) return null;
+    const clave = `${anio}-${num}`;
+    return j2.ingresos.filter((i) => i.fecha.startsWith(clave)).reduce((s, i) => s + i.monto, 0);
+  }
 
   return (
     <>
@@ -182,7 +192,7 @@ export function ResumenPage() {
             {resultadoMes >= 0 ? '+' : ''}{money(resultadoMes)}
           </div>
           <div className="card-sub">
-            Ingresos {money(data.ingresosMes)} · Egresos {money(totalEgresosMes)}
+            Ingresos {money(ingresosMesLocal)} · Egresos {money(totalEgresosMes)}
           </div>
         </div>
         <div className="card tierra">
@@ -237,7 +247,10 @@ export function ResumenPage() {
             <tbody>
               {meses.map((m, idx) => {
                 const isLast = idx === meses.length - 1;
-                const ing = isLast && m.estado?.toLowerCase().includes('curso') ? data.ingresosMes : m.ingresos;
+                const ingLocal = ingresosLocalesDeMes(m.mes, m.anio);
+                const ing = ingLocal !== null && ingLocal > 0
+                  ? ingLocal
+                  : (isLast && m.estado?.toLowerCase().includes('curso') ? data.ingresosMes : m.ingresos);
                 const egLocal = egresosLocalesDeMes(m.mes, m.anio);
                 const eg = egLocal !== null ? egLocal : m.egresos;
                 const res = ing - eg;
@@ -266,8 +279,7 @@ export function ResumenPage() {
         </div>
       </div>
       <p style={{ fontSize: 12, color: '#888' }}>
-        Mes en curso ({data.mesClave}): ingresos combinados visitas + cargas diarias = {money(data.ingresosMes)} ·
-        resultado fila = {money(resultadoMes)}
+        Mes en curso ({mc}): ingresos locales = {money(ingresosMesLocal)} · egresos = {money(totalEgresosMes)} · resultado = {money(resultadoMes)}
       </p>
       <div
         style={{
