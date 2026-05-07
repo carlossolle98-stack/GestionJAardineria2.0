@@ -533,6 +533,7 @@
     <button onclick="cambiarPanel('espera', this)">⏳ En espera</button>
     <button onclick="cambiarPanel('egresos', this)">💸 Egresos</button>
     <button onclick="cambiarPanel('finanzas', this)">🏦 Finanzas</button>
+    <button onclick="cambiarPanel('empleados', this)">👷 Empleados</button>
   </nav>
 </header>
 
@@ -1188,6 +1189,7 @@
         <select id="eg_tipo" onchange="actualizarCategorias()">
           <option value="fijo">Gasto fijo</option>
           <option value="varios">Gasto varios</option>
+          <option value="sueldo">Sueldo / Empleado</option>
           <option value="mercaderia">Compra / Mercadería</option>
           <option value="inventario">Diferencia de inventario</option>
           <option value="bancario">Mov. bancario negativo</option>
@@ -1204,6 +1206,10 @@
           <option>Claude</option>
           <option>Otro</option>
         </select>
+      </div>
+      <div class="form-group" id="eg_emp_group" style="display:none">
+        <label>Empleado</label>
+        <select id="eg_empleado"></select>
       </div>
       <div class="form-group">
         <label>Concepto / Detalle</label>
@@ -1234,6 +1240,7 @@
     <button class="btn secundario" style="font-size:12px" onclick="filtrarEgresos('todos')">Todos</button>
     <button class="btn secundario" style="font-size:12px" onclick="filtrarEgresos('fijo')">Fijos</button>
     <button class="btn secundario" style="font-size:12px" onclick="filtrarEgresos('varios')">Varios</button>
+    <button class="btn secundario" style="font-size:12px" onclick="filtrarEgresos('sueldo')">Sueldos</button>
     <button class="btn secundario" style="font-size:12px" onclick="filtrarEgresos('mercaderia')">Mercadería</button>
     <button class="btn secundario" style="font-size:12px" onclick="filtrarEgresos('inventario')">Inventario</button>
     <button class="btn secundario" style="font-size:12px" onclick="filtrarEgresos('bancario')">Bancario</button>
@@ -1276,10 +1283,18 @@
   </div>
   <div id="formEditarCuenta" style="display:none;margin-bottom:20px">
     <div class="tabla-wrap" style="padding:16px 20px">
+      <div class="alerta" style="margin-bottom:12px;background:rgba(230,180,0,0.08);border-color:rgba(230,180,0,0.3)">
+        <div class="alerta-icon">⚠</div>
+        <div class="alerta-texto" style="font-size:13px">Usá esto solo para correcciones puntuales. Los movimientos normales (cobros, egresos, transferencias) se actualizan solos.</div>
+      </div>
       <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
         <div class="form-group" style="flex:1;min-width:160px">
           <label id="editarCuentaLabel">Nuevo saldo</label>
           <input type="number" id="editarCuentaMonto" placeholder="Nuevo saldo">
+        </div>
+        <div class="form-group" style="flex:2;min-width:200px">
+          <label>Motivo de la corrección</label>
+          <input type="text" id="editarCuentaMotivo" placeholder="Ej: Ajuste por depósito no registrado">
         </div>
         <button class="btn" onclick="guardarCuenta()">Guardar</button>
         <button class="btn secundario" onclick="document.getElementById('formEditarCuenta').style.display='none'">Cancelar</button>
@@ -1353,10 +1368,14 @@
       <button class="btn secundario" style="font-size:11px;padding:4px 10px;margin-top:8px" onclick="movimientoInversion('servente')">+ / - Movimiento</button>
     </div>
     <div class="card tierra">
-      <div class="card-label">USD · Precio actual</div>
-      <div class="card-valor" id="inv-usd-precio">$0</div>
-      <div class="card-sub" id="inv-usd-cantidad">0 USD</div>
-      <button class="btn secundario" style="font-size:11px;padding:4px 10px;margin-top:8px" onclick="editarUSD()">✏ Actualizar</button>
+      <div class="card-label">USD · Cantidad actual</div>
+      <div class="card-valor" id="inv-usd-cantidad">0 USD</div>
+      <div class="card-sub" id="inv-usd-precio">Precio: $0</div>
+      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+        <button class="btn" style="font-size:11px;padding:4px 10px;background:#2e7d32" onclick="abrirUSD('comprar')">+ Comprar</button>
+        <button class="btn" style="font-size:11px;padding:4px 10px;background:#c0392b" onclick="abrirUSD('vender')">- Vender</button>
+        <button class="btn secundario" style="font-size:11px;padding:4px 10px" onclick="abrirUSD('precio')">✏ Precio</button>
+      </div>
     </div>
     <div class="card verde" style="--card-color:var(--verde-vivo)">
       <div class="card-label">Valor total USD (ARS)</div>
@@ -1389,15 +1408,27 @@
 
   <div id="formUSD" style="display:none;margin-bottom:20px">
     <div class="tabla-wrap" style="padding:16px 20px">
-      <div class="section-title" style="margin-bottom:12px;font-size:15px">Actualizar USD</div>
+      <div class="section-title" style="margin-bottom:12px;font-size:15px" id="formUSDTitulo">Operación USD</div>
       <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
-        <div class="form-group" style="flex:1;min-width:130px">
-          <label>Precio del dólar (ARS)</label>
-          <input type="number" id="usd_precio" placeholder="Ej: 1200">
+        <div class="form-group" style="flex:1;min-width:120px" id="usd_cantidad_group">
+          <label>Cantidad USD</label>
+          <input type="number" id="usd_cantidad" placeholder="Ej: 50" step="0.01">
         </div>
-        <div class="form-group" style="flex:1;min-width:130px">
-          <label>Cantidad de USD</label>
-          <input type="number" id="usd_cantidad" placeholder="Ej: 200" step="0.01">
+        <div class="form-group" style="flex:1;min-width:140px">
+          <label>Precio ARS por USD</label>
+          <input type="number" id="usd_precio" placeholder="Ej: 1300">
+        </div>
+        <div class="form-group" style="flex:1;min-width:140px" id="usd_cuenta_group">
+          <label id="usd_cuenta_label">Cuenta</label>
+          <select id="usd_cuenta">
+            <option value="mp">Mercado Pago</option>
+            <option value="banco">Banco</option>
+            <option value="efectivo">Efectivo</option>
+          </select>
+        </div>
+        <div class="form-group" style="flex:2;min-width:180px">
+          <label>Motivo / Detalle</label>
+          <input type="text" id="usd_motivo" placeholder="Ej: Compra para ahorro">
         </div>
         <button class="btn" onclick="guardarUSD()">Guardar</button>
         <button class="btn secundario" onclick="document.getElementById('formUSD').style.display='none'">Cancelar</button>
@@ -1406,11 +1437,47 @@
   </div>
 </div>
 
+<!-- ══════════════════════════════════════════════════════ EMPLEADOS -->
+<div class="panel" id="panel-empleados">
+  <div class="section-header">
+    <div class="section-title">Empleados <small>Equipo y pagos</small></div>
+  </div>
+  <div class="tabla-wrap" style="padding:20px;margin-bottom:16px">
+    <div class="section-title" style="margin-bottom:12px;font-size:15px">➕ Agregar empleado</div>
+    <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+      <div class="form-group" style="flex:2;min-width:180px">
+        <label>Nombre</label>
+        <input type="text" id="emp_nombre" placeholder="Nombre completo">
+      </div>
+      <button class="btn" onclick="agregarEmpleado()">Agregar</button>
+    </div>
+  </div>
+  <div class="section-title" style="margin:0 0 12px">👷 Lista de empleados</div>
+  <div id="listaEmpleados"></div>
+  <div class="section-title" style="margin:24px 0 12px">💸 Pagos por empleado (este mes)</div>
+  <div class="tabla-wrap">
+    <table>
+      <thead><tr><th>Empleado</th><th>Pagos este mes</th><th>Total pagado</th><th>Último pago</th></tr></thead>
+      <tbody id="tbodyPagosEmpleados"></tbody>
+    </table>
+  </div>
+</div>
+
 <!-- ══════════════════════════════════════════════════════ MOVIMIENTOS -->
 <div class="panel" id="panel-movimientos">
   <div class="section-header">
     <div class="section-title">Movimientos <small>Todos los registros de la app</small></div>
     <button class="btn" onclick="descargarTodo()">⬇ Descargar todo (CSV)</button>
+  </div>
+
+  <div class="section-title" style="margin-bottom:12px">📋 Log de operaciones</div>
+  <div class="tabla-wrap" style="margin-bottom:20px">
+    <div class="tabla-scroll">
+    <table>
+      <thead><tr><th>Fecha</th><th>Tipo</th><th>Concepto</th><th>Detalle</th><th>Monto</th><th>Cuenta</th></tr></thead>
+      <tbody id="tbodyMovLog"><tr><td colspan="6" style="color:#bbb;text-align:center;padding:16px">Sin operaciones registradas</td></tr></tbody>
+    </table>
+    </div>
   </div>
 
   <div class="alerta info">
@@ -1464,6 +1531,11 @@
 const CUENTAS_DEFAULT = { mp: 568600, banco: 7910, efectivo: 512300 };
 const INVERSIONES_DEFAULT = { cocos: 0, servente: 0, usd: { cantidad: 200, precio: 0 } };
 
+const EMPLEADOS_DEFAULT = [
+  { id: 'emp_angel', nombre: 'Ángel', activo: false },
+  { id: 'emp_carlos', nombre: 'Carlos', activo: true },
+];
+
 function cargarState() {
   try {
     return {
@@ -1475,10 +1547,12 @@ function cargarState() {
       transferencias: JSON.parse(localStorage.getItem('j2_transferencias') || '[]'),
       cuentas:        JSON.parse(localStorage.getItem('j2_cuentas')        || JSON.stringify(CUENTAS_DEFAULT)),
       inversiones:    JSON.parse(localStorage.getItem('j2_inversiones')    || JSON.stringify(INVERSIONES_DEFAULT)),
+      movlog:         JSON.parse(localStorage.getItem('j2_movlog')         || '[]'),
+      empleados:      JSON.parse(localStorage.getItem('j2_empleados')      || JSON.stringify(EMPLEADOS_DEFAULT)),
     };
   } catch(e) {
     return { prospectos:[], turnos:[], cobrosHoy:[], listaEspera:[], egresos:[], transferencias:[],
-             cuentas: CUENTAS_DEFAULT, inversiones: INVERSIONES_DEFAULT };
+             cuentas: CUENTAS_DEFAULT, inversiones: INVERSIONES_DEFAULT, movlog:[], empleados: EMPLEADOS_DEFAULT };
   }
 }
 function guardarState() {
@@ -1491,7 +1565,15 @@ function guardarState() {
     localStorage.setItem('j2_transferencias', JSON.stringify(state.transferencias));
     localStorage.setItem('j2_cuentas',        JSON.stringify(state.cuentas));
     localStorage.setItem('j2_inversiones',    JSON.stringify(state.inversiones));
+    localStorage.setItem('j2_movlog',         JSON.stringify(state.movlog));
+    localStorage.setItem('j2_empleados',      JSON.stringify(state.empleados));
   } catch(e) {}
+}
+
+function registrarMovLog(tipo, concepto, detalle, monto, cuenta) {
+  const fecha = new Date().toISOString().split('T')[0];
+  state.movlog.unshift({ id:'ml_'+Date.now(), fecha, tipo, concepto, detalle: detalle||'', monto: monto||0, cuenta: cuenta||'' });
+  if (state.movlog.length > 500) state.movlog = state.movlog.slice(0, 500);
 }
 const state = cargarState();
 
@@ -1569,11 +1651,12 @@ function cambiarPanel(id, btn) {
   document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
   document.getElementById('panel-'+id).classList.add('active');
   btn.classList.add('active');
-  if (id === 'movimientos') renderMovimientos();
+  if (id === 'movimientos') { renderMovimientos(); renderMovLog(); }
   if (id === 'espera') renderListaEspera();
   if (id === 'cobros') renderCobrosPanel();
   if (id === 'egresos') renderEgresos('todos');
   if (id === 'finanzas') renderFinanzas();
+  if (id === 'empleados') renderEmpleados();
 }
 
 // ── DATOS BASE CLIENTES ────────────────────────────────
@@ -2314,6 +2397,7 @@ function registrarCobro() {
 
   // Guardar en lista de cobros registrados
   state.cobrosHoy.push({ cliente: clienteNombre, monto: parseInt(monto), fecha, medio, tipo, horas, pagoId, clienteId });
+  registrarMovLog('cobro', `Cobro — ${clienteNombre}`, `${tipo} · ${medio}${horas?' · '+horas+'h':''}`, parseInt(monto), medioACuenta(medio));
   guardarState();
 
   // Guardar también en el historial del cliente (aparece en su ficha)
@@ -2641,8 +2725,8 @@ function renderResumenCards() {
   if (gEl) gEl.textContent = '$' + totalFijos.toLocaleString('es-AR');
   if (gSub) gSub.textContent = fijosMes.length ? fijosMes.map(e => e.categoria).join(' · ') : 'Sin gastos fijos';
 
-  // Gastos varios del mes
-  const variosMes = state.egresos.filter(e => e.tipo === 'varios' && e.fecha && e.fecha.startsWith(mc));
+  // Gastos varios del mes (todos los tipos no-fijos)
+  const variosMes = state.egresos.filter(e => e.tipo !== 'fijo' && e.fecha && e.fecha.startsWith(mc));
   const totalVarios = variosMes.reduce((s,e) => s + e.monto, 0);
   const vEl = document.getElementById('res-varios');
   const vSub = document.getElementById('res-varios-sub');
@@ -2669,14 +2753,28 @@ const NOMBRES_CUENTA = { mp:'Mercado Pago', banco:'Banco', efectivo:'Efectivo', 
 function actualizarCategorias() {
   const tipo = document.getElementById('eg_tipo').value;
   const g = document.getElementById('eg_cat_group');
+  const e = document.getElementById('eg_emp_group');
   if (g) g.style.display = tipo === 'fijo' ? 'block' : 'none';
+  if (e) {
+    e.style.display = tipo === 'sueldo' ? 'block' : 'none';
+    if (tipo === 'sueldo') {
+      const sel = document.getElementById('eg_empleado');
+      if (sel) {
+        const activos = state.empleados.filter(x => x.activo);
+        sel.innerHTML = activos.map(x => `<option value="${x.nombre}">${x.nombre}</option>`).join('');
+      }
+    }
+  }
 }
 
-const LABEL_EGRESO = { fijo:'Fijo', varios:'Varios', mercaderia:'Mercadería', inventario:'Inv. diferencia', bancario:'Mov. bancario' };
+const LABEL_EGRESO = { fijo:'Fijo', varios:'Varios', sueldo:'Sueldo', mercaderia:'Mercadería', inventario:'Inv. diferencia', bancario:'Mov. bancario' };
 
 function registrarEgreso() {
   const tipo     = document.getElementById('eg_tipo').value;
-  const cat      = tipo === 'fijo' ? document.getElementById('eg_categoria').value : (LABEL_EGRESO[tipo] || 'Varios');
+  const empSel   = tipo === 'sueldo' ? (document.getElementById('eg_empleado')?.value || '') : '';
+  const cat      = tipo === 'fijo' ? document.getElementById('eg_categoria').value
+                 : tipo === 'sueldo' ? (empSel || 'Sueldo')
+                 : (LABEL_EGRESO[tipo] || 'Varios');
   const concepto = document.getElementById('eg_concepto').value.trim();
   const monto    = parseInt(document.getElementById('eg_monto').value);
   const fecha    = document.getElementById('eg_fecha').value;
@@ -2686,6 +2784,7 @@ function registrarEgreso() {
   if (!fecha) { mostrarToast('⚠ Elegí una fecha'); return; }
 
   state.egresos.push({ id:'eg_'+Date.now(), fecha, tipo, categoria: cat, concepto: concepto||cat, monto, cuenta });
+  registrarMovLog('egreso', LABEL_EGRESO[tipo]||tipo, concepto||cat, -monto, cuenta);
 
   // Descontar de la cuenta correspondiente
   if (state.cuentas[cuenta] !== undefined) {
@@ -2714,22 +2813,24 @@ function renderEgresos(filtro) {
   // Cards del panel
   const fijos      = state.egresos.filter(e => e.tipo==='fijo'        && e.fecha && e.fecha.startsWith(mc));
   const varios     = state.egresos.filter(e => e.tipo==='varios'       && e.fecha && e.fecha.startsWith(mc));
+  const sueldos    = state.egresos.filter(e => e.tipo==='sueldo'       && e.fecha && e.fecha.startsWith(mc));
   const mercs      = state.egresos.filter(e => e.tipo==='mercaderia'   && e.fecha && e.fecha.startsWith(mc));
   const invs       = state.egresos.filter(e => e.tipo==='inventario'   && e.fecha && e.fecha.startsWith(mc));
   const bancs      = state.egresos.filter(e => e.tipo==='bancario'     && e.fecha && e.fecha.startsWith(mc));
   const tf  = fijos.reduce((s,e)=>s+e.monto,0);
   const tv  = varios.reduce((s,e)=>s+e.monto,0);
+  const ts  = sueldos.reduce((s,e)=>s+e.monto,0);
   const tm  = mercs.reduce((s,e)=>s+e.monto,0);
   const ti  = invs.reduce((s,e)=>s+e.monto,0);
   const tb  = bancs.reduce((s,e)=>s+e.monto,0);
-  const total = tf + tv + tm + ti + tb;
-  const totalRegs = fijos.length + varios.length + mercs.length + invs.length + bancs.length;
+  const total = tf + tv + ts + tm + ti + tb;
+  const totalRegs = fijos.length + varios.length + sueldos.length + mercs.length + invs.length + bancs.length;
   const setT = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
   setT('eg-fijos',  '$'+tf.toLocaleString('es-AR'));
-  setT('eg-varios', '$'+tv.toLocaleString('es-AR'));
+  setT('eg-varios', '$'+(tv+ts+tm+ti+tb).toLocaleString('es-AR'));
   setT('eg-total',  '$'+total.toLocaleString('es-AR'));
   setT('eg-fijos-sub',  fijos.length  ? fijos.map(e=>e.categoria).join(' · ')  : '—');
-  const otrosLabel = [mercs.length&&`Merc. $${tm.toLocaleString('es-AR')}`, invs.length&&`Inv. $${ti.toLocaleString('es-AR')}`, bancs.length&&`Banc. $${tb.toLocaleString('es-AR')}`].filter(Boolean);
+  const otrosLabel = [sueldos.length&&`Sueldos $${ts.toLocaleString('es-AR')}`, mercs.length&&`Merc. $${tm.toLocaleString('es-AR')}`, invs.length&&`Inv. $${ti.toLocaleString('es-AR')}`, bancs.length&&`Banc. $${tb.toLocaleString('es-AR')}`].filter(Boolean);
   setT('eg-varios-sub', [varios.length&&`Varios $${tv.toLocaleString('es-AR')}`, ...otrosLabel].filter(Boolean).join(' · ') || '—');
   setT('eg-total-sub',  totalRegs+' registro'+(totalRegs!==1?'s':''));
 
@@ -2742,7 +2843,7 @@ function renderEgresos(filtro) {
   tbody.innerHTML = lista.length ? lista.map(e=>`
     <tr>
       <td style="font-family:'DM Mono',monospace;font-size:12px">${e.fecha}</td>
-      <td><span class="badge ${{fijo:'info',varios:'pendiente',mercaderia:'cobrado',inventario:'amarillo',bancario:'gris'}[e.tipo]||'pendiente'}">${LABEL_EGRESO[e.tipo]||e.tipo}</span></td>
+      <td><span class="badge ${{fijo:'info',varios:'pendiente',sueldo:'ok',mercaderia:'cobrado',inventario:'amarillo',bancario:'gris'}[e.tipo]||'pendiente'}">${LABEL_EGRESO[e.tipo]||e.tipo}</span></td>
       <td>${e.categoria}</td>
       <td>${e.concepto}</td>
       <td style="font-family:'DM Mono',monospace;font-weight:600;color:var(--rojo)">-$${e.monto.toLocaleString('es-AR')}</td>
@@ -2785,8 +2886,8 @@ function renderFinanzas() {
   setT('saldo-efectivo','$'+(c.efectivo||0).toLocaleString('es-AR'));
   setT('inv-cocos',     '$'+(inv.cocos||0).toLocaleString('es-AR'));
   setT('inv-servente',  '$'+(inv.servente||0).toLocaleString('es-AR'));
-  setT('inv-usd-precio','$'+(inv.usd?.precio||0).toLocaleString('es-AR'));
   setT('inv-usd-cantidad', (inv.usd?.cantidad||0)+' USD');
+  setT('inv-usd-precio', 'Precio: $'+(inv.usd?.precio||0).toLocaleString('es-AR'));
   const totalUSD = (inv.usd?.cantidad||0) * (inv.usd?.precio||0);
   setT('inv-usd-total', '$'+totalUSD.toLocaleString('es-AR'));
   setT('inv-usd-total-sub', `${inv.usd?.cantidad||0} USD × $${(inv.usd?.precio||0).toLocaleString('es-AR')}`);
@@ -2817,13 +2918,19 @@ function editarCuenta(cual) {
 }
 
 function guardarCuenta() {
-  const monto = parseInt(document.getElementById('editarCuentaMonto').value);
+  const monto  = parseInt(document.getElementById('editarCuentaMonto').value);
+  const motivo = document.getElementById('editarCuentaMotivo').value.trim();
   if (isNaN(monto)) { mostrarToast('⚠ Ingresá un monto válido'); return; }
+  if (!motivo) { mostrarToast('⚠ Ingresá el motivo de la corrección'); return; }
+  const anterior = state.cuentas[cuentaEditando] || 0;
+  const diff = monto - anterior;
+  registrarMovLog('correccion', 'Corrección de cuenta', motivo, diff, cuentaEditando);
   state.cuentas[cuentaEditando] = monto;
   guardarState();
   renderFinanzas();
   renderResumenCards();
   document.getElementById('formEditarCuenta').style.display = 'none';
+  document.getElementById('editarCuentaMotivo').value = '';
   mostrarToast('✓ Saldo actualizado');
 }
 
@@ -2847,6 +2954,7 @@ function registrarTransferencia() {
   if (para === 'servente') state.inversiones.servente = (state.inversiones.servente||0) + monto;
 
   state.transferencias.push({ id:'tr_'+Date.now(), fecha, de, para, monto, nota });
+  registrarMovLog('transferencia', `${NOMBRES_CUENTA[de]||de} → ${NOMBRES_CUENTA[para]||para}`, nota, monto, de);
   guardarState();
   renderFinanzas();
   renderResumenCards();
@@ -2885,19 +2993,49 @@ function confirmarMovimientoInversion() {
   mostrarToast('✓ Inversión actualizada');
 }
 
-function editarUSD() {
-  const usd = state.inversiones.usd || {};
-  document.getElementById('usd_precio').value   = usd.precio   || '';
-  document.getElementById('usd_cantidad').value = usd.cantidad || 200;
+let usdOperacion = 'comprar';
+function abrirUSD(op) {
+  usdOperacion = op;
+  const titulos = { comprar:'🟢 Comprar USD', vender:'🔴 Vender USD', precio:'✏ Actualizar precio' };
+  document.getElementById('formUSDTitulo').textContent = titulos[op];
+  document.getElementById('usd_precio').value = state.inversiones.usd?.precio || '';
+  document.getElementById('usd_cantidad').value = '';
+  document.getElementById('usd_motivo').value = '';
+  const cantGroup = document.getElementById('usd_cantidad_group');
+  const cuentaGroup = document.getElementById('usd_cuenta_group');
+  if (cantGroup) cantGroup.style.display = op === 'precio' ? 'none' : 'block';
+  if (cuentaGroup) cuentaGroup.style.display = op === 'precio' ? 'none' : 'block';
+  const lbl = document.getElementById('usd_cuenta_label');
+  if (lbl) lbl.textContent = op === 'comprar' ? 'Cuenta de pago (sale ARS)' : 'Cuenta de destino (entra ARS)';
   document.getElementById('formUSD').style.display = 'block';
   document.getElementById('formInversion').style.display = 'none';
 }
 
 function guardarUSD() {
-  const precio   = parseFloat(document.getElementById('usd_precio').value);
-  const cantidad = parseFloat(document.getElementById('usd_cantidad').value);
-  if (isNaN(precio) || isNaN(cantidad)) { mostrarToast('⚠ Ingresá valores válidos'); return; }
-  state.inversiones.usd = { precio, cantidad };
+  const precio  = parseFloat(document.getElementById('usd_precio').value);
+  const motivo  = document.getElementById('usd_motivo').value.trim();
+  if (isNaN(precio) || precio <= 0) { mostrarToast('⚠ Ingresá un precio válido'); return; }
+
+  if (usdOperacion === 'precio') {
+    state.inversiones.usd = { ...(state.inversiones.usd || {}), precio };
+    registrarMovLog('usd_precio', 'Actualización precio USD', motivo || 'Actualización manual', 0, '');
+  } else {
+    const cantidad = parseFloat(document.getElementById('usd_cantidad').value);
+    const cuenta   = document.getElementById('usd_cuenta').value;
+    if (isNaN(cantidad) || cantidad <= 0) { mostrarToast('⚠ Ingresá una cantidad válida'); return; }
+    const arsTotal = Math.round(cantidad * precio);
+    const usdActual = state.inversiones.usd || { cantidad: 0, precio: 0 };
+    if (usdOperacion === 'comprar') {
+      state.inversiones.usd = { cantidad: (usdActual.cantidad || 0) + cantidad, precio };
+      state.cuentas[cuenta] = Math.max(0, (state.cuentas[cuenta] || 0) - arsTotal);
+      registrarMovLog('usd_compra', `Compra ${cantidad} USD a $${precio}`, motivo, -arsTotal, cuenta);
+    } else {
+      if (cantidad > (usdActual.cantidad || 0)) { mostrarToast('⚠ No tenés suficientes USD'); return; }
+      state.inversiones.usd = { cantidad: (usdActual.cantidad || 0) - cantidad, precio };
+      state.cuentas[cuenta] = (state.cuentas[cuenta] || 0) + arsTotal;
+      registrarMovLog('usd_venta', `Venta ${cantidad} USD a $${precio}`, motivo, arsTotal, cuenta);
+    }
+  }
   guardarState();
   renderFinanzas();
   renderResumenCards();
@@ -3146,6 +3284,77 @@ function renderListaEspera() {
       </div>
     </div>`;
   }).join('');
+}
+
+// ── EMPLEADOS ──────────────────────────────────────────
+function agregarEmpleado() {
+  const nombre = document.getElementById('emp_nombre').value.trim();
+  if (!nombre) { mostrarToast('⚠ Ingresá un nombre'); return; }
+  if (state.empleados.find(e => e.nombre.toLowerCase() === nombre.toLowerCase())) {
+    mostrarToast('⚠ Ya existe ese empleado'); return;
+  }
+  state.empleados.push({ id: 'emp_'+Date.now(), nombre, activo: true });
+  guardarState();
+  renderEmpleados();
+  document.getElementById('emp_nombre').value = '';
+  mostrarToast('✓ Empleado agregado');
+}
+
+function toggleEmpleado(id) {
+  const emp = state.empleados.find(e => e.id === id);
+  if (emp) { emp.activo = !emp.activo; guardarState(); renderEmpleados(); }
+}
+
+function renderEmpleados() {
+  const cont = document.getElementById('listaEmpleados');
+  if (!cont) return;
+  if (!state.empleados.length) { cont.innerHTML = '<p style="color:#bbb;padding:12px">Sin empleados</p>'; return; }
+  cont.innerHTML = state.empleados.map(e => `
+    <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--bg-card);border-radius:10px;margin-bottom:8px;border:1px solid var(--border)">
+      <span style="font-size:20px">${e.activo ? '✅' : '⛔'}</span>
+      <span style="font-weight:600;flex:1">${e.nombre}</span>
+      <span class="badge ${e.activo?'ok':'gris'}">${e.activo?'Activo':'Inactivo'}</span>
+      <button onclick="toggleEmpleado('${e.id}')" class="btn secundario" style="font-size:12px;padding:4px 10px">${e.activo?'Desactivar':'Activar'}</button>
+    </div>`).join('');
+
+  // Tabla de pagos por empleado este mes
+  const tbody = document.getElementById('tbodyPagosEmpleados');
+  if (!tbody) return;
+  const mc = mesClave();
+  const sueldosMes = state.egresos.filter(e => e.tipo === 'sueldo' && e.fecha && e.fecha.startsWith(mc));
+  tbody.innerHTML = state.empleados.map(emp => {
+    const pagos = sueldosMes.filter(e => e.categoria === emp.nombre);
+    const total = pagos.reduce((s,e)=>s+e.monto,0);
+    const ultimo = [...state.egresos].filter(e=>e.tipo==='sueldo'&&e.categoria===emp.nombre).sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''))[0];
+    return `<tr>
+      <td><strong>${emp.nombre}</strong> <span class="badge ${emp.activo?'ok':'gris'}" style="font-size:10px">${emp.activo?'Activo':'Inactivo'}</span></td>
+      <td style="text-align:center">${pagos.length}</td>
+      <td style="font-family:'DM Mono',monospace;font-weight:600;color:var(--rojo)">${total?'$'+total.toLocaleString('es-AR'):'—'}</td>
+      <td style="font-size:12px;color:#888">${ultimo?ultimo.fecha:'—'}</td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="4" style="color:#bbb;text-align:center;padding:16px">Sin datos</td></tr>`;
+}
+
+// ── LOG MOVIMIENTOS ────────────────────────────────────
+const TIPO_MOVLOG = {
+  cobro:'💵 Cobro', egreso:'💸 Egreso', transferencia:'🔄 Transferencia',
+  correccion:'✏ Corrección', usd_compra:'🟢 Compra USD', usd_venta:'🔴 Venta USD',
+  usd_precio:'💱 Precio USD', inversion:'📈 Inversión'
+};
+
+function renderMovLog() {
+  const tbody = document.getElementById('tbodyMovLog');
+  if (!tbody) return;
+  tbody.innerHTML = state.movlog.length ? state.movlog.map(m => `
+    <tr>
+      <td style="font-family:'DM Mono',monospace;font-size:12px">${m.fecha}</td>
+      <td><span style="font-size:12px">${TIPO_MOVLOG[m.tipo]||m.tipo}</span></td>
+      <td style="font-weight:600">${m.concepto}</td>
+      <td style="font-size:12px;color:#888">${m.detalle||'—'}</td>
+      <td style="font-family:'DM Mono',monospace;font-weight:600;color:${m.monto>=0?'var(--verde-vivo)':'var(--rojo)'}">${m.monto>=0?'+':''} $${Math.abs(m.monto).toLocaleString('es-AR')}</td>
+      <td style="font-size:12px">${NOMBRES_CUENTA[m.cuenta]||m.cuenta||'—'}</td>
+    </tr>`).join('')
+  : `<tr><td colspan="6" style="color:#bbb;text-align:center;padding:16px">Sin operaciones registradas</td></tr>`;
 }
 
 // ── TOAST ──────────────────────────────────────────────
