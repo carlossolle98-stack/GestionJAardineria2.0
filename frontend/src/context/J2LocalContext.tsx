@@ -1,4 +1,5 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { getJson, sendJson } from '@/lib/api';
 import type {
   J2Cuentas,
   J2DeudaCliente,
@@ -77,6 +78,42 @@ export function J2LocalProvider({ children }: { children: ReactNode }) {
   });
   const [movlog, setMovlog] = useState(loadJ2MovLog);
   const [deudasClientes, setDeudasClientes] = useState(loadJ2DeudasClientes);
+  const [backendSynced, setBackendSynced] = useState(false);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Carga inicial desde backend (sobreescribe localStorage si hay datos)
+  useEffect(() => {
+    getJson<Record<string, unknown>>('/api/j2data')
+      .then((d) => {
+        if (d) {
+          if (d.cuentas)        setCuentas(d.cuentas as typeof cuentas);
+          if (d.egresos)        setEgresos(d.egresos as typeof egresos);
+          if (d.ingresos)       setIngresos(d.ingresos as typeof ingresos);
+          if (d.inversiones)    setInversiones(d.inversiones as typeof inversiones);
+          if (d.empleados)      setEmpleados(d.empleados as typeof empleados);
+          if (d.transferencias) setTransferencias(d.transferencias as typeof transferencias);
+          if (d.deudasClientes) setDeudasClientes(d.deudasClientes as typeof deudasClientes);
+          if (d.listaEspera)    setListaEspera(d.listaEspera as typeof listaEspera);
+          if (d.movlog)         setMovlog(d.movlog as typeof movlog);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setBackendSynced(true));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Guarda al backend con debounce de 2s cada vez que algo cambia
+  useEffect(() => {
+    if (!backendSynced) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      sendJson('/api/j2data', 'PUT', {
+        cuentas, egresos, ingresos, inversiones, empleados,
+        transferencias, deudasClientes, listaEspera, movlog,
+      }).catch(() => {});
+    }, 2000);
+  }, [backendSynced, cuentas, egresos, ingresos, inversiones, empleados,
+      transferencias, deudasClientes, listaEspera, movlog]);
 
   useEffect(() => { localStorage.setItem('j2_listaespera', JSON.stringify(listaEspera)); }, [listaEspera]);
   useEffect(() => { localStorage.setItem('j2_egresos', JSON.stringify(egresos)); }, [egresos]);
