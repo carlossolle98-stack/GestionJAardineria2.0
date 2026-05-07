@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { getJson, sendJson } from '@/lib/api';
 import { money, todayISO } from '@/lib/format';
 import { mensajeWa, copiar } from '@/lib/whatsapp';
-import type { ResumenPayload } from '@/types';
+import type { ResumenPayload, Cliente } from '@/types';
 import { useToast } from '@/context/ToastContext';
 import { useJ2Local } from '@/context/J2LocalContext';
 import { NOMBRES_CUENTA } from '@/lib/j2local';
@@ -54,6 +54,11 @@ export function CobrosPage() {
   const [cpMonto, setCpMonto] = useState('');
   const [cpFecha, setCpFecha] = useState(todayISO());
   const [cpMedio, setCpMedio] = useState('Mercado Pago');
+
+  const { data: clientesData = [] } = useQuery({
+    queryKey: ['clientes'],
+    queryFn: () => getJson<Cliente[]>('/api/clientes'),
+  });
 
   const { data, isLoading } = useQuery({
     queryKey: ['resumen'],
@@ -124,7 +129,18 @@ export function CobrosPage() {
         <div className="form-grid">
           <div className="form-group">
             <label>Cliente</label>
-            <input value={dcNombre} onChange={(e) => setDcNombre(e.target.value)} placeholder="Nombre del cliente" />
+            <input
+              list="dl-cobros-clientes"
+              value={dcNombre}
+              onChange={(e) => setDcNombre(e.target.value)}
+              placeholder="Nombre del cliente"
+              autoComplete="off"
+            />
+            <datalist id="dl-cobros-clientes">
+              {clientesData.map((c) => (
+                <option key={c._id} value={c.nombre} />
+              ))}
+            </datalist>
           </div>
           <div className="form-group">
             <label>Concepto</label>
