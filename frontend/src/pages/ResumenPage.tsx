@@ -13,10 +13,19 @@ export function ResumenPage() {
   const [seedBusy, setSeedBusy] = useState(false);
   const j2 = useJ2Local();
   const mc = mesClaveRef();
-  const fijosMes = j2.egresos.filter((e) => e.tipo === 'fijo' && e.fecha.startsWith(mc));
-  const variosMes = j2.egresos.filter((e) => e.tipo === 'varios' && e.fecha.startsWith(mc));
-  const totalFijos = fijosMes.reduce((s, e) => s + e.monto, 0);
-  const totalVarios = variosMes.reduce((s, e) => s + e.monto, 0);
+  const fijosMes   = j2.egresos.filter((e) => e.tipo === 'fijo'   && e.fecha.startsWith(mc));
+  const variosMes  = j2.egresos.filter((e) => e.tipo !== 'fijo'   && e.fecha.startsWith(mc));
+  const sueldosMes = j2.egresos.filter((e) => e.tipo === 'sueldo' && e.fecha.startsWith(mc));
+  const totalFijos   = fijosMes.reduce((s, e) => s + e.monto, 0);
+  const totalVarios  = variosMes.reduce((s, e) => s + e.monto, 0);
+  const totalSueldos = sueldosMes.reduce((s, e) => s + e.monto, 0);
+  const subSueldos = j2.empleados
+    .map((emp) => {
+      const t = sueldosMes.filter((e) => e.categoria === emp.nombre).reduce((s, e) => s + e.monto, 0);
+      return t > 0 ? `${emp.nombre.split(' ')[0]} $${t.toLocaleString('es-AR')}` : null;
+    })
+    .filter(Boolean)
+    .join(' · ');
   const inv = j2.inversiones;
   const totalUSD = (inv.usd?.cantidad || 0) * (inv.usd?.precio || 0);
   const totalInv = (inv.cocos || 0) + (inv.servente || 0) + totalUSD;
@@ -126,11 +135,9 @@ export function ResumenPage() {
           <div className="card-sub">{subDeuda}</div>
         </div>
         <div className="card amarillo">
-          <div className="card-label">Empleados Este Mes</div>
-          <div className="card-valor">
-            {money(s.empleadosEsteMes.reduce((a, e) => a + e.monto, 0))}
-          </div>
-          <div className="card-sub">{subEmp}</div>
+          <div className="card-label">Sueldos Este Mes</div>
+          <div className="card-valor">{money(totalSueldos)}</div>
+          <div className="card-sub">{subSueldos || 'Sin sueldos cargados'}</div>
         </div>
         <div className="card">
           <div className="card-label">Gastos Fijos del Mes (app)</div>

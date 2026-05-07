@@ -44,6 +44,9 @@ type J2Ctx = {
   ingresarPorMedio: (medioEtiqueta: string, monto: number) => void;
   addEmpleado: (nombre: string) => void;
   toggleEmpleado: (id: string) => void;
+  registrarMutual: (empNombre: string, monto: number, cuenta: keyof J2Cuentas) => void;
+  registrarAguinaldo: (empId: string, monto: number) => void;
+  ajustarInteresesAguinaldo: (empId: string, intereses: number) => void;
 };
 
 const Ctx = createContext<J2Ctx | null>(null);
@@ -164,11 +167,26 @@ export function J2LocalProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const addEmpleado = useCallback((nombre: string) => {
-    setEmpleados((s) => [...s, { id: 'emp_' + Date.now(), nombre, activo: true }]);
+    setEmpleados((s) => [...s, { id: 'emp_' + Date.now(), nombre, activo: true, aguinaldo: 0 }]);
   }, []);
 
   const toggleEmpleado = useCallback((id: string) => {
     setEmpleados((s) => s.map((e) => e.id === id ? { ...e, activo: !e.activo } : e));
+  }, []);
+
+  const registrarMutual = useCallback((empNombre: string, monto: number, cuenta: keyof J2Cuentas) => {
+    setCuentas((c) => ({ ...c, [cuenta]: (c[cuenta] || 0) + monto }));
+    logMov('mutual', `Mutual — ${empNombre}`, 'Descuento mutual retenido', monto, cuenta);
+  }, []);
+
+  const registrarAguinaldo = useCallback((empId: string, monto: number) => {
+    setEmpleados((s) => s.map((e) => e.id === empId ? { ...e, aguinaldo: (e.aguinaldo || 0) + monto } : e));
+    logMov('aguinaldo', 'Aguinaldo retenido', `emp:${empId}`, monto, 'cocos');
+  }, []);
+
+  const ajustarInteresesAguinaldo = useCallback((empId: string, intereses: number) => {
+    setEmpleados((s) => s.map((e) => e.id === empId ? { ...e, aguinaldo: Math.max(0, (e.aguinaldo || 0) + intereses) } : e));
+    logMov('aguinaldo_int', 'Intereses aguinaldo', `emp:${empId}`, intereses, 'cocos');
   }, []);
 
   const value = useMemo<J2Ctx>(() => ({
@@ -176,10 +194,12 @@ export function J2LocalProvider({ children }: { children: ReactNode }) {
     addListaEspera, removeListaEspera, addEgreso, removeEgreso, setCuentaSaldo,
     registrarTransferencia, removeTransferencia, comprarUsd, venderUsd, actualizarPrecioUsd,
     movInversion, ingresarPorMedio, addEmpleado, toggleEmpleado,
+    registrarMutual, registrarAguinaldo, ajustarInteresesAguinaldo,
   }), [listaEspera, egresos, transferencias, cuentas, inversiones, empleados, movlog,
     addListaEspera, removeListaEspera, addEgreso, removeEgreso, setCuentaSaldo,
     registrarTransferencia, removeTransferencia, comprarUsd, venderUsd, actualizarPrecioUsd,
-    movInversion, ingresarPorMedio, addEmpleado, toggleEmpleado]);
+    movInversion, ingresarPorMedio, addEmpleado, toggleEmpleado,
+    registrarMutual, registrarAguinaldo, ajustarInteresesAguinaldo]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

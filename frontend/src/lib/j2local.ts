@@ -1,8 +1,8 @@
 import type { J2Cuentas, J2Egreso, J2EgresoTipo, J2Empleado, J2Inversiones, J2ListaEspera, J2MovLog, J2Transferencia } from '@/types';
 
 export const EMPLEADOS_DEFAULT: J2Empleado[] = [
-  { id: 'emp_angel', nombre: 'Ángel', activo: false },
-  { id: 'emp_carlos', nombre: 'Carlos', activo: true },
+  { id: 'emp_angel', nombre: 'Ángel', activo: false, aguinaldo: 0 },
+  { id: 'emp_carlos', nombre: 'Carlos', activo: true, aguinaldo: 0 },
 ];
 
 export const CUENTAS_DEFAULT: J2Cuentas = { mp: 568600, banco: 7910, efectivo: 512300 };
