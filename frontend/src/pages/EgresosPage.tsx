@@ -166,7 +166,10 @@ export function EgresosPage() {
           {tipo === 'sueldo' && (
             <div className="form-group">
               <label>Empleado</label>
-              <select value={empleado} onChange={(e) => setEmpleado(e.target.value)}>
+              <select
+                value={empleado || empleadosActivos[0]?.nombre || ''}
+                onChange={(e) => setEmpleado(e.target.value)}
+              >
                 {empleadosActivos.length === 0 && <option value="">Sin empleados activos</option>}
                 {empleadosActivos.map((e) => (
                   <option key={e.id} value={e.nombre}>{e.nombre}</option>
