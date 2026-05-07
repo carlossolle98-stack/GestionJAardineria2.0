@@ -2,6 +2,7 @@
   base    = "frontend"
   command = "npm install && npm run build"
   publish = "dist"
+  # deploy trigger
 
 [build.environment]
   VITE_API_URL = "https://gestionjaardineria20-backend-production.up.railway.app"
