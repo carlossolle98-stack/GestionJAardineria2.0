@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { todayISO } from '@/lib/format';
 import { LABEL_EGRESO, NOMBRES_CUENTA, csvEscape, downloadCsv, mesClaveRef } from '@/lib/j2local';
 import type { J2EgresoTipo } from '@/types';
@@ -14,6 +14,7 @@ export function EgresosPage() {
   const [tipo, setTipo] = useState<J2EgresoTipo>('fijo');
   const [categoria, setCategoria] = useState(CATS_FIJO[0]);
   const [empleado, setEmpleado] = useState('');
+  const empleadoRef = useRef<HTMLSelectElement>(null);
   const [concepto, setConcepto] = useState('');
   const [monto, setMonto] = useState('');
   const [fecha, setFecha] = useState(todayISO());
@@ -54,13 +55,17 @@ export function EgresosPage() {
       toast('⚠ Elegí una fecha');
       return;
     }
-    if (tipo === 'sueldo' && !empleado) {
+    // Leer el empleado directo del DOM para evitar problemas de estado
+    const empleadoVal = tipo === 'sueldo'
+      ? (empleadoRef.current?.value || empleado)
+      : '';
+    if (tipo === 'sueldo' && !empleadoVal) {
       toast('⚠ Seleccioná un empleado');
       return;
     }
     const cat =
       tipo === 'fijo' ? categoria
-      : tipo === 'sueldo' ? empleado
+      : tipo === 'sueldo' ? empleadoVal
       : LABEL_EGRESO[tipo] || 'Varios';
     j2.addEgreso({
       fecha,
@@ -170,8 +175,12 @@ export function EgresosPage() {
           {tipo === 'sueldo' && (
             <div className="form-group">
               <label>Empleado</label>
-              <select value={empleado} onChange={(e) => setEmpleado(e.target.value)}>
-                <option value="">— Seleccioná un empleado —</option>
+              <select
+                ref={empleadoRef}
+                defaultValue=""
+                onChange={(e) => setEmpleado(e.target.value)}
+              >
+                <option value="" disabled>— Seleccioná un empleado —</option>
                 {empleadosActivos.map((e) => (
                   <option key={e.id} value={e.nombre}>{e.nombre}</option>
                 ))}
