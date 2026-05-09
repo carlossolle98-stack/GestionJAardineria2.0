@@ -102,16 +102,24 @@ export function J2LocalProvider({ children }: { children: ReactNode }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Guarda al backend con debounce de 2s cada vez que algo cambia
+  // Guarda al backend con debounce de 500ms; también flush inmediato al ocultar/cerrar la página
   useEffect(() => {
     if (!backendSynced) return;
+    const data = { cuentas, egresos, ingresos, inversiones, empleados, transferencias, deudasClientes, listaEspera, movlog };
+    const save = () => sendJson('/api/j2data', 'PUT', data).catch(() => {});
+
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      sendJson('/api/j2data', 'PUT', {
-        cuentas, egresos, ingresos, inversiones, empleados,
-        transferencias, deudasClientes, listaEspera, movlog,
-      }).catch(() => {});
-    }, 2000);
+    saveTimer.current = setTimeout(save, 500);
+
+    // Flush inmediato si el usuario refresca / cierra la pestaña antes del debounce
+    const onHide = () => { if (document.visibilityState === 'hidden') { clearTimeout(saveTimer.current!); save(); } };
+    const onUnload = () => { clearTimeout(saveTimer.current!); save(); };
+    document.addEventListener('visibilitychange', onHide);
+    window.addEventListener('beforeunload', onUnload);
+    return () => {
+      document.removeEventListener('visibilitychange', onHide);
+      window.removeEventListener('beforeunload', onUnload);
+    };
   }, [backendSynced, cuentas, egresos, ingresos, inversiones, empleados,
       transferencias, deudasClientes, listaEspera, movlog]);
 
