@@ -41,23 +41,50 @@ export function ResumenPage() {
   });
 
   const hoy = todayISO();
-  const alertasDyn: { titulo: string; texto: string }[] = [];
+
+  type Alerta = { tipo: 'urgente' | 'aviso' | 'info'; titulo: string; texto: string };
+  const alertasDyn: Alerta[] = [];
+
+  // ── Turnos de hoy ──────────────────────────────────────────
+  for (const t of turnos) {
+    if (!t.realizado && t.fecha === hoy) {
+      alertasDyn.push({
+        tipo: 'aviso',
+        titulo: `📅 Turno HOY — ${t.cliente}`,
+        texto: `${t.hora ? t.hora + ' · ' : ''}${t.duracion} · ${t.tipo}`,
+      });
+    }
+  }
+
+  // ── Turnos vencidos sin realizar ───────────────────────────
   for (const t of turnos) {
     if (!t.realizado && t.fecha && t.fecha < hoy) {
       const dias = diasDesde(t.fecha);
-      if (dias > 3) {
-        alertasDyn.push({
-          titulo: `Turno pendiente hace ${dias} días — ${t.cliente}`,
-          texto: `Programado para ${t.fecha} (${t.duracion}). Marcá realizado o reprogramá.`,
-        });
-      }
+      alertasDyn.push({
+        tipo: dias > 7 ? 'urgente' : 'aviso',
+        titulo: `Turno sin realizar hace ${dias} día${dias !== 1 ? 's' : ''} — ${t.cliente}`,
+        texto: `Programado para ${t.fecha} (${t.duracion}). Marcá realizado o reprogramá.`,
+      });
     }
   }
+
+  // ── Deudas pendientes de clientes ──────────────────────────
+  for (const d of j2.deudasClientes.filter((x) => x.estado === 'pendiente')) {
+    const dias = diasDesde(d.fecha);
+    alertasDyn.push({
+      tipo: dias > 14 ? 'urgente' : 'aviso',
+      titulo: `${dias > 14 ? '💰' : '🟡'} Deuda pendiente — ${d.nombreCliente} · ${money(d.monto)}`,
+      texto: `${d.concepto} · hace ${dias} día${dias !== 1 ? 's' : ''}`,
+    });
+  }
+
+  // ── Lista de espera sin fecha ──────────────────────────────
   for (const e of j2.listaEspera) {
     const dias = diasDesde(e.fechaAgregado);
-    if (dias > 10) {
+    if (dias > 7) {
       alertasDyn.push({
-        titulo: `Lista de espera urgente — ${e.nombreCliente} (${dias} días sin fecha)`,
+        tipo: dias > 20 ? 'urgente' : 'aviso',
+        titulo: `Lista de espera — ${e.nombreCliente} (${dias} días sin fecha)`,
         texto: [e.trabajo, e.notas].filter(Boolean).join(' · ') || 'Sin notas',
       });
     }
@@ -207,24 +234,22 @@ export function ResumenPage() {
       <div className="section-header">
         <div className="section-title">🚨 Alertas del Día</div>
       </div>
-      {s.alertas.map((a, i) => (
-        <div key={i} className={`alerta ${a.tipo}`}>
-          <div>{a.tipo === 'urgente' ? '🔴' : a.tipo === 'aviso' ? '🟡' : a.tipo === 'info' ? '🔵' : '🟢'}</div>
-          <div>
-            <strong style={{ display: 'block', marginBottom: 4 }}>{a.titulo}</strong>
-            {a.texto}
-          </div>
+      {alertasDyn.length === 0 ? (
+        <div className="alerta ok">
+          <div>✅</div>
+          <div><strong>Todo al día</strong> — Sin turnos vencidos, deudas ni pendientes en lista de espera.</div>
         </div>
-      ))}
-      {alertasDyn.map((a, i) => (
-        <div key={`d-${i}`} className="alerta urgente">
-          <div>🔴</div>
-          <div>
-            <strong style={{ display: 'block', marginBottom: 4 }}>{a.titulo}</strong>
-            {a.texto}
+      ) : (
+        alertasDyn.map((a, i) => (
+          <div key={i} className={`alerta ${a.tipo}`}>
+            <div>{a.tipo === 'urgente' ? '🔴' : '🟡'}</div>
+            <div>
+              <strong style={{ display: 'block', marginBottom: 4 }}>{a.titulo}</strong>
+              {a.texto}
+            </div>
           </div>
-        </div>
-      ))}
+        ))
+      )}
 
       <div className="sep" />
 
