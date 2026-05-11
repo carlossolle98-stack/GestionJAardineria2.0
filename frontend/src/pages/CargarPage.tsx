@@ -28,6 +28,9 @@ export function CargarPage() {
   const [cFecha, setCFecha] = useState(fechaHoy);
   const [cMedio, setCMedio] = useState('Mercado Pago');
   const [cTipo, setCTipo] = useState('Cobro de trabajo');
+  const [cDetalle, setCDetalle] = useState('');
+
+  const esVenta = cTipo === 'Venta vivero' || cTipo === 'Venta producto digital';
 
   const valorHoraPreview = useMemo(() => {
     const m = Number(cMonto);
@@ -41,12 +44,13 @@ export function CargarPage() {
       const horas = Number(cHoras) || 0;
 
       // 1. Registrar cobro diario (log general)
+      const tipoFinal = esVenta && cDetalle.trim() ? `${cTipo} — ${cDetalle.trim()}` : cTipo;
       const cobro = await sendJson<CobroDiario>('/api/cobros-diarios', 'POST', {
         cliente: cCliente.trim(),
         monto,
         fecha: cFecha,
         medio: cMedio,
-        tipo: cTipo,
+        tipo: tipoFinal,
       });
 
       // 2. Registrar pago en la ficha del cliente (con horas → actualiza historial)
@@ -64,10 +68,13 @@ export function CargarPage() {
       return cobro;
     },
     onSuccess: () => {
+      const conceptoFinal = esVenta && cDetalle.trim()
+        ? `${cTipo} — ${cDetalle.trim()}`
+        : cTipo;
       j2.addIngreso({
         fecha: cFecha,
         cliente: cCliente.trim(),
-        concepto: cTipo,
+        concepto: conceptoFinal,
         monto: Number(cMonto),
         medio: cMedio,
       });
@@ -77,6 +84,7 @@ export function CargarPage() {
       setCCliente('');
       setCMonto('');
       setCHoras('');
+      setCDetalle('');
       toast('✓ Cobro registrado y ficha de cliente actualizada');
     },
     onError: (e: Error) => toast(e.message),
@@ -164,12 +172,26 @@ export function CargarPage() {
           </div>
           <div className="form-group">
             <label>Tipo</label>
-            <select value={cTipo} onChange={(e) => setCTipo(e.target.value)}>
+            <select
+              value={cTipo}
+              onChange={(e) => { setCTipo(e.target.value); setCDetalle(''); }}
+            >
               <option>Cobro de trabajo</option>
               <option>Venta vivero</option>
+              <option>Venta producto digital</option>
               <option>Cobro deuda anterior</option>
             </select>
           </div>
+          {esVenta && (
+            <div className="form-group">
+              <label>¿Qué vendiste?</label>
+              <input
+                value={cDetalle}
+                onChange={(e) => setCDetalle(e.target.value)}
+                placeholder={cTipo === 'Venta vivero' ? 'Ej: Rosales, Sustrato, Fertilizante…' : 'Ej: Guía de poda en PDF, Curso online…'}
+              />
+            </div>
+          )}
         </div>
 
         {valorHoraPreview > 0 && (
