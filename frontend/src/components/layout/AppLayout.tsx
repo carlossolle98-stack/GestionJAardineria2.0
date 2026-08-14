@@ -1,22 +1,23 @@
 import { NavLink, Outlet } from 'react-router-dom';
-import { esAdmin } from '@/lib/role';
+import { esAdmin, HAY_PIN, adminUnlocked } from '@/lib/role';
 
 const tabs = [
-  { to: '/',            label: '📊 Resumen',       end: true, soloAdmin: true  },
-  { to: '/clientes',    label: '👥 Clientes Fijos', end: false, soloAdmin: false },
-  { to: '/prospectos',  label: '🌱 Prospectos',     end: false, soloAdmin: false },
-  { to: '/agenda',      label: '📅 Agenda',          end: false, soloAdmin: false },
-  { to: '/cobros',      label: '💰 Cobros',          end: false, soloAdmin: true  },
-  { to: '/whatsapp',    label: '💬 WhatsApp',        end: false, soloAdmin: false },
-  { to: '/cargar',      label: '➕ Cargar Info',     end: false, soloAdmin: false },
-  { to: '/movimientos', label: '📥 Movimientos',     end: false, soloAdmin: true  },
-  { to: '/espera',      label: '⏳ En espera',        end: false, soloAdmin: false },
-  { to: '/egresos',     label: '💸 Egresos',         end: false, soloAdmin: true  },
-  { to: '/finanzas',    label: '🏦 Finanzas',        end: false, soloAdmin: true  },
-  { to: '/empleados',   label: '👷 Empleados',       end: false, soloAdmin: true  },
+  { to: '/',            label: '📊 Resumen',       end: true,  privado: true  },
+  { to: '/clientes',    label: '👥 Clientes Fijos', end: false, privado: false },
+  { to: '/prospectos',  label: '🌱 Prospectos',     end: false, privado: false },
+  { to: '/agenda',      label: '📅 Agenda',          end: false, privado: false },
+  { to: '/cobros',      label: '💰 Cobros',          end: false, privado: true  },
+  { to: '/whatsapp',    label: '💬 WhatsApp',        end: false, privado: false },
+  { to: '/cargar',      label: '➕ Cargar Info',     end: false, privado: false },
+  { to: '/movimientos', label: '📥 Movimientos',     end: false, privado: true  },
+  { to: '/espera',      label: '⏳ En espera',        end: false, privado: false },
+  { to: '/egresos',     label: '💸 Egresos',         end: false, privado: true  },
+  { to: '/finanzas',    label: '🏦 Finanzas',        end: false, privado: true  },
+  { to: '/empleados',   label: '👷 Empleados',       end: false, privado: true  },
 ];
 
-const tabsVisibles = tabs.filter((t) => esAdmin || !t.soloAdmin);
+// En el sitio equipo (VITE_APP_ROLE=empleado) se ocultan las tabs privadas
+const tabsVisibles = tabs.filter((t) => esAdmin || !t.privado);
 
 export function AppLayout() {
   const hoy = new Date().toLocaleDateString('es-AR', {
@@ -25,6 +26,9 @@ export function AppLayout() {
     month: 'long',
     year: 'numeric',
   });
+
+  // Muestra 🔒 en tabs privadas cuando hay PIN y no está desbloqueado
+  const mostrarCandado = HAY_PIN && !adminUnlocked();
 
   return (
     <>
@@ -79,7 +83,6 @@ export function AppLayout() {
                   borderRadius: 12,
                   padding: '4px 10px',
                   color: 'rgba(245,240,232,0.8)',
-                  letterSpacing: 0.5,
                 }}
               >
                 👷 Modo equipo
@@ -126,9 +129,15 @@ export function AppLayout() {
                 cursor: 'pointer',
                 whiteSpace: 'nowrap',
                 textDecoration: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
               })}
             >
               {t.label}
+              {t.privado && mostrarCandado && (
+                <span style={{ fontSize: 10, opacity: 0.6 }}>🔒</span>
+              )}
             </NavLink>
           ))}
         </nav>

@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ToastProvider } from '@/context/ToastContext';
 import { J2LocalProvider } from '@/context/J2LocalContext';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { PinGate } from '@/components/PinGate';
 import { ResumenPage } from '@/pages/ResumenPage';
 import { ClientesPage } from '@/pages/ClientesPage';
 import { ProspectosPage } from '@/pages/ProspectosPage';
@@ -19,7 +20,8 @@ import { esAdmin } from '@/lib/role';
 
 const qc = new QueryClient();
 
-// Ruta protegida: si no es admin, redirige a /agenda
+// Rutas solo para el sitio admin (modo build VITE_APP_ROLE=empleado las bloquea)
+// En el sitio principal se protegen con PinGate en runtime
 const A = esAdmin;
 
 export default function App() {
@@ -30,19 +32,41 @@ export default function App() {
           <BrowserRouter>
             <Routes>
               <Route element={<AppLayout />}>
-                <Route index element={A ? <ResumenPage /> : <Navigate to="/agenda" replace />} />
-                <Route path="clientes"    element={<ClientesPage />} />
-                <Route path="prospectos"  element={<ProspectosPage />} />
-                <Route path="agenda"      element={<AgendaPage />} />
-                <Route path="cobros"      element={A ? <CobrosPage />      : <Navigate to="/agenda" replace />} />
-                <Route path="whatsapp"    element={<WhatsappPage />} />
-                <Route path="cargar"      element={<CargarPage />} />
-                <Route path="movimientos" element={A ? <MovimientosPage /> : <Navigate to="/agenda" replace />} />
-                <Route path="espera"      element={<EsperaPage />} />
-                <Route path="egresos"     element={A ? <EgresosPage />     : <Navigate to="/agenda" replace />} />
-                <Route path="finanzas"    element={A ? <FinanzasPage />    : <Navigate to="/agenda" replace />} />
-                <Route path="empleados"   element={A ? <EmpleadosPage />   : <Navigate to="/agenda" replace />} />
-                <Route path="*"           element={<Navigate to={A ? '/' : '/agenda'} replace />} />
+                {/* Rutas libres */}
+                <Route path="clientes"   element={<ClientesPage />} />
+                <Route path="prospectos" element={<ProspectosPage />} />
+                <Route path="agenda"     element={<AgendaPage />} />
+                <Route path="whatsapp"   element={<WhatsappPage />} />
+                <Route path="cargar"     element={<CargarPage />} />
+                <Route path="espera"     element={<EsperaPage />} />
+
+                {/* Rutas privadas — PinGate en sitio principal, redirect en sitio equipo */}
+                <Route index element={A
+                  ? <PinGate><ResumenPage /></PinGate>
+                  : <Navigate to="/agenda" replace />}
+                />
+                <Route path="cobros" element={A
+                  ? <PinGate><CobrosPage /></PinGate>
+                  : <Navigate to="/agenda" replace />}
+                />
+                <Route path="movimientos" element={A
+                  ? <PinGate><MovimientosPage /></PinGate>
+                  : <Navigate to="/agenda" replace />}
+                />
+                <Route path="egresos" element={A
+                  ? <PinGate><EgresosPage /></PinGate>
+                  : <Navigate to="/agenda" replace />}
+                />
+                <Route path="finanzas" element={A
+                  ? <PinGate><FinanzasPage /></PinGate>
+                  : <Navigate to="/agenda" replace />}
+                />
+                <Route path="empleados" element={A
+                  ? <PinGate><EmpleadosPage /></PinGate>
+                  : <Navigate to="/agenda" replace />}
+                />
+
+                <Route path="*" element={<Navigate to={A ? '/' : '/agenda'} replace />} />
               </Route>
             </Routes>
           </BrowserRouter>
