@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { getJson, postAdminSeed } from '@/lib/api';
+import { getJson, postAdminSeed, sendJson } from '@/lib/api';
 import { useToast } from '@/context/ToastContext';
 import { money, todayISO } from '@/lib/format';
 import { diasDesde, mesClaveRef } from '@/lib/j2local';
@@ -11,6 +11,7 @@ export function ResumenPage() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [seedBusy, setSeedBusy] = useState(false);
+  const [resetBusy, setResetBusy] = useState(false);
   const j2 = useJ2Local();
   const mc = mesClaveRef();
   const fijosMes   = j2.egresos.filter((e) => e.tipo === 'fijo'   && e.fecha.startsWith(mc));
@@ -174,6 +175,47 @@ export function ResumenPage() {
     return j2.ingresos.filter((i) => i.fecha.startsWith(clave)).reduce((s, i) => s + i.monto, 0);
   }
 
+  async function iniciarNuevoPeriodo() {
+    const mesActualRaw = new Date(mc + '-02').toLocaleDateString('es-AR', { month: 'long' });
+    const mesActual = mesActualRaw.charAt(0).toUpperCase() + mesActualRaw.slice(1);
+    const anioActual = parseInt(mc.split('-')[0], 10);
+
+    if (!window.confirm(
+      `¿Iniciar nuevo período desde ${mesActual} ${anioActual}?\n\n` +
+      `SE BORRAN los datos históricos locales:\n` +
+      `• Historial de ingresos y egresos\n` +
+      `• Movimientos registrados\n` +
+      `• Deudas por cobrar\n` +
+      `• Transferencias y lista de espera\n\n` +
+      `SE CONSERVAN:\n` +
+      `• Saldos de cuentas (${money(cajaLiquidaTotal)})\n` +
+      `• Empleados e inversiones\n` +
+      `• Clientes, agenda y prospectos (servidor)\n\n` +
+      `Esta acción no se puede deshacer.`
+    )) return;
+
+    setResetBusy(true);
+    try {
+      // 1. Limpiar arrays locales (conserva cuentas, empleados, inversiones)
+      j2.resetLocalData();
+
+      // 2. Resetear tabla histórica en el servidor → solo mes actual "En curso"
+      await sendJson('/api/settings', 'PUT', {
+        ...s,
+        mesesHistoricos: [
+          { mes: mesActual, anio: anioActual, ingresos: 0, egresos: 0, estado: 'En curso' },
+        ],
+      });
+
+      await qc.invalidateQueries({ queryKey: ['resumen'] });
+      toast(`✓ Nuevo período iniciado — ${mesActual} ${anioActual}`);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e));
+    } finally {
+      setResetBusy(false);
+    }
+  }
+
   return (
     <>
       <div className="cards-grid">
@@ -270,49 +312,68 @@ export function ResumenPage() {
               </tr>
             </thead>
             <tbody>
-              {meses.map((m, idx) => {
-                const isLast = idx === meses.length - 1;
-                const ingLocal = ingresosLocalesDeMes(m.mes, m.anio);
-                const ing = ingLocal !== null && ingLocal > 0
-                  ? ingLocal
-                  : (isLast && m.estado?.toLowerCase().includes('curso') ? data.ingresosMes : m.ingresos);
-                const egLocal = egresosLocalesDeMes(m.mes, m.anio);
-                const eg = (egLocal !== null && egLocal > 0) ? egLocal : m.egresos;
-                const res = ing - eg;
-                const urgente = m.estado?.toLowerCase().includes('curso');
-                return (
-                  <tr key={`${m.mes}-${m.anio}`} className={urgente ? 'prioridad-alta' : undefined}>
-                    <td><strong>{m.mes}</strong></td>
-                    <td>{m.anio}</td>
-                    <td style={ing === 0 && urgente ? { color: 'var(--rojo)' } : undefined}>
-                      {ing === 0 && urgente ? `${money(0)} (sin cargar)` : money(ing)}
-                    </td>
-                    <td>{money(eg)}</td>
-                    <td style={{ color: res >= 0 ? '#2e7d32' : 'var(--rojo)', fontWeight: 600 }}>
-                      {res >= 0 ? '+' : ''}{money(res)}
-                    </td>
-                    <td>
-                      <span className={`badge ${urgente ? 'urgente' : 'ok'}`}>
-                        {urgente ? '⚠ En curso' : '✓ Cerrado'}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
+              {meses.length === 0 ? (
+                <tr>
+                  <td colSpan={6} style={{ textAlign: 'center', color: '#aaa', padding: 16 }}>
+                    Sin historial — empezá a cargar datos este mes
+                  </td>
+                </tr>
+              ) : (
+                meses.map((m, idx) => {
+                  const isLast = idx === meses.length - 1;
+                  const ingLocal = ingresosLocalesDeMes(m.mes, m.anio);
+                  const ing = ingLocal !== null && ingLocal > 0
+                    ? ingLocal
+                    : (isLast && m.estado?.toLowerCase().includes('curso') ? data.ingresosMes : m.ingresos);
+                  const egLocal = egresosLocalesDeMes(m.mes, m.anio);
+                  const eg = (egLocal !== null && egLocal > 0) ? egLocal : m.egresos;
+                  const res = ing - eg;
+                  const urgente = m.estado?.toLowerCase().includes('curso');
+                  return (
+                    <tr key={`${m.mes}-${m.anio}`} className={urgente ? 'prioridad-alta' : undefined}>
+                      <td><strong>{m.mes}</strong></td>
+                      <td>{m.anio}</td>
+                      <td style={ing === 0 && urgente ? { color: 'var(--rojo)' } : undefined}>
+                        {ing === 0 && urgente ? `${money(0)} (sin cargar)` : money(ing)}
+                      </td>
+                      <td>{money(eg)}</td>
+                      <td style={{ color: res >= 0 ? '#2e7d32' : 'var(--rojo)', fontWeight: 600 }}>
+                        {res >= 0 ? '+' : ''}{money(res)}
+                      </td>
+                      <td>
+                        <span className={`badge ${urgente ? 'urgente' : 'ok'}`}>
+                          {urgente ? '⚠ En curso' : '✓ Cerrado'}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>
       </div>
-      <p style={{ fontSize: 12, color: '#888' }}>
-        Mes en curso ({mc}): ingresos locales = {money(ingresosMesLocal)} · egresos = {money(totalEgresosMes)} · resultado = {money(resultadoMes)}
-      </p>
+
       <div
         style={{
-          marginTop: 24,
+          marginTop: 32,
           paddingTop: 16,
           borderTop: '1px solid rgba(26,46,26,0.1)',
+          display: 'flex',
+          gap: 12,
+          flexWrap: 'wrap',
+          alignItems: 'center',
         }}
       >
+        <button
+          type="button"
+          className="btn"
+          style={{ fontSize: 13, background: '#1a5276', borderColor: '#1a5276' }}
+          disabled={resetBusy}
+          onClick={iniciarNuevoPeriodo}
+        >
+          {resetBusy ? '…' : '🔄 Iniciar nuevo período'}
+        </button>
         <button
           type="button"
           className="btn secundario"

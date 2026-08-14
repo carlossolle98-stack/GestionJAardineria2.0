@@ -59,6 +59,7 @@ type J2Ctx = {
   addDeudaCliente: (p: Omit<J2DeudaCliente, 'id' | 'estado'>) => void;
   pagarDeudaCliente: (id: string, cuenta: keyof J2Cuentas) => void;
   removeDeudaCliente: (id: string) => void;
+  resetLocalData: () => void;
 };
 
 const Ctx = createContext<J2Ctx | null>(null);
@@ -299,19 +300,28 @@ export function J2LocalProvider({ children }: { children: ReactNode }) {
     setDeudasClientes((s) => s.filter((x) => x.id !== id));
   }, []);
 
+  const resetLocalData = useCallback(() => {
+    setEgresos([]);
+    setIngresos([]);
+    setTransferencias([]);
+    setDeudasClientes([]);
+    setListaEspera([]);
+    setMovlog([]);
+  }, []);
+
   const value = useMemo<J2Ctx>(() => ({
     listaEspera, egresos, ingresos, transferencias, cuentas, inversiones, empleados, movlog, deudasClientes,
     addListaEspera, removeListaEspera, addEgreso, removeEgreso, addIngreso, removeIngreso, setCuentaSaldo,
     registrarTransferencia, removeTransferencia, comprarUsd, venderUsd, actualizarPrecioUsd,
     movInversion, ingresarPorMedio, addEmpleado, toggleEmpleado,
     registrarMutual, registrarAguinaldo, ajustarInteresesAguinaldo,
-    addDeudaCliente, pagarDeudaCliente, removeDeudaCliente,
+    addDeudaCliente, pagarDeudaCliente, removeDeudaCliente, resetLocalData,
   }), [listaEspera, egresos, ingresos, transferencias, cuentas, inversiones, empleados, movlog, deudasClientes,
     addListaEspera, removeListaEspera, addEgreso, removeEgreso, addIngreso, removeIngreso, setCuentaSaldo,
     registrarTransferencia, removeTransferencia, comprarUsd, venderUsd, actualizarPrecioUsd,
     movInversion, ingresarPorMedio, addEmpleado, toggleEmpleado,
     registrarMutual, registrarAguinaldo, ajustarInteresesAguinaldo,
-    addDeudaCliente, pagarDeudaCliente, removeDeudaCliente]);
+    addDeudaCliente, pagarDeudaCliente, removeDeudaCliente, resetLocalData]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
