@@ -15,8 +15,12 @@ import { EsperaPage } from '@/pages/EsperaPage';
 import { EgresosPage } from '@/pages/EgresosPage';
 import { FinanzasPage } from '@/pages/FinanzasPage';
 import { EmpleadosPage } from '@/pages/EmpleadosPage';
+import { esAdmin } from '@/lib/role';
 
 const qc = new QueryClient();
+
+// Ruta protegida: si no es admin, redirige a /agenda
+const A = esAdmin;
 
 export default function App() {
   return (
@@ -26,19 +30,19 @@ export default function App() {
           <BrowserRouter>
             <Routes>
               <Route element={<AppLayout />}>
-                <Route index element={<ResumenPage />} />
-                <Route path="clientes" element={<ClientesPage />} />
-                <Route path="prospectos" element={<ProspectosPage />} />
-                <Route path="agenda" element={<AgendaPage />} />
-                <Route path="cobros" element={<CobrosPage />} />
-                <Route path="whatsapp" element={<WhatsappPage />} />
-                <Route path="cargar" element={<CargarPage />} />
-                <Route path="movimientos" element={<MovimientosPage />} />
-                <Route path="espera" element={<EsperaPage />} />
-                <Route path="egresos" element={<EgresosPage />} />
-                <Route path="finanzas" element={<FinanzasPage />} />
-                <Route path="empleados" element={<EmpleadosPage />} />
-                <Route path="*" element={<Navigate to="/" replace />} />
+                <Route index element={A ? <ResumenPage /> : <Navigate to="/agenda" replace />} />
+                <Route path="clientes"    element={<ClientesPage />} />
+                <Route path="prospectos"  element={<ProspectosPage />} />
+                <Route path="agenda"      element={<AgendaPage />} />
+                <Route path="cobros"      element={A ? <CobrosPage />      : <Navigate to="/agenda" replace />} />
+                <Route path="whatsapp"    element={<WhatsappPage />} />
+                <Route path="cargar"      element={<CargarPage />} />
+                <Route path="movimientos" element={A ? <MovimientosPage /> : <Navigate to="/agenda" replace />} />
+                <Route path="espera"      element={<EsperaPage />} />
+                <Route path="egresos"     element={A ? <EgresosPage />     : <Navigate to="/agenda" replace />} />
+                <Route path="finanzas"    element={A ? <FinanzasPage />    : <Navigate to="/agenda" replace />} />
+                <Route path="empleados"   element={A ? <EmpleadosPage />   : <Navigate to="/agenda" replace />} />
+                <Route path="*"           element={<Navigate to={A ? '/' : '/agenda'} replace />} />
               </Route>
             </Routes>
           </BrowserRouter>
