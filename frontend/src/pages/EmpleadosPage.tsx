@@ -1,172 +1,237 @@
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { money } from '@/lib/format';
 import { mesClaveRef } from '@/lib/j2local';
 import type { J2Empleado } from '@/types';
 import { useJ2Local } from '@/context/J2LocalContext';
 import { useToast } from '@/context/ToastContext';
+import { Modal, ModalAcciones } from '@/components/Modal';
+import { Vacio } from '@/components/Estados';
+
+/** Las cuatro operaciones que se hacen sobre la ficha de un empleado. */
+type Operacion = 'mutual' | 'aguinaldo' | 'intereses' | 'ajuste';
+
+const TITULOS: Record<Operacion, { titulo: string; descripcion: string; confirmar: string }> = {
+  mutual: {
+    titulo: 'Registrar descuento mutual',
+    descripcion: 'Lo retenido entra a la caja y se paga más adelante como egreso.',
+    confirmar: 'Registrar mutual',
+  },
+  aguinaldo: {
+    titulo: 'Registrar descuento de aguinaldo',
+    descripcion: 'Se acumula en la cuenta de COCOS hasta que se paga.',
+    confirmar: 'Registrar aguinaldo',
+  },
+  intereses: {
+    titulo: 'Agregar intereses generados',
+    descripcion: 'Suma el rendimiento al aguinaldo acumulado, sin mover la caja.',
+    confirmar: 'Agregar intereses',
+  },
+  ajuste: {
+    titulo: 'Ajuste manual del saldo',
+    descripcion: 'Corrige el total acumulado cuando no coincide con el resumen real.',
+    confirmar: 'Ajustar saldo',
+  },
+};
 
 function FichaEmpleado({ emp }: { emp: J2Empleado }) {
   const { toast } = useToast();
   const j2 = useJ2Local();
   const mc = mesClaveRef();
 
-  const [mutualMonto, setMutualMonto] = useState('');
-  const [mutualCuenta, setMutualCuenta] = useState<'mp' | 'banco' | 'efectivo'>('efectivo');
-  const [aguinaldoMonto, setAguinaldoMonto] = useState('');
-  const [interesesMonto, setInteresesMonto] = useState('');
-  const [ajusteManual, setAjusteManual] = useState('');
-  const [showMutual, setShowMutual] = useState(false);
-  const [showAguinaldo, setShowAguinaldo] = useState(false);
-  const [showIntereses, setShowIntereses] = useState(false);
-  const [showAjuste, setShowAjuste] = useState(false);
+  const [operacion, setOperacion] = useState<Operacion | null>(null);
+  const [monto, setMonto] = useState('');
+  const [cuenta, setCuenta] = useState<'mp' | 'banco' | 'efectivo'>('efectivo');
 
-  const sueldosMes = j2.egresos.filter((e) => e.tipo === 'sueldo' && e.categoria === emp.nombre && e.fecha.startsWith(mc));
+  const sueldosMes = j2.egresos.filter(
+    (e) => e.tipo === 'sueldo' && e.categoria === emp.nombre && e.fecha.startsWith(mc)
+  );
   const totalSueldo = sueldosMes.reduce((s, e) => s + e.monto, 0);
 
-  function guardarMutual() {
-    const m = parseInt(mutualMonto, 10);
-    if (!m || m <= 0) { toast('⚠ Ingresá un monto válido'); return; }
-    j2.registrarMutual(emp.nombre, m, mutualCuenta);
-    setMutualMonto(''); setShowMutual(false);
-    toast('✓ Mutual registrada — suma a caja líquida');
+  const mutualMes = j2.movlog
+    .filter(
+      (m) =>
+        m.tipo === 'mutual' && m.concepto === `Mutual — ${emp.nombre}` && m.fecha.startsWith(mc)
+    )
+    .reduce((s, m) => s + m.monto, 0);
+
+  function abrir(op: Operacion) {
+    setOperacion(op);
+    // El ajuste arranca con el saldo actual para que se vea qué se está corrigiendo.
+    setMonto(op === 'ajuste' ? String(emp.aguinaldo || 0) : '');
   }
 
-  function guardarAguinaldo() {
-    const m = parseInt(aguinaldoMonto, 10);
-    if (!m || m <= 0) { toast('⚠ Ingresá un monto válido'); return; }
-    j2.registrarAguinaldo(emp.id, m);
-    setAguinaldoMonto(''); setShowAguinaldo(false);
-    toast('✓ Aguinaldo registrado');
+  function cerrar() {
+    setOperacion(null);
+    setMonto('');
   }
 
-  function guardarIntereses() {
-    const m = parseInt(interesesMonto, 10);
-    if (!m) { toast('⚠ Ingresá un monto'); return; }
-    j2.ajustarInteresesAguinaldo(emp.id, m);
-    setInteresesMonto(''); setShowIntereses(false);
-    toast('✓ Intereses ajustados');
-  }
+  function guardar(e: FormEvent) {
+    e.preventDefault();
+    const m = Number(monto);
 
-  function guardarAjusteManual() {
-    const m = parseInt(ajusteManual, 10);
-    if (Number.isNaN(m)) { toast('⚠ Ingresá un monto'); return; }
-    const diff = m - (emp.aguinaldo || 0);
-    j2.ajustarInteresesAguinaldo(emp.id, diff);
-    setAjusteManual(''); setShowAjuste(false);
-    toast('✓ Saldo ajustado manualmente');
+    if (!Number.isFinite(m) || (operacion !== 'ajuste' && m <= 0)) {
+      toast('Ingresá un monto válido', { tono: 'error' });
+      return;
+    }
+
+    switch (operacion) {
+      case 'mutual':
+        j2.registrarMutual(emp.nombre, m, cuenta);
+        toast(`Mutual de ${emp.nombre} registrada · ${money(m)} a caja`, { tono: 'exito' });
+        break;
+      case 'aguinaldo':
+        j2.registrarAguinaldo(emp.id, m);
+        toast(`Aguinaldo de ${emp.nombre} · ${money(m)}`, { tono: 'exito' });
+        break;
+      case 'intereses':
+        j2.ajustarInteresesAguinaldo(emp.id, m);
+        toast(`Intereses agregados · ${money(m)}`, { tono: 'exito' });
+        break;
+      case 'ajuste': {
+        const diferencia = m - (emp.aguinaldo || 0);
+        if (diferencia === 0) {
+          toast('El saldo ya estaba en ese valor');
+          cerrar();
+          return;
+        }
+        j2.ajustarInteresesAguinaldo(emp.id, diferencia);
+        toast(`Saldo ajustado a ${money(m)}`, { tono: 'exito' });
+        break;
+      }
+      default:
+        return;
+    }
+    cerrar();
   }
 
   return (
-    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 14, padding: 20, marginBottom: 16 }}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
-        <span style={{ fontSize: 22 }}>{emp.activo ? '✅' : '⛔'}</span>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontWeight: 700, fontSize: 17 }}>{emp.nombre}</div>
-          <div style={{ fontSize: 12, color: '#888' }}>
-            Sueldo este mes: <strong style={{ color: 'var(--rojo)' }}>{totalSueldo ? money(totalSueldo) : '—'}</strong>
+    <div
+      style={{
+        background: 'var(--superficie)',
+        border: 'var(--borde)',
+        borderRadius: 'var(--r-lg)',
+        padding: 'var(--sp-5)',
+        marginBottom: 'var(--sp-4)',
+        boxShadow: 'var(--sombra)',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 'var(--sp-3)',
+          marginBottom: 'var(--sp-4)',
+          flexWrap: 'wrap',
+        }}
+      >
+        <span style={{ fontSize: 22 }} aria-hidden="true">
+          {emp.activo ? '✅' : '⛔'}
+        </span>
+        <div style={{ flex: 1, minWidth: 160 }}>
+          <div style={{ fontWeight: 700, fontSize: 'var(--txt-lg)' }}>{emp.nombre}</div>
+          <div style={{ fontSize: 'var(--txt-sm)', color: 'var(--texto-2)' }}>
+            Sueldo este mes:{' '}
+            <strong style={{ color: 'var(--rojo)' }}>
+              {totalSueldo ? money(totalSueldo) : '—'}
+            </strong>
+            {!emp.activo && ' · inactivo'}
           </div>
         </div>
-        <button type="button" className="btn secundario sm" onClick={() => j2.toggleEmpleado(emp.id)}>
+        <button
+          type="button"
+          className="btn secundario sm"
+          onClick={() => {
+            j2.toggleEmpleado(emp.id);
+            toast(`${emp.nombre} quedó ${emp.activo ? 'inactivo' : 'activo'}`, { tono: 'exito' });
+          }}
+        >
           {emp.activo ? 'Desactivar' : 'Activar'}
         </button>
       </div>
 
-      {/* Cards internas */}
-      <div className="cards-grid" style={{ marginBottom: 12 }}>
-        {/* Mutual */}
-        <div className="card" style={{ padding: '12px 16px' }}>
+      <div className="cards-grid" style={{ marginBottom: 0 }}>
+        <div className="card" style={{ padding: 'var(--sp-4)' }}>
           <div className="card-label">💊 Mutual retenida este mes</div>
           <div className="card-valor" style={{ fontSize: 20 }}>
-            {money(j2.movlog
-              .filter((m) => m.tipo === 'mutual' && m.concepto === `Mutual — ${emp.nombre}` && m.fecha.startsWith(mc))
-              .reduce((s, m) => s + m.monto, 0))}
+            {money(mutualMes)}
           </div>
-          <div className="card-sub">Ingresa a caja · se paga con egreso futuro</div>
-          <button type="button" className="btn sm" style={{ marginTop: 8 }} onClick={() => setShowMutual(!showMutual)}>
-            + Registrar descuento
+          <div className="card-sub">Entra a caja y se paga con un egreso futuro</div>
+          <button
+            type="button"
+            className="btn sm"
+            style={{ marginTop: 'var(--sp-2)' }}
+            onClick={() => abrir('mutual')}
+          >
+            Registrar descuento
           </button>
         </div>
 
-        {/* Aguinaldo */}
-        <div className="card azul" style={{ padding: '12px 16px' }}>
+        <div className="card azul" style={{ padding: 'var(--sp-4)' }}>
           <div className="card-label">🏦 Aguinaldo en COCOS</div>
-          <div className="card-valor" style={{ fontSize: 20 }}>{money(emp.aguinaldo || 0)}</div>
-          <div className="card-sub">Acumula descuentos + intereses</div>
-          <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
-            <button type="button" className="btn sm" onClick={() => setShowAguinaldo(!showAguinaldo)}>+ Descontar</button>
-            <button type="button" className="btn secundario sm" onClick={() => setShowIntereses(!showIntereses)}>+ Intereses</button>
-            <button type="button" className="btn secundario sm" onClick={() => { setAjusteManual(String(emp.aguinaldo || 0)); setShowAjuste(!showAjuste); }}>✏ Ajustar</button>
+          <div className="card-valor" style={{ fontSize: 20 }}>
+            {money(emp.aguinaldo || 0)}
+          </div>
+          <div className="card-sub">Acumula descuentos más intereses</div>
+          <div
+            style={{ display: 'flex', gap: 'var(--sp-2)', marginTop: 'var(--sp-2)', flexWrap: 'wrap' }}
+          >
+            <button type="button" className="btn sm" onClick={() => abrir('aguinaldo')}>
+              Descontar
+            </button>
+            <button type="button" className="btn secundario sm" onClick={() => abrir('intereses')}>
+              Intereses
+            </button>
+            <button type="button" className="btn secundario sm" onClick={() => abrir('ajuste')}>
+              Ajustar
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Form Mutual */}
-      {showMutual && (
-        <div style={{ background: 'rgba(26,46,26,0.04)', borderRadius: 8, padding: 14, marginBottom: 10 }}>
-          <div style={{ fontWeight: 600, marginBottom: 10, fontSize: 14 }}>💊 Registrar descuento mutual</div>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-            <div className="form-group" style={{ minWidth: 140 }}>
-              <label>Monto retenido</label>
-              <input type="number" value={mutualMonto} onChange={(e) => setMutualMonto(e.target.value)} placeholder="Ej: 15000" />
+      {operacion && (
+        <Modal
+          titulo={`${TITULOS[operacion].titulo} — ${emp.nombre}`}
+          descripcion={TITULOS[operacion].descripcion}
+          onCerrar={cerrar}
+          ancho="chico"
+        >
+          <form onSubmit={guardar} style={{ display: 'grid', gap: 'var(--sp-4)' }}>
+            <div className="form-group">
+              <label htmlFor={`emp-monto-${emp.id}`}>
+                {operacion === 'ajuste' ? 'Nuevo saldo total' : 'Monto'}
+              </label>
+              <input
+                id={`emp-monto-${emp.id}`}
+                type="number"
+                inputMode="numeric"
+                value={monto}
+                onChange={(e) => setMonto(e.target.value)}
+                placeholder="Ej: 15000"
+                required
+              />
+              {operacion === 'ajuste' && (
+                <p className="form-ayuda">Saldo actual: {money(emp.aguinaldo || 0)}</p>
+              )}
             </div>
-            <div className="form-group" style={{ minWidth: 140 }}>
-              <label>Cuenta que recibe</label>
-              <select value={mutualCuenta} onChange={(e) => setMutualCuenta(e.target.value as 'mp' | 'banco' | 'efectivo')}>
-                <option value="efectivo">Efectivo</option>
-                <option value="banco">Banco</option>
-                <option value="mp">Mercado Pago</option>
-              </select>
-            </div>
-            <button type="button" className="btn" onClick={guardarMutual}>Guardar</button>
-            <button type="button" className="btn secundario" onClick={() => setShowMutual(false)}>Cancelar</button>
-          </div>
-        </div>
-      )}
 
-      {/* Form Aguinaldo */}
-      {showAguinaldo && (
-        <div style={{ background: 'rgba(26,46,26,0.04)', borderRadius: 8, padding: 14, marginBottom: 10 }}>
-          <div style={{ fontWeight: 600, marginBottom: 10, fontSize: 14 }}>🏦 Registrar descuento aguinaldo</div>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-            <div className="form-group" style={{ minWidth: 140 }}>
-              <label>Monto descontado</label>
-              <input type="number" value={aguinaldoMonto} onChange={(e) => setAguinaldoMonto(e.target.value)} placeholder="Ej: 20000" />
-            </div>
-            <button type="button" className="btn" onClick={guardarAguinaldo}>Guardar</button>
-            <button type="button" className="btn secundario" onClick={() => setShowAguinaldo(false)}>Cancelar</button>
-          </div>
-        </div>
-      )}
+            {operacion === 'mutual' && (
+              <div className="form-group">
+                <label htmlFor={`emp-cuenta-${emp.id}`}>Cuenta que recibe</label>
+                <select
+                  id={`emp-cuenta-${emp.id}`}
+                  value={cuenta}
+                  onChange={(e) => setCuenta(e.target.value as 'mp' | 'banco' | 'efectivo')}
+                >
+                  <option value="efectivo">Efectivo</option>
+                  <option value="banco">Banco</option>
+                  <option value="mp">Mercado Pago</option>
+                </select>
+              </div>
+            )}
 
-      {/* Form Intereses */}
-      {showIntereses && (
-        <div style={{ background: 'rgba(26,46,26,0.04)', borderRadius: 8, padding: 14, marginBottom: 10 }}>
-          <div style={{ fontWeight: 600, marginBottom: 10, fontSize: 14 }}>📈 Agregar intereses generados</div>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-            <div className="form-group" style={{ minWidth: 140 }}>
-              <label>Intereses (ARS)</label>
-              <input type="number" value={interesesMonto} onChange={(e) => setInteresesMonto(e.target.value)} placeholder="Ej: 3500" />
-            </div>
-            <button type="button" className="btn" onClick={guardarIntereses}>Guardar</button>
-            <button type="button" className="btn secundario" onClick={() => setShowIntereses(false)}>Cancelar</button>
-          </div>
-        </div>
-      )}
-
-      {/* Ajuste manual */}
-      {showAjuste && (
-        <div style={{ background: 'rgba(26,46,26,0.04)', borderRadius: 8, padding: 14, marginBottom: 10 }}>
-          <div style={{ fontWeight: 600, marginBottom: 10, fontSize: 14 }}>✏ Ajuste manual de saldo</div>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-            <div className="form-group" style={{ minWidth: 160 }}>
-              <label>Nuevo saldo total</label>
-              <input type="number" value={ajusteManual} onChange={(e) => setAjusteManual(e.target.value)} />
-            </div>
-            <button type="button" className="btn" onClick={guardarAjusteManual}>Guardar</button>
-            <button type="button" className="btn secundario" onClick={() => setShowAjuste(false)}>Cancelar</button>
-          </div>
-        </div>
+            <ModalAcciones onCancelar={cerrar} textoConfirmar={TITULOS[operacion].confirmar} />
+          </form>
+        </Modal>
       )}
     </div>
   );
@@ -175,41 +240,76 @@ function FichaEmpleado({ emp }: { emp: J2Empleado }) {
 export function EmpleadosPage() {
   const { toast } = useToast();
   const j2 = useJ2Local();
+  const [modalAbierto, setModalAbierto] = useState(false);
   const [nombre, setNombre] = useState('');
 
-  function agregar() {
+  function agregar(e: FormEvent) {
+    e.preventDefault();
     const n = nombre.trim();
-    if (!n) { toast('⚠ Ingresá un nombre'); return; }
-    if (j2.empleados.some((e) => e.nombre.toLowerCase() === n.toLowerCase())) {
-      toast('⚠ Ya existe ese empleado'); return;
+    if (!n) {
+      toast('Ingresá un nombre', { tono: 'error' });
+      return;
+    }
+    if (j2.empleados.some((emp) => emp.nombre.toLowerCase() === n.toLowerCase())) {
+      toast(`${n} ya está en la lista`, { tono: 'error' });
+      return;
     }
     j2.addEmpleado(n);
     setNombre('');
-    toast('✓ Empleado agregado');
+    setModalAbierto(false);
+    toast(`${n} agregado al equipo`, { tono: 'exito' });
   }
+
+  const activos = j2.empleados.filter((e) => e.activo).length;
 
   return (
     <>
       <div className="section-header">
-        <div className="section-title">Empleados <small>Equipo, sueldos y retenciones</small></div>
+        <h2 className="section-title">
+          Empleados
+          <small>
+            {activos} {activos === 1 ? 'activo' : 'activos'} de {j2.empleados.length}
+          </small>
+        </h2>
+        <button type="button" className="btn" onClick={() => setModalAbierto(true)}>
+          ➕ Agregar empleado
+        </button>
       </div>
 
-      <div className="tabla-wrap" style={{ padding: 20, marginBottom: 20 }}>
-        <div className="section-title" style={{ marginBottom: 12, fontSize: 15 }}>➕ Agregar empleado</div>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-          <div className="form-group" style={{ flex: 2, minWidth: 180 }}>
-            <label>Nombre</label>
-            <input value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre completo" />
-          </div>
-          <button type="button" className="btn" onClick={agregar}>Agregar</button>
-        </div>
-      </div>
-
-      <div className="section-title" style={{ marginBottom: 12 }}>👷 Fichas de empleados</div>
       {j2.empleados.length === 0 ? (
-        <p style={{ color: '#bbb', padding: 12 }}>Sin empleados registrados</p>
+        <Vacio
+          icono="👷"
+          titulo="Todavía no cargaste empleados"
+          texto="Agregá a quien trabaja con vos para poder registrarle sueldos, mutual y aguinaldo."
+          accion={
+            <button type="button" className="btn" onClick={() => setModalAbierto(true)}>
+              Agregar empleado
+            </button>
+          }
+        />
       ) : (
         j2.empleados.map((emp) => <FichaEmpleado key={emp.id} emp={emp} />)
+      )}
+
+      {modalAbierto && (
+        <Modal titulo="Agregar empleado" onCerrar={() => setModalAbierto(false)} ancho="chico">
+          <form onSubmit={agregar} style={{ display: 'grid', gap: 'var(--sp-4)' }}>
+            <div className="form-group">
+              <label htmlFor="empleado-nombre">Nombre</label>
+              <input
+                id="empleado-nombre"
+                value={nombre}
+                onChange={(e) => setNombre(e.target.value)}
+                placeholder="Nombre y apellido"
+                required
+              />
+            </div>
+            <ModalAcciones
+              onCancelar={() => setModalAbierto(false)}
+              textoConfirmar="Agregar al equipo"
+            />
+          </form>
+        </Modal>
       )}
     </>
   );

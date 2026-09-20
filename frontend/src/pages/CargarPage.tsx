@@ -135,8 +135,8 @@ export function CargarPage() {
       <div className="tabla-wrap" style={{ padding: 20 }}>
         <div className="form-grid">
           <div className="form-group">
-            <label>Cliente</label>
-            <input value={cCliente} onChange={(e) => setCCliente(e.target.value)} list="dl-clientes" placeholder="Nombre del cliente" />
+            <label htmlFor="cargar-cliente-1">Cliente</label>
+            <input id="cargar-cliente-1" value={cCliente} onChange={(e) => setCCliente(e.target.value)} list="dl-clientes" placeholder="Nombre del cliente" />
             <datalist id="dl-clientes">
               {clientes.map((c) => (
                 <option key={c._id} value={c.nombre} />
@@ -144,8 +144,8 @@ export function CargarPage() {
             </datalist>
           </div>
           <div className="form-group">
-            <label>Monto cobrado</label>
-            <input type="number" value={cMonto} onChange={(e) => setCMonto(e.target.value)} placeholder="Ej: 45000" />
+            <label htmlFor="cargar-monto-cobrado-2">Monto cobrado</label>
+            <input id="cargar-monto-cobrado-2" type="number" value={cMonto} onChange={(e) => setCMonto(e.target.value)} placeholder="Ej: 45000" />
           </div>
           <div className="form-group">
             <label>Horas trabajadas</label>
@@ -159,12 +159,12 @@ export function CargarPage() {
             />
           </div>
           <div className="form-group">
-            <label>Fecha</label>
-            <input type="date" value={cFecha} onChange={(e) => setCFecha(e.target.value)} />
+            <label htmlFor="cargar-fecha-3">Fecha</label>
+            <input id="cargar-fecha-3" type="date" value={cFecha} onChange={(e) => setCFecha(e.target.value)} />
           </div>
           <div className="form-group">
-            <label>Medio de pago</label>
-            <select value={cMedio} onChange={(e) => setCMedio(e.target.value)}>
+            <label htmlFor="cargar-medio-de-pago-4">Medio de pago</label>
+            <select id="cargar-medio-de-pago-4" value={cMedio} onChange={(e) => setCMedio(e.target.value)}>
               <option>Mercado Pago</option>
               <option>Transferencia bancaria</option>
               <option>Efectivo</option>
@@ -223,7 +223,7 @@ export function CargarPage() {
         ) : (
           <div className="tabla-wrap">
             <div className="tabla-scroll">
-              <table>
+              <table className="responsive">
                 <thead>
                   <tr>
                     <th>Cliente</th>
@@ -236,13 +236,13 @@ export function CargarPage() {
                 <tbody>
                   {cobros.map((c) => (
                     <tr key={c._id}>
-                      <td><strong>{c.cliente}</strong></td>
-                      <td style={{ color: '#2e7d32', fontWeight: 600, fontFamily: 'DM Mono,monospace' }}>
+                      <td data-label="Cliente"><strong>{c.cliente}</strong></td>
+                      <td data-label="Monto" style={{ color: '#2e7d32', fontWeight: 600, fontFamily: 'DM Mono,monospace' }}>
                         +{money(c.monto)}
                       </td>
-                      <td>{c.fecha}</td>
-                      <td>{c.medio}</td>
-                      <td>{c.tipo}</td>
+                      <td data-label="Fecha">{c.fecha}</td>
+                      <td data-label="Medio">{c.medio}</td>
+                      <td data-label="Tipo">{c.tipo}</td>
                     </tr>
                   ))}
                 </tbody>

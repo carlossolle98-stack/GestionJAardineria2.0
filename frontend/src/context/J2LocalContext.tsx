@@ -1,50 +1,85 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { getJson, sendJson } from '@/lib/api';
-import type {
-  J2Cuentas,
-  J2DeudaCliente,
-  J2Egreso,
-  J2EgresoTipo,
-  J2Empleado,
-  J2Ingreso,
-  J2Inversiones,
-  J2ListaEspera,
-  J2MovLog,
-  J2Transferencia,
-} from '@/types';
 import {
-  EMPLEADOS_DEFAULT,
-  loadJ2Cuentas,
-  loadJ2DeudasClientes,
-  loadJ2Egresos,
-  loadJ2Empleados,
-  loadJ2Ingresos,
-  loadJ2Inversiones,
-  loadJ2ListaEspera,
-  loadJ2MovLog,
-  loadJ2Transferencias,
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
+import { getJson, sendJson, sendJsonKeepalive, ApiError } from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
+import {
+  j2Reducer,
   medioACuenta,
-  NOMBRES_CUENTA,
+  nombreCuenta,
+  totalesDelLog,
+  type J2Accion,
+  type J2Datos,
+} from '@/lib/j2reducer';
+import type { J2Cuentas, J2DeudaCliente, J2EgresoTipo, J2Ingreso, J2ListaEspera } from '@/types';
+import {
+  CUENTAS_DEFAULT,
+  EMPLEADOS_DEFAULT,
+  INVERSIONES_DEFAULT,
+  leerCache,
+  escribirCache,
 } from '@/lib/j2local';
 
-type J2Ctx = {
-  listaEspera: J2ListaEspera[];
-  egresos: J2Egreso[];
-  ingresos: J2Ingreso[];
-  transferencias: J2Transferencia[];
-  cuentas: J2Cuentas;
-  inversiones: J2Inversiones;
-  empleados: J2Empleado[];
-  movlog: J2MovLog[];
-  deudasClientes: J2DeudaCliente[];
+/** Secciones que el backend entrega según los permisos del usuario. */
+const SECCIONES = [
+  'cuentas',
+  'inversiones',
+  'transferencias',
+  'egresos',
+  'ingresos',
+  'deudasClientes',
+  'empleados',
+  'listaEspera',
+  'movlog',
+] as const;
+type Seccion = (typeof SECCIONES)[number];
+
+type EstadoSync = {
+  estado: 'inactivo' | 'al-dia' | 'guardando' | 'error';
+  ultimoGuardado: Date | null;
+  error: string | null;
+  /** Secciones que este usuario tiene permitido leer y escribir. */
+  secciones: Seccion[];
+};
+
+type J2Ctx = J2Datos & {
+  sync: EstadoSync;
+  puedeDeshacer: boolean;
+  deshacer: () => void;
+  /** Total líquido, para no repetir la suma en cada pantalla. */
+  totalLiquido: number;
+  /** Diferencia entre el saldo guardado y la suma del libro de movimientos. */
+  descuadre: Record<string, number>;
+
   addListaEspera: (p: Omit<J2ListaEspera, 'id'>) => void;
   removeListaEspera: (id: string) => void;
-  addEgreso: (p: { fecha: string; tipo: J2EgresoTipo; categoria: string; concepto: string; monto: number; cuenta: keyof J2Cuentas }) => void;
+  addEgreso: (p: {
+    fecha: string;
+    tipo: J2EgresoTipo;
+    categoria: string;
+    concepto: string;
+    monto: number;
+    cuenta: keyof J2Cuentas;
+  }) => void;
   removeEgreso: (id: string) => void;
   addIngreso: (p: Omit<J2Ingreso, 'id'>) => void;
   removeIngreso: (id: string) => void;
   setCuentaSaldo: (k: keyof J2Cuentas, monto: number, motivo: string) => void;
-  registrarTransferencia: (p: { de: string; para: string; monto: number; fecha: string; nota: string }) => void;
+  registrarTransferencia: (p: {
+    de: string;
+    para: string;
+    monto: number;
+    fecha: string;
+    nota: string;
+  }) => void;
   removeTransferencia: (id: string) => void;
   comprarUsd: (cantidad: number, precio: number, cuenta: keyof J2Cuentas, motivo: string) => void;
   venderUsd: (cantidad: number, precio: number, cuenta: keyof J2Cuentas, motivo: string) => void;
@@ -64,264 +99,258 @@ type J2Ctx = {
 
 const Ctx = createContext<J2Ctx | null>(null);
 
-export function J2LocalProvider({ children }: { children: ReactNode }) {
-  const [listaEspera, setListaEspera] = useState(loadJ2ListaEspera);
-  const [egresos, setEgresos] = useState(loadJ2Egresos);
-  const [ingresos, setIngresos] = useState(loadJ2Ingresos);
-  const [transferencias, setTransferencias] = useState(loadJ2Transferencias);
-  const [cuentas, setCuentas] = useState(loadJ2Cuentas);
-  const [inversiones, setInversiones] = useState(loadJ2Inversiones);
-  const [empleados, setEmpleados] = useState<J2Empleado[]>(() => {
-    try {
-      const s = localStorage.getItem('j2_empleados');
-      return s ? JSON.parse(s) : [...EMPLEADOS_DEFAULT];
-    } catch { return [...EMPLEADOS_DEFAULT]; }
-  });
-  const [movlog, setMovlog] = useState(loadJ2MovLog);
-  const [deudasClientes, setDeudasClientes] = useState(loadJ2DeudasClientes);
-  const [backendSynced, setBackendSynced] = useState(false);
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+const DATOS_INICIALES: J2Datos = {
+  cuentas: { ...CUENTAS_DEFAULT },
+  inversiones: { ...INVERSIONES_DEFAULT },
+  egresos: [],
+  ingresos: [],
+  transferencias: [],
+  empleados: [...EMPLEADOS_DEFAULT],
+  deudasClientes: [],
+  listaEspera: [],
+  movlog: [],
+};
 
-  // Carga inicial desde backend (sobreescribe localStorage si hay datos)
+const RETARDO_GUARDADO = 800;
+
+export function J2LocalProvider({ children }: { children: ReactNode }) {
+  const { usuario } = useAuth();
+  const [estado, dispatch] = useReducer(j2Reducer, {
+    // La caché local sólo acelera el primer pintado; el servidor manda.
+    datos: { ...DATOS_INICIALES, ...leerCache() },
+    pasado: [],
+  });
+  const { datos } = estado;
+
+  const [sync, setSync] = useState<EstadoSync>({
+    estado: 'inactivo',
+    ultimoGuardado: null,
+    error: null,
+    secciones: [],
+  });
+
+  const rev = useRef(0);
+  const listo = useRef(false);
+  const ultimoEnviado = useRef<string>('');
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const datosRef = useRef(datos);
+  datosRef.current = datos;
+
+  /* ---------------- Carga inicial ---------------- */
+
   useEffect(() => {
+    let cancelado = false;
+    listo.current = false;
+
     getJson<Record<string, unknown>>('/api/j2data')
       .then((d) => {
-        if (d) {
-          if (d.cuentas)        setCuentas(d.cuentas as typeof cuentas);
-          if (d.egresos)        setEgresos(d.egresos as typeof egresos);
-          if (d.ingresos)       setIngresos(d.ingresos as typeof ingresos);
-          if (d.inversiones)    setInversiones(d.inversiones as typeof inversiones);
-          if (d.empleados)      setEmpleados(d.empleados as typeof empleados);
-          if (d.transferencias) setTransferencias(d.transferencias as typeof transferencias);
-          if (d.deudasClientes) setDeudasClientes(d.deudasClientes as typeof deudasClientes);
-          if (d.listaEspera)    setListaEspera(d.listaEspera as typeof listaEspera);
-          if (d.movlog)         setMovlog(d.movlog as typeof movlog);
+        if (cancelado || !d) return;
+        const secciones = (d.secciones as Seccion[]) ?? [];
+        rev.current = Number(d.rev) || 0;
+
+        const parcial: Partial<J2Datos> = {};
+        for (const s of secciones) {
+          if (d[s] !== undefined) (parcial as Record<string, unknown>)[s] = d[s];
         }
+        dispatch({ tipo: 'hidratar', datos: parcial });
+
+        // Se registra la firma de lo que acaba de llegar: sin esto, la propia
+        // carga inicial se veía como un cambio y disparaba un guardado inútil.
+        const recibido: Record<string, unknown> = {};
+        for (const sec of secciones) recibido[sec] = parcial[sec] ?? d[sec];
+        ultimoEnviado.current = JSON.stringify(recibido);
+
+        setSync((s) => ({
+          ...s,
+          secciones,
+          estado: secciones.length ? 'al-dia' : 'inactivo',
+          error: null,
+        }));
       })
-      .catch(() => {})
-      .finally(() => setBackendSynced(true));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+      .catch((e: unknown) => {
+        if (cancelado) return;
+        setSync((s) => ({
+          ...s,
+          estado: 'error',
+          error: e instanceof ApiError ? e.message : 'No se pudieron cargar los datos',
+        }));
+      })
+      .finally(() => {
+        if (!cancelado) listo.current = true;
+      });
 
-  // Guarda al backend con debounce de 500ms; también flush inmediato al ocultar/cerrar la página
-  useEffect(() => {
-    if (!backendSynced) return;
-    const data = { cuentas, egresos, ingresos, inversiones, empleados, transferencias, deudasClientes, listaEspera, movlog };
-    const save = () => sendJson('/api/j2data', 'PUT', data).catch(() => {});
-
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(save, 500);
-
-    // Flush inmediato si el usuario refresca / cierra la pestaña antes del debounce
-    const onHide = () => { if (document.visibilityState === 'hidden') { clearTimeout(saveTimer.current!); save(); } };
-    const onUnload = () => { clearTimeout(saveTimer.current!); save(); };
-    document.addEventListener('visibilitychange', onHide);
-    window.addEventListener('beforeunload', onUnload);
     return () => {
-      document.removeEventListener('visibilitychange', onHide);
-      window.removeEventListener('beforeunload', onUnload);
+      cancelado = true;
     };
-  }, [backendSynced, cuentas, egresos, ingresos, inversiones, empleados,
-      transferencias, deudasClientes, listaEspera, movlog]);
+    // Se recarga si cambia el usuario: sus permisos definen qué recibe.
+  }, [usuario?.id]);
 
-  useEffect(() => { localStorage.setItem('j2_listaespera', JSON.stringify(listaEspera)); }, [listaEspera]);
-  useEffect(() => { localStorage.setItem('j2_egresos', JSON.stringify(egresos)); }, [egresos]);
-  useEffect(() => { localStorage.setItem('j2_ingresos', JSON.stringify(ingresos)); }, [ingresos]);
-  useEffect(() => { localStorage.setItem('j2_transferencias', JSON.stringify(transferencias)); }, [transferencias]);
-  useEffect(() => { localStorage.setItem('j2_cuentas', JSON.stringify(cuentas)); }, [cuentas]);
-  useEffect(() => { localStorage.setItem('j2_inversiones', JSON.stringify(inversiones)); }, [inversiones]);
-  useEffect(() => { localStorage.setItem('j2_empleados', JSON.stringify(empleados)); }, [empleados]);
-  useEffect(() => { localStorage.setItem('j2_movlog', JSON.stringify(movlog)); }, [movlog]);
-  useEffect(() => { localStorage.setItem('j2_deudas_clientes', JSON.stringify(deudasClientes)); }, [deudasClientes]);
+  /* ---------------- Guardado ---------------- */
 
-  function logMov(tipo: string, concepto: string, detalle: string, monto: number, cuenta: string) {
-    const fecha = new Date().toISOString().split('T')[0];
-    setMovlog((s) => [{ id: 'ml_' + Date.now(), fecha, tipo, concepto, detalle, monto, cuenta }, ...s].slice(0, 500));
-  }
+  /** Sólo se envían las secciones que este usuario puede escribir. */
+  const armarPayload = useCallback(
+    (d: J2Datos) => {
+      const cuerpo: Record<string, unknown> = {};
+      for (const s of sync.secciones) cuerpo[s] = d[s];
+      return cuerpo;
+    },
+    [sync.secciones]
+  );
 
-  const addListaEspera = useCallback((p: Omit<J2ListaEspera, 'id'>) => {
-    setListaEspera((s) => [...s, { ...p, id: 'esp_' + Date.now() }]);
-  }, []);
+  useEffect(() => {
+    if (!listo.current || sync.secciones.length === 0) return;
 
-  const removeListaEspera = useCallback((id: string) => {
-    setListaEspera((s) => s.filter((x) => x.id !== id));
-  }, []);
+    const cuerpo = armarPayload(datos);
+    const firma = JSON.stringify(cuerpo);
 
-  const addEgreso = useCallback((p: { fecha: string; tipo: J2EgresoTipo; categoria: string; concepto: string; monto: number; cuenta: keyof J2Cuentas }) => {
-    const row: J2Egreso = { id: 'eg_' + Date.now(), ...p, concepto: p.concepto || p.categoria };
-    setEgresos((s) => [...s, row]);
-    if (p.tipo !== 'inventario') {
-      setCuentas((c) => ({ ...c, [p.cuenta]: Math.max(0, (c[p.cuenta] || 0) - p.monto) }));
+    // Sin cambios reales no se escribe: antes un refetch bastaba para disparar
+    // un PUT de todo el documento cada pocos segundos.
+    if (firma === ultimoEnviado.current) return;
+
+    escribirCache(datos);
+
+    if (timer.current) clearTimeout(timer.current);
+    setSync((s) => (s.estado === 'guardando' ? s : { ...s, estado: 'guardando' }));
+
+    timer.current = setTimeout(async () => {
+      try {
+        const r = await sendJson<{ rev: number }>('/api/j2data', 'PUT', {
+          ...cuerpo,
+          rev: rev.current,
+        });
+        rev.current = r.rev;
+        ultimoEnviado.current = firma;
+        setSync((s) => ({ ...s, estado: 'al-dia', ultimoGuardado: new Date(), error: null }));
+      } catch (e) {
+        const err = e as ApiError;
+        setSync((s) => ({
+          ...s,
+          estado: 'error',
+          error:
+            err.code === 'CONFLICTO_REV'
+              ? 'Otro usuario guardó cambios. Recargá la página para ver la versión actual.'
+              : err.message,
+        }));
+      }
+    }, RETARDO_GUARDADO);
+
+    return () => {
+      if (timer.current) clearTimeout(timer.current);
+    };
+  }, [datos, sync.secciones, armarPayload]);
+
+  // Al cerrar o esconder la pestaña se manda lo pendiente con keepalive,
+  // que es lo único que el navegador garantiza terminar.
+  useEffect(() => {
+    if (sync.secciones.length === 0) return;
+
+    const volcar = () => {
+      const cuerpo = armarPayload(datosRef.current);
+      if (JSON.stringify(cuerpo) === ultimoEnviado.current) return;
+      if (timer.current) clearTimeout(timer.current);
+      void sendJsonKeepalive('/api/j2data', { ...cuerpo, rev: rev.current });
+    };
+
+    const alOcultar = () => {
+      if (document.visibilityState === 'hidden') volcar();
+    };
+
+    document.addEventListener('visibilitychange', alOcultar);
+    window.addEventListener('pagehide', volcar);
+    return () => {
+      document.removeEventListener('visibilitychange', alOcultar);
+      window.removeEventListener('pagehide', volcar);
+    };
+  }, [armarPayload, sync.secciones.length]);
+
+  /* ---------------- Acciones ---------------- */
+
+  const envia = useCallback((a: J2Accion) => dispatch(a), []);
+
+  const acciones = useMemo(
+    () => ({
+      deshacer: () => envia({ tipo: 'deshacer' }),
+      addListaEspera: (p: Omit<J2ListaEspera, 'id'>) =>
+        envia({ tipo: 'addListaEspera', payload: p }),
+      removeListaEspera: (id: string) => envia({ tipo: 'removeListaEspera', id }),
+      addEgreso: (p: {
+        fecha: string;
+        tipo: J2EgresoTipo;
+        categoria: string;
+        concepto: string;
+        monto: number;
+        cuenta: keyof J2Cuentas;
+      }) => envia({ tipo: 'addEgreso', payload: p }),
+      removeEgreso: (id: string) => envia({ tipo: 'removeEgreso', id }),
+      addIngreso: (p: Omit<J2Ingreso, 'id'>) => envia({ tipo: 'addIngreso', payload: p }),
+      removeIngreso: (id: string) => envia({ tipo: 'removeIngreso', id }),
+      setCuentaSaldo: (k: keyof J2Cuentas, monto: number, motivo: string) =>
+        envia({ tipo: 'setCuentaSaldo', cuenta: k, monto, motivo }),
+      registrarTransferencia: (p: {
+        de: string;
+        para: string;
+        monto: number;
+        fecha: string;
+        nota: string;
+      }) => envia({ tipo: 'transferencia', payload: p }),
+      removeTransferencia: (id: string) => envia({ tipo: 'removeTransferencia', id }),
+      comprarUsd: (cantidad: number, precio: number, cuenta: keyof J2Cuentas, motivo: string) =>
+        envia({ tipo: 'usd', operacion: 'compra', cantidad, precio, cuenta, motivo }),
+      venderUsd: (cantidad: number, precio: number, cuenta: keyof J2Cuentas, motivo: string) =>
+        envia({ tipo: 'usd', operacion: 'venta', cantidad, precio, cuenta, motivo }),
+      actualizarPrecioUsd: (precio: number) => envia({ tipo: 'precioUsd', precio }),
+      movInversion: (cual: 'cocos' | 'servente', tipo: 'entrada' | 'salida', monto: number) =>
+        envia({ tipo: 'movInversion', cual, operacion: tipo, monto }),
+      ingresarPorMedio: (medioEtiqueta: string, monto: number) =>
+        envia({
+          tipo: 'ingresarPorMedio',
+          cuenta: medioACuenta(medioEtiqueta),
+          monto,
+          concepto: `Ingreso ${nombreCuenta(medioACuenta(medioEtiqueta))}`,
+        }),
+      addEmpleado: (nombre: string) => envia({ tipo: 'addEmpleado', nombre }),
+      toggleEmpleado: (id: string) => envia({ tipo: 'toggleEmpleado', id }),
+      registrarMutual: (empNombre: string, monto: number, cuenta: keyof J2Cuentas) =>
+        envia({ tipo: 'registrarMutual', empleado: empNombre, monto, cuenta }),
+      registrarAguinaldo: (empId: string, monto: number) =>
+        envia({ tipo: 'registrarAguinaldo', empleadoId: empId, monto }),
+      ajustarInteresesAguinaldo: (empId: string, intereses: number) =>
+        envia({ tipo: 'interesesAguinaldo', empleadoId: empId, intereses }),
+      addDeudaCliente: (p: Omit<J2DeudaCliente, 'id' | 'estado'>) =>
+        envia({ tipo: 'addDeudaCliente', payload: p }),
+      pagarDeudaCliente: (id: string, cuenta: keyof J2Cuentas) =>
+        envia({ tipo: 'pagarDeudaCliente', id, cuenta }),
+      removeDeudaCliente: (id: string) => envia({ tipo: 'removeDeudaCliente', id }),
+      resetLocalData: () => envia({ tipo: 'reiniciarPeriodo' }),
+    }),
+    [envia]
+  );
+
+  const totalLiquido =
+    (datos.cuentas.mp || 0) + (datos.cuentas.banco || 0) + (datos.cuentas.efectivo || 0);
+
+  // Control de consistencia: si el libro no explica el saldo, algo se cargó mal.
+  const descuadre = useMemo(() => {
+    const delLog = totalesDelLog(datos.movlog);
+    const salida: Record<string, number> = {};
+    for (const c of ['mp', 'banco', 'efectivo'] as const) {
+      const dif = (datos.cuentas[c] || 0) - (delLog[c] || 0);
+      if (Math.abs(dif) > 0.5) salida[c] = dif;
     }
-    logMov('egreso', p.categoria, p.concepto, -p.monto, p.cuenta);
-  }, []);
+    return salida;
+  }, [datos.cuentas, datos.movlog]);
 
-  const removeEgreso = useCallback((id: string) => {
-    let removed: J2Egreso | undefined;
-    setEgresos((s) => { removed = s.find((x) => x.id === id); return s.filter((x) => x.id !== id); });
-    if (removed && removed.tipo !== 'inventario') {
-      setCuentas((c) => ({ ...c, [removed!.cuenta]: (c[removed!.cuenta] || 0) + removed!.monto }));
-    }
-  }, []);
-
-  const addIngreso = useCallback((p: Omit<J2Ingreso, 'id'>) => {
-    setIngresos((s) => [...s, { ...p, id: 'ing_' + Date.now() }]);
-    const k = medioACuenta(p.medio);
-    setCuentas((c) => ({ ...c, [k]: (c[k] || 0) + p.monto }));
-    logMov('ingreso', p.cliente || 'Cobro', p.concepto, p.monto, k);
-  }, []);
-
-  const removeIngreso = useCallback((id: string) => {
-    let removed: J2Ingreso | undefined;
-    setIngresos((s) => { removed = s.find((x) => x.id === id); return s.filter((x) => x.id !== id); });
-    if (removed) {
-      const k = medioACuenta(removed.medio);
-      setCuentas((c) => ({ ...c, [k]: Math.max(0, (c[k] || 0) - removed!.monto) }));
-    }
-  }, []);
-
-  const setCuentaSaldo = useCallback((k: keyof J2Cuentas, monto: number, motivo: string) => {
-    setCuentas((c) => {
-      const diff = monto - (c[k] || 0);
-      logMov('correccion', 'Corrección de cuenta', motivo, diff, k);
-      return { ...c, [k]: monto };
-    });
-  }, []);
-
-  const registrarTransferencia = useCallback((p: { de: string; para: string; monto: number; fecha: string; nota: string }) => {
-    const { de, para, monto, fecha, nota } = p;
-    setCuentas((c) => {
-      const next = { ...c };
-      if (de === 'mp' || de === 'banco' || de === 'efectivo') next[de] = Math.max(0, (next[de] || 0) - monto);
-      if (para === 'mp' || para === 'banco' || para === 'efectivo') next[para] = (next[para] || 0) + monto;
-      return next;
-    });
-    setInversiones((inv) => {
-      const n = { ...inv, cocos: inv.cocos || 0, servente: inv.servente || 0 };
-      if (de === 'cocos') n.cocos = Math.max(0, n.cocos - monto);
-      if (de === 'servente') n.servente = Math.max(0, n.servente - monto);
-      if (para === 'cocos') n.cocos += monto;
-      if (para === 'servente') n.servente += monto;
-      return n;
-    });
-    setTransferencias((s) => [...s, { id: 'tr_' + Date.now(), fecha, de, para, monto, nota }]);
-    logMov('transferencia', `${NOMBRES_CUENTA[de] || de} → ${NOMBRES_CUENTA[para] || para}`, nota, monto, de);
-  }, []);
-
-  const removeTransferencia = useCallback((id: string) => {
-    setTransferencias((s) => s.filter((t) => t.id !== id));
-  }, []);
-
-  const comprarUsd = useCallback((cantidad: number, precio: number, cuenta: keyof J2Cuentas, motivo: string) => {
-    const arsTotal = Math.round(cantidad * precio);
-    setInversiones((inv) => ({ ...inv, usd: { cantidad: (inv.usd?.cantidad || 0) + cantidad, precio } }));
-    setCuentas((c) => ({ ...c, [cuenta]: Math.max(0, (c[cuenta] || 0) - arsTotal) }));
-    logMov('usd_compra', `Compra ${cantidad} USD a $${precio}`, motivo, -arsTotal, cuenta);
-  }, []);
-
-  const venderUsd = useCallback((cantidad: number, precio: number, cuenta: keyof J2Cuentas, motivo: string) => {
-    const arsTotal = Math.round(cantidad * precio);
-    setInversiones((inv) => ({ ...inv, usd: { cantidad: Math.max(0, (inv.usd?.cantidad || 0) - cantidad), precio } }));
-    setCuentas((c) => ({ ...c, [cuenta]: (c[cuenta] || 0) + arsTotal }));
-    logMov('usd_venta', `Venta ${cantidad} USD a $${precio}`, motivo, arsTotal, cuenta);
-  }, []);
-
-  const actualizarPrecioUsd = useCallback((precio: number) => {
-    setInversiones((inv) => ({ ...inv, usd: { ...(inv.usd || { cantidad: 0 }), precio } }));
-    logMov('usd_precio', 'Actualización precio USD', '', 0, '');
-  }, []);
-
-  const movInversion = useCallback((cual: 'cocos' | 'servente', tipo: 'entrada' | 'salida', monto: number) => {
-    setInversiones((inv) => {
-      const cur = inv[cual] || 0;
-      const v = tipo === 'entrada' ? cur + monto : Math.max(0, cur - monto);
-      return { ...inv, [cual]: v };
-    });
-    logMov('inversion', cual === 'cocos' ? 'COCOS Capital' : 'Servente & Cía', tipo, tipo === 'entrada' ? monto : -monto, cual);
-  }, []);
-
-  const ingresarPorMedio = useCallback((medioEtiqueta: string, monto: number) => {
-    const k = medioACuenta(medioEtiqueta);
-    setCuentas((c) => ({ ...c, [k]: (c[k] || 0) + monto }));
-  }, []);
-
-  const addEmpleado = useCallback((nombre: string) => {
-    setEmpleados((s) => [...s, { id: 'emp_' + Date.now(), nombre, activo: true, aguinaldo: 0 }]);
-  }, []);
-
-  const toggleEmpleado = useCallback((id: string) => {
-    setEmpleados((s) => s.map((e) => e.id === id ? { ...e, activo: !e.activo } : e));
-  }, []);
-
-  const registrarMutual = useCallback((empNombre: string, monto: number, cuenta: keyof J2Cuentas) => {
-    setCuentas((c) => ({ ...c, [cuenta]: (c[cuenta] || 0) + monto }));
-    logMov('mutual', `Mutual — ${empNombre}`, 'Descuento mutual retenido', monto, cuenta);
-  }, []);
-
-  const registrarAguinaldo = useCallback((empId: string, monto: number) => {
-    setEmpleados((s) => s.map((e) => e.id === empId ? { ...e, aguinaldo: (e.aguinaldo || 0) + monto } : e));
-    logMov('aguinaldo', 'Aguinaldo retenido', `emp:${empId}`, monto, 'cocos');
-  }, []);
-
-  const ajustarInteresesAguinaldo = useCallback((empId: string, intereses: number) => {
-    setEmpleados((s) => s.map((e) => e.id === empId ? { ...e, aguinaldo: Math.max(0, (e.aguinaldo || 0) + intereses) } : e));
-    logMov('aguinaldo_int', 'Intereses aguinaldo', `emp:${empId}`, intereses, 'cocos');
-  }, []);
-
-  const addDeudaCliente = useCallback((p: Omit<J2DeudaCliente, 'id' | 'estado'>) => {
-    setDeudasClientes((s) => [...s, { ...p, id: 'dc_' + Date.now(), estado: 'pendiente' }]);
-    logMov('deuda_nueva', p.nombreCliente, p.concepto, p.monto, '');
-  }, []);
-
-  const pagarDeudaCliente = useCallback((id: string, cuenta: keyof J2Cuentas) => {
-    let found: J2DeudaCliente | undefined;
-    const fechaPago = new Date().toISOString().split('T')[0];
-    setDeudasClientes((s) => {
-      found = s.find((x) => x.id === id);
-      return s.map((x) => x.id === id ? { ...x, estado: 'pagado' as const, fechaPago, cuentaCobro: cuenta } : x);
-    });
-    if (found) {
-      // addIngreso handles caja update + movlog
-      const ing: Omit<J2Ingreso, 'id'> = {
-        fecha: fechaPago,
-        cliente: found.nombreCliente,
-        concepto: found.concepto,
-        monto: found.monto,
-        medio: cuenta,
-      };
-      setIngresos((s) => [...s, { ...ing, id: 'ing_' + Date.now() }]);
-      const k = medioACuenta(cuenta);
-      setCuentas((c) => ({ ...c, [k]: (c[k] || 0) + found!.monto }));
-      logMov('cobro_deuda', found.nombreCliente, found.concepto, found.monto, cuenta);
-    }
-  }, []);
-
-  const removeDeudaCliente = useCallback((id: string) => {
-    setDeudasClientes((s) => s.filter((x) => x.id !== id));
-  }, []);
-
-  const resetLocalData = useCallback(() => {
-    setEgresos([]);
-    setIngresos([]);
-    setTransferencias([]);
-    setDeudasClientes([]);
-    setListaEspera([]);
-    setMovlog([]);
-  }, []);
-
-  const value = useMemo<J2Ctx>(() => ({
-    listaEspera, egresos, ingresos, transferencias, cuentas, inversiones, empleados, movlog, deudasClientes,
-    addListaEspera, removeListaEspera, addEgreso, removeEgreso, addIngreso, removeIngreso, setCuentaSaldo,
-    registrarTransferencia, removeTransferencia, comprarUsd, venderUsd, actualizarPrecioUsd,
-    movInversion, ingresarPorMedio, addEmpleado, toggleEmpleado,
-    registrarMutual, registrarAguinaldo, ajustarInteresesAguinaldo,
-    addDeudaCliente, pagarDeudaCliente, removeDeudaCliente, resetLocalData,
-  }), [listaEspera, egresos, ingresos, transferencias, cuentas, inversiones, empleados, movlog, deudasClientes,
-    addListaEspera, removeListaEspera, addEgreso, removeEgreso, addIngreso, removeIngreso, setCuentaSaldo,
-    registrarTransferencia, removeTransferencia, comprarUsd, venderUsd, actualizarPrecioUsd,
-    movInversion, ingresarPorMedio, addEmpleado, toggleEmpleado,
-    registrarMutual, registrarAguinaldo, ajustarInteresesAguinaldo,
-    addDeudaCliente, pagarDeudaCliente, removeDeudaCliente, resetLocalData]);
+  const value = useMemo<J2Ctx>(
+    () => ({
+      ...datos,
+      sync,
+      puedeDeshacer: estado.pasado.length > 0,
+      totalLiquido,
+      descuadre,
+      ...acciones,
+    }),
+    [datos, sync, estado.pasado.length, totalLiquido, descuadre, acciones]
+  );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

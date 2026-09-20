@@ -5,6 +5,8 @@ import { useToast } from '@/context/ToastContext';
 import { money, todayISO } from '@/lib/format';
 import { diasDesde, mesClaveRef } from '@/lib/j2local';
 import { useJ2Local } from '@/context/J2LocalContext';
+import { useAuth } from '@/context/AuthContext';
+import { Dialogo, ConfirmarDialogo } from '@/components/Modal';
 import type { ResumenPayload, Turno } from '@/types';
 
 export function ResumenPage() {
@@ -12,6 +14,9 @@ export function ResumenPage() {
   const { toast } = useToast();
   const [seedBusy, setSeedBusy] = useState(false);
   const [resetBusy, setResetBusy] = useState(false);
+  const [confirmando, setConfirmando] = useState<'periodo' | 'seed' | null>(null);
+  const [seedSecret, setSeedSecret] = useState('');
+  const { puede } = useAuth();
   const j2 = useJ2Local();
   const mc = mesClaveRef();
   const fijosMes   = j2.egresos.filter((e) => e.tipo === 'fijo'   && e.fecha.startsWith(mc));
@@ -92,14 +97,10 @@ export function ResumenPage() {
   }
 
   async function ejecutarSeedServidor() {
-    const secret = window.prompt('ADMIN_SEED_SECRET (variable en Railway / backend):');
-    if (secret == null || secret === '') return;
-    if (
-      !window.confirm(
-        'Se borran en el servidor: clientes, proveedores y ajustes globales, y se vuelven a cargar los datos por defecto. ¿Seguro?'
-      )
-    )
-      return;
+    const secret = seedSecret.trim();
+    if (!secret) return;
+    setConfirmando(null);
+    setSeedSecret('');
     setSeedBusy(true);
     try {
       const r = await postAdminSeed(secret, { force: true });
@@ -119,7 +120,7 @@ export function ResumenPage() {
     return (
       <div style={{ padding: 24 }}>
         <p style={{ color: 'var(--rojo)' }}>{String(error)}</p>
-        <button type="button" className="btn secundario" style={{ marginTop: 12 }} disabled={seedBusy} onClick={ejecutarSeedServidor}>
+        <button type="button" className="btn secundario" style={{ marginTop: 12 }} disabled={seedBusy} onClick={() => setConfirmando('seed')}>
           {seedBusy ? '…' : 'Cargar datos iniciales (seed)'}
         </button>
       </div>
@@ -128,7 +129,7 @@ export function ResumenPage() {
     return (
       <div style={{ padding: 24 }}>
         <p>Sin configuración en el servidor.</p>
-        <button type="button" className="btn" style={{ marginTop: 12 }} disabled={seedBusy} onClick={ejecutarSeedServidor}>
+        <button type="button" className="btn" style={{ marginTop: 12 }} disabled={seedBusy} onClick={() => setConfirmando('seed')}>
           {seedBusy ? '…' : 'Cargar datos iniciales (seed)'}
         </button>
       </div>
@@ -180,20 +181,7 @@ export function ResumenPage() {
     const mesActual = mesActualRaw.charAt(0).toUpperCase() + mesActualRaw.slice(1);
     const anioActual = parseInt(mc.split('-')[0], 10);
 
-    if (!window.confirm(
-      `¿Iniciar nuevo período desde ${mesActual} ${anioActual}?\n\n` +
-      `SE BORRAN los datos históricos locales:\n` +
-      `• Historial de ingresos y egresos\n` +
-      `• Movimientos registrados\n` +
-      `• Deudas por cobrar\n` +
-      `• Transferencias y lista de espera\n\n` +
-      `SE CONSERVAN:\n` +
-      `• Saldos de cuentas (${money(cajaLiquidaTotal)})\n` +
-      `• Empleados e inversiones\n` +
-      `• Clientes, agenda y prospectos (servidor)\n\n` +
-      `Esta acción no se puede deshacer.`
-    )) return;
-
+    setConfirmando(null);
     setResetBusy(true);
     try {
       // 1. Limpiar arrays locales (conserva cuentas, empleados, inversiones)
@@ -367,23 +355,85 @@ export function ResumenPage() {
       >
         <button
           type="button"
-          className="btn"
-          style={{ fontSize: 13, background: '#1a5276', borderColor: '#1a5276' }}
+          className="btn secundario"
           disabled={resetBusy}
-          onClick={iniciarNuevoPeriodo}
+          onClick={() => setConfirmando('periodo')}
         >
           {resetBusy ? '…' : '🔄 Iniciar nuevo período'}
         </button>
-        <button
-          type="button"
-          className="btn secundario"
-          style={{ fontSize: 12 }}
-          disabled={seedBusy}
-          onClick={ejecutarSeedServidor}
-        >
-          {seedBusy ? '…' : 'Reiniciar datos demo en servidor (seed)'}
-        </button>
+        {puede('ajustes') && (
+          <button
+            type="button"
+            className="btn fantasma sm"
+            disabled={seedBusy}
+            onClick={() => setConfirmando('seed')}
+          >
+            {seedBusy ? '…' : 'Reiniciar datos demo en el servidor'}
+          </button>
+        )}
       </div>
+
+      {confirmando === 'periodo' && (
+        <ConfirmarDialogo
+          titulo="Iniciar nuevo período"
+          peligro
+          textoConfirmar="Iniciar período"
+          mensaje={
+            <>
+              <p style={{ marginBottom: 'var(--sp-3)' }}>
+                Se vacían ingresos, egresos, movimientos, deudas por cobrar, transferencias y la
+                lista de espera.
+              </p>
+              <p style={{ marginBottom: 'var(--sp-3)' }}>
+                Se conservan los saldos de cuentas ({money(cajaLiquidaTotal)}), empleados,
+                inversiones y todo lo que vive en el servidor: clientes, agenda y prospectos.
+              </p>
+              <p>
+                Antes de confirmar, conviene exportar los movimientos del período desde la pantalla
+                Movimientos.
+              </p>
+            </>
+          }
+          onConfirmar={() => void iniciarNuevoPeriodo()}
+          onCerrar={() => setConfirmando(null)}
+        />
+      )}
+
+      {confirmando === 'seed' && (
+        <Dialogo titulo="Reiniciar datos demo" onCerrar={() => setConfirmando(null)}>
+          <div className="alerta urgente">
+            <span aria-hidden="true">⚠️</span>
+            <span>
+              Se borran del servidor los clientes, proveedores y ajustes globales, y se vuelven a
+              cargar los datos de ejemplo. No se puede deshacer.
+            </span>
+          </div>
+          <div className="form-group">
+            <label htmlFor="seed-secret">ADMIN_SEED_SECRET</label>
+            <input
+              id="seed-secret"
+              type="password"
+              autoComplete="off"
+              value={seedSecret}
+              onChange={(e) => setSeedSecret(e.target.value)}
+            />
+            <p className="form-ayuda">Es la variable configurada en el backend.</p>
+          </div>
+          <div className="dialogo-acciones">
+            <button type="button" className="btn secundario" onClick={() => setConfirmando(null)}>
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className="btn peligro"
+              disabled={!seedSecret.trim() || seedBusy}
+              onClick={() => void ejecutarSeedServidor()}
+            >
+              Reiniciar datos
+            </button>
+          </div>
+        </Dialogo>
+      )}
     </>
   );
 }

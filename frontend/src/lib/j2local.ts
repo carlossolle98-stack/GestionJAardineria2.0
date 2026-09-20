@@ -1,15 +1,21 @@
-import type { J2Cuentas, J2DeudaCliente, J2Egreso, J2EgresoTipo, J2Empleado, J2Ingreso, J2Inversiones, J2ListaEspera, J2MovLog, J2Transferencia } from '@/types';
+import type { J2Cuentas, J2EgresoTipo, J2Empleado, J2Inversiones } from '@/types';
+import type { J2Datos } from '@/lib/j2reducer';
 
 export const EMPLEADOS_DEFAULT: J2Empleado[] = [
   { id: 'emp_angel', nombre: 'Ángel', activo: false, aguinaldo: 0 },
   { id: 'emp_carlos', nombre: 'Carlos', activo: true, aguinaldo: 0 },
 ];
 
-export const CUENTAS_DEFAULT: J2Cuentas = { mp: 568600, banco: 7910, efectivo: 512300 };
+/**
+ * Arrancan en cero a propósito: los saldos reales llegan del servidor.
+ * Antes venían con cifras cableadas y, si la carga fallaba, la pantalla
+ * mostraba una caja inventada como si fuera el saldo verdadero.
+ */
+export const CUENTAS_DEFAULT: J2Cuentas = { mp: 0, banco: 0, efectivo: 0 };
 export const INVERSIONES_DEFAULT: J2Inversiones = {
   cocos: 0,
   servente: 0,
-  usd: { cantidad: 200, precio: 0 },
+  usd: { cantidad: 0, precio: 0 },
 };
 
 export const NOMBRES_CUENTA: Record<string, string> = {
@@ -41,93 +47,69 @@ export function diasDesde(fechaStr: string) {
   return Math.floor((hoy.getTime() - f.getTime()) / 86400000);
 }
 
-export function medioACuenta(medio: string): keyof J2Cuentas {
-  if (!medio) return 'efectivo';
-  const m = medio.toLowerCase();
-  if (m.includes('mercado') || m.includes('mp')) return 'mp';
-  if (m.includes('banco') || m.includes('transfer')) return 'banco';
-  return 'efectivo';
-}
-
 export function semaforoEspera(fechaAgregado: string) {
   const dias = diasDesde(fechaAgregado);
   if (dias <= 5) return { clase: 'verde' as const, icono: '🟢', texto: `${dias}d — OK` };
-  if (dias <= 10) return { clase: 'amarillo' as const, icono: '🟡', texto: `${dias}d — Atender pronto` };
+  if (dias <= 10)
+    return { clase: 'amarillo' as const, icono: '🟡', texto: `${dias}d — Atender pronto` };
   return { clase: 'rojo' as const, icono: '🔴', texto: `${dias}d — URGENTE` };
 }
 
-export function loadJ2ListaEspera(): J2ListaEspera[] {
+/* ------------------------------------------------------------------ *
+ * Caché local
+ *
+ * Es sólo un acelerador del primer pintado mientras llega la respuesta del
+ * servidor, que es la fuente de verdad. Va en una única clave y se pisa
+ * entera: antes había nueve claves sueltas que podían quedar
+ * desincronizadas entre sí después de un error a mitad de camino.
+ * ------------------------------------------------------------------ */
+
+const CLAVE_CACHE = 'j2_cache_v2';
+
+const MAPA_VIEJO: Record<string, string> = {
+  j2_listaespera: 'listaEspera',
+  j2_egresos: 'egresos',
+  j2_ingresos: 'ingresos',
+  j2_transferencias: 'transferencias',
+  j2_cuentas: 'cuentas',
+  j2_inversiones: 'inversiones',
+  j2_empleados: 'empleados',
+  j2_movlog: 'movlog',
+  j2_deudas_clientes: 'deudasClientes',
+};
+
+export function leerCache(): Partial<J2Datos> {
   try {
-    return JSON.parse(localStorage.getItem('j2_listaespera') || '[]');
+    const s = localStorage.getItem(CLAVE_CACHE);
+    if (s) return JSON.parse(s) as Partial<J2Datos>;
+
+    // Migración desde el formato anterior, una sola vez.
+    const migrado: Record<string, unknown> = {};
+    for (const [vieja, nueva] of Object.entries(MAPA_VIEJO)) {
+      const v = localStorage.getItem(vieja);
+      if (v) migrado[nueva] = JSON.parse(v);
+      localStorage.removeItem(vieja);
+    }
+    return migrado as Partial<J2Datos>;
   } catch {
-    return [];
+    return {};
   }
 }
 
-export function loadJ2Egresos(): J2Egreso[] {
+export function escribirCache(datos: J2Datos) {
   try {
-    return JSON.parse(localStorage.getItem('j2_egresos') || '[]');
+    localStorage.setItem(CLAVE_CACHE, JSON.stringify(datos));
   } catch {
-    return [];
+    // Cuota llena o modo privado: la caché es opcional, seguimos sin ella.
   }
 }
 
-export function loadJ2Transferencias(): J2Transferencia[] {
+/** Borra la caché: se usa al cerrar sesión para no dejar datos en el equipo. */
+export function limpiarCache() {
   try {
-    return JSON.parse(localStorage.getItem('j2_transferencias') || '[]');
+    localStorage.removeItem(CLAVE_CACHE);
   } catch {
-    return [];
-  }
-}
-
-export function loadJ2Cuentas(): J2Cuentas {
-  try {
-    const s = localStorage.getItem('j2_cuentas');
-    return s ? JSON.parse(s) : { ...CUENTAS_DEFAULT };
-  } catch {
-    return { ...CUENTAS_DEFAULT };
-  }
-}
-
-export function loadJ2Inversiones(): J2Inversiones {
-  try {
-    const s = localStorage.getItem('j2_inversiones');
-    return s ? JSON.parse(s) : { ...INVERSIONES_DEFAULT };
-  } catch {
-    return { ...INVERSIONES_DEFAULT };
-  }
-}
-
-export function loadJ2Empleados(): J2Empleado[] {
-  try {
-    const s = localStorage.getItem('j2_empleados');
-    return s ? JSON.parse(s) : [...EMPLEADOS_DEFAULT];
-  } catch {
-    return [...EMPLEADOS_DEFAULT];
-  }
-}
-
-export function loadJ2Ingresos(): J2Ingreso[] {
-  try {
-    return JSON.parse(localStorage.getItem('j2_ingresos') || '[]');
-  } catch {
-    return [];
-  }
-}
-
-export function loadJ2DeudasClientes(): J2DeudaCliente[] {
-  try {
-    return JSON.parse(localStorage.getItem('j2_deudas_clientes') || '[]');
-  } catch {
-    return [];
-  }
-}
-
-export function loadJ2MovLog(): J2MovLog[] {
-  try {
-    return JSON.parse(localStorage.getItem('j2_movlog') || '[]');
-  } catch {
-    return [];
+    /* nada que hacer */
   }
 }
 
@@ -136,7 +118,8 @@ export function csvEscape(v: unknown) {
 }
 
 export function downloadCsv(filename: string, content: string) {
-  const blob = new Blob([content], { type: 'text/csv;charset=utf-8' });
+  // El BOM hace que Excel en español abra bien los acentos.
+  const blob = new Blob(['﻿' + content], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -144,3 +127,5 @@ export function downloadCsv(filename: string, content: string) {
   a.click();
   URL.revokeObjectURL(url);
 }
+
+export { medioACuenta } from '@/lib/j2reducer';

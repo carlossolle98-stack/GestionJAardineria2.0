@@ -1,150 +1,244 @@
-import { NavLink, Outlet } from 'react-router-dom';
-import { esAdmin, HAY_PIN, adminUnlocked } from '@/lib/role';
+import { useEffect, useRef, useState } from 'react';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { useAuth } from '@/context/AuthContext';
+import { EstadoGuardado } from '@/components/EstadoGuardado';
+import { CambiarPasswordDialogo } from '@/components/CambiarPasswordDialogo';
+import type { Permiso } from '@/lib/permisos';
 
-const tabs = [
-  { to: '/',            label: '📊 Resumen',       end: true,  privado: true  },
-  { to: '/clientes',    label: '👥 Clientes Fijos', end: false, privado: false },
-  { to: '/prospectos',  label: '🌱 Prospectos',     end: false, privado: false },
-  { to: '/agenda',      label: '📅 Agenda',          end: false, privado: false },
-  { to: '/cobros',      label: '💰 Cobros',          end: false, privado: true  },
-  { to: '/whatsapp',    label: '💬 WhatsApp',        end: false, privado: false },
-  { to: '/cargar',      label: '➕ Cargar Info',     end: false, privado: false },
-  { to: '/movimientos', label: '📥 Movimientos',     end: false, privado: true  },
-  { to: '/espera',      label: '⏳ En espera',        end: false, privado: false },
-  { to: '/egresos',     label: '💸 Egresos',         end: false, privado: true  },
-  { to: '/finanzas',    label: '🏦 Finanzas',        end: false, privado: true  },
-  { to: '/empleados',   label: '👷 Empleados',       end: false, privado: true  },
+type Tab = { to: string; label: string; icono: string; end?: boolean; permiso: Permiso };
+
+/** La navegación se agrupa por intención, no en una fila plana de doce tabs. */
+const GRUPOS: { titulo: string; tabs: Tab[] }[] = [
+  {
+    titulo: 'Operación',
+    tabs: [
+      { to: '/agenda', label: 'Agenda', icono: '📅', permiso: 'agenda' },
+      { to: '/clientes', label: 'Clientes', icono: '👥', permiso: 'clientes' },
+      { to: '/prospectos', label: 'Prospectos', icono: '🌱', permiso: 'prospectos' },
+      { to: '/espera', label: 'En espera', icono: '⏳', permiso: 'espera' },
+      { to: '/cargar', label: 'Cargar', icono: '➕', permiso: 'cargar' },
+      { to: '/whatsapp', label: 'WhatsApp', icono: '💬', permiso: 'whatsapp' },
+    ],
+  },
+  {
+    titulo: 'Dinero',
+    tabs: [
+      { to: '/', label: 'Resumen', icono: '📊', end: true, permiso: 'resumen' },
+      { to: '/cobros', label: 'Cobros', icono: '💰', permiso: 'cobros' },
+      { to: '/egresos', label: 'Egresos', icono: '💸', permiso: 'egresos' },
+      { to: '/movimientos', label: 'Movimientos', icono: '📥', permiso: 'movimientos' },
+      { to: '/finanzas', label: 'Finanzas', icono: '🏦', permiso: 'finanzas' },
+      { to: '/empleados', label: 'Empleados', icono: '👷', permiso: 'empleados' },
+    ],
+  },
+  {
+    titulo: 'Administración',
+    tabs: [{ to: '/usuarios', label: 'Usuarios', icono: '🔑', permiso: 'usuarios' }],
+  },
 ];
 
-// En el sitio equipo (VITE_APP_ROLE=empleado) se ocultan las tabs privadas
-const tabsVisibles = tabs.filter((t) => esAdmin || !t.privado);
+function iniciales(nombre: string) {
+  return nombre
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase())
+    .join('');
+}
 
 export function AppLayout() {
+  const { usuario, puede, logout } = useAuth();
+  const location = useLocation();
+  const [menuAbierto, setMenuAbierto] = useState(false);
+  const [usuarioAbierto, setUsuarioAbierto] = useState(false);
+  const [cambiarPass, setCambiarPass] = useState(false);
+  const menuUsuarioRef = useRef<HTMLDivElement>(null);
+
   const hoy = new Date().toLocaleDateString('es-AR', {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
-    year: 'numeric',
   });
 
-  // Muestra 🔒 en tabs privadas cuando hay PIN y no está desbloqueado
-  const mostrarCandado = HAY_PIN && !adminUnlocked();
+  // Sólo se muestran los grupos con al menos una pantalla habilitada.
+  const gruposVisibles = GRUPOS.map((g) => ({
+    ...g,
+    tabs: g.tabs.filter((t) => puede(t.permiso)),
+  })).filter((g) => g.tabs.length > 0);
+
+  // Al navegar se cierra el panel lateral.
+  useEffect(() => {
+    setMenuAbierto(false);
+    setUsuarioAbierto(false);
+  }, [location.pathname]);
+
+  // Escape cierra lo que esté abierto; un clic afuera cierra el menú de usuario.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        setMenuAbierto(false);
+        setUsuarioAbierto(false);
+      }
+    }
+    function onClick(e: MouseEvent) {
+      if (menuUsuarioRef.current && !menuUsuarioRef.current.contains(e.target as Node)) {
+        setUsuarioAbierto(false);
+      }
+    }
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('mousedown', onClick);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('mousedown', onClick);
+    };
+  }, []);
 
   return (
     <>
-      <header
-        style={{
-          background: 'var(--verde-oscuro)',
-          color: 'var(--crema)',
-          position: 'sticky',
-          top: 0,
-          zIndex: 100,
-          boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '14px 28px',
-            gap: 20,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div
-              style={{
-                width: 38,
-                height: 38,
-                background: 'var(--verde-vivo)',
-                borderRadius: 10,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: 20,
-              }}
-            >
+      <a className="saltar-a-contenido" href="#contenido">
+        Saltar al contenido
+      </a>
+
+      <header className="app-header">
+        <div className="app-header-fila">
+          <div className="app-marca">
+            <div className="app-logo" aria-hidden="true">
               🌿
             </div>
             <div>
-              <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 20 }}>Jardinería 2.0</div>
-              <div style={{ fontSize: 11, opacity: 0.6, letterSpacing: 1, textTransform: 'uppercase' }}>
-                {esAdmin ? 'Gestión Operativa' : 'Gestión Operativa · Equipo'}
-              </div>
+              <div className="app-titulo">Jardinería 2.0</div>
+              <div className="app-subtitulo">Gestión operativa</div>
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            {!esAdmin && (
-              <div
-                style={{
-                  fontSize: 11,
-                  background: 'rgba(255,255,255,0.12)',
-                  border: '1px solid rgba(255,255,255,0.2)',
-                  borderRadius: 12,
-                  padding: '4px 10px',
-                  color: 'rgba(245,240,232,0.8)',
-                }}
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-3)' }}>
+            <EstadoGuardado />
+            <span className="app-chip fecha">{hoy}</span>
+
+            <div className="menu-usuario" ref={menuUsuarioRef}>
+              <button
+                type="button"
+                className="menu-usuario-boton"
+                onClick={() => setUsuarioAbierto((v) => !v)}
+                aria-haspopup="menu"
+                aria-expanded={usuarioAbierto}
               >
-                👷 Modo equipo
-              </div>
-            )}
-            <div
-              style={{
-                fontFamily: "'DM Mono',monospace",
-                fontSize: 12,
-                opacity: 0.7,
-                background: 'rgba(255,255,255,0.08)',
-                padding: '6px 14px',
-                borderRadius: 20,
-                border: '1px solid rgba(255,255,255,0.12)',
-              }}
-            >
-              {hoy}
+                <span className="avatar" aria-hidden="true">
+                  {iniciales(usuario?.nombre || '?')}
+                </span>
+                <span className="nombre">{usuario?.nombre}</span>
+                <span aria-hidden="true">▾</span>
+              </button>
+
+              {usuarioAbierto && (
+                <div className="menu-usuario-panel" role="menu">
+                  <div className="menu-usuario-cabecera">
+                    <div style={{ fontWeight: 700 }}>{usuario?.nombre}</div>
+                    <div style={{ fontSize: 'var(--txt-sm)', color: 'var(--texto-2)' }}>
+                      @{usuario?.usuario} · {usuario?.rol === 'admin' ? 'Administrador' : 'Equipo'}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="menu-usuario-item"
+                    role="menuitem"
+                    onClick={() => {
+                      setCambiarPass(true);
+                      setUsuarioAbierto(false);
+                    }}
+                  >
+                    🔑 Cambiar contraseña
+                  </button>
+                  <button
+                    type="button"
+                    className="menu-usuario-item"
+                    role="menuitem"
+                    onClick={() => void logout()}
+                  >
+                    🚪 Cerrar sesión
+                  </button>
+                </div>
+              )}
             </div>
+
+            <button
+              type="button"
+              className="nav-boton-menu"
+              onClick={() => setMenuAbierto(true)}
+              aria-label="Abrir menú de navegación"
+              aria-expanded={menuAbierto}
+            >
+              ☰
+            </button>
           </div>
         </div>
-        <nav
-          style={{
-            background: 'var(--verde-medio)',
-            display: 'flex',
-            gap: 2,
-            padding: '0 28px',
-            overflowX: 'auto',
-          }}
-        >
-          {tabsVisibles.map((t) => (
-            <NavLink
-              key={t.to}
-              to={t.to}
-              end={t.end}
-              style={({ isActive }) => ({
-                background: 'none',
-                border: 'none',
-                borderBottom: isActive ? '3px solid var(--verde-claro)' : '3px solid transparent',
-                color: isActive ? 'var(--verde-claro)' : 'rgba(245,240,232,0.65)',
-                fontFamily: 'inherit',
-                fontSize: 13,
-                fontWeight: 500,
-                padding: '12px 18px',
-                cursor: 'pointer',
-                whiteSpace: 'nowrap',
-                textDecoration: 'none',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 4,
-              })}
-            >
-              {t.label}
-              {t.privado && mostrarCandado && (
-                <span style={{ fontSize: 10, opacity: 0.6 }}>🔒</span>
-              )}
-            </NavLink>
-          ))}
+
+        <nav className="nav-tabs" aria-label="Secciones">
+          <div className="nav-tabs-inner">
+            {gruposVisibles.map((g) => (
+              <div className="nav-grupo" key={g.titulo}>
+                {g.tabs.map((t) => (
+                  <NavLink
+                    key={t.to}
+                    to={t.to}
+                    end={t.end}
+                    className={({ isActive }) => `nav-tab ${isActive ? 'activo' : ''}`}
+                  >
+                    <span aria-hidden="true">{t.icono}</span>
+                    {t.label}
+                  </NavLink>
+                ))}
+              </div>
+            ))}
+          </div>
         </nav>
       </header>
-      <main className="page">
+
+      {menuAbierto && (
+        <>
+          <button
+            type="button"
+            className="nav-fondo"
+            aria-label="Cerrar menú"
+            onClick={() => setMenuAbierto(false)}
+          />
+          <div className="nav-panel" role="dialog" aria-label="Navegación">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <strong>Secciones</strong>
+              <button
+                type="button"
+                className="btn fantasma sm"
+                onClick={() => setMenuAbierto(false)}
+                aria-label="Cerrar menú"
+              >
+                ✕
+              </button>
+            </div>
+            {gruposVisibles.map((g) => (
+              <div key={g.titulo}>
+                <div className="nav-panel-grupo-titulo">{g.titulo}</div>
+                {g.tabs.map((t) => (
+                  <NavLink
+                    key={t.to}
+                    to={t.to}
+                    end={t.end}
+                    className={({ isActive }) => `nav-panel-link ${isActive ? 'activo' : ''}`}
+                  >
+                    <span aria-hidden="true">{t.icono}</span>
+                    {t.label}
+                  </NavLink>
+                ))}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      <main className="page" id="contenido">
         <Outlet />
       </main>
+
+      {cambiarPass && <CambiarPasswordDialogo onCerrar={() => setCambiarPass(false)} />}
     </>
   );
 }

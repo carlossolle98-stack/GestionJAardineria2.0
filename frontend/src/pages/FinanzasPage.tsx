@@ -121,8 +121,8 @@ export function FinanzasPage() {
               <input type="number" value={editMonto} onChange={(e) => setEditMonto(e.target.value)} />
             </div>
             <div className="form-group" style={{ flex: 2, minWidth: 220 }}>
-              <label>Motivo de la corrección</label>
-              <input value={editMotivo} onChange={(e) => setEditMotivo(e.target.value)} placeholder="Ej: Ajuste por depósito no registrado" />
+              <label htmlFor="finanzas-motivo-de-la-correccion-1">Motivo de la corrección</label>
+              <input id="finanzas-motivo-de-la-correccion-1" value={editMotivo} onChange={(e) => setEditMotivo(e.target.value)} placeholder="Ej: Ajuste por depósito no registrado" />
             </div>
             <button type="button" className="btn" onClick={guardarCuenta}>Guardar</button>
             <button type="button" className="btn secundario" onClick={() => setEditCuenta(null)}>Cancelar</button>
@@ -136,8 +136,8 @@ export function FinanzasPage() {
       <div className="tabla-wrap" style={{ padding: 20, marginBottom: 20 }}>
         <div className="form-grid">
           <div className="form-group">
-            <label>Desde</label>
-            <select value={trDe} onChange={(e) => setTrDe(e.target.value)}>
+            <label htmlFor="finanzas-desde-2">Desde</label>
+            <select id="finanzas-desde-2" value={trDe} onChange={(e) => setTrDe(e.target.value)}>
               <option value="mp">Mercado Pago</option>
               <option value="banco">Banco</option>
               <option value="efectivo">Efectivo</option>
@@ -146,8 +146,8 @@ export function FinanzasPage() {
             </select>
           </div>
           <div className="form-group">
-            <label>Hacia</label>
-            <select value={trPara} onChange={(e) => setTrPara(e.target.value)}>
+            <label htmlFor="finanzas-hacia-3">Hacia</label>
+            <select id="finanzas-hacia-3" value={trPara} onChange={(e) => setTrPara(e.target.value)}>
               <option value="banco">Banco</option>
               <option value="mp">Mercado Pago</option>
               <option value="efectivo">Efectivo</option>
@@ -156,16 +156,16 @@ export function FinanzasPage() {
             </select>
           </div>
           <div className="form-group">
-            <label>Monto</label>
-            <input type="number" value={trMonto} onChange={(e) => setTrMonto(e.target.value)} />
+            <label htmlFor="finanzas-monto-4">Monto</label>
+            <input id="finanzas-monto-4" type="number" value={trMonto} onChange={(e) => setTrMonto(e.target.value)} />
           </div>
           <div className="form-group">
-            <label>Fecha</label>
-            <input type="date" value={trFecha} onChange={(e) => setTrFecha(e.target.value)} />
+            <label htmlFor="finanzas-fecha-5">Fecha</label>
+            <input id="finanzas-fecha-5" type="date" value={trFecha} onChange={(e) => setTrFecha(e.target.value)} />
           </div>
           <div className="form-group">
-            <label>Nota</label>
-            <input value={trNota} onChange={(e) => setTrNota(e.target.value)} />
+            <label htmlFor="finanzas-nota-6">Nota</label>
+            <input id="finanzas-nota-6" value={trNota} onChange={(e) => setTrNota(e.target.value)} />
           </div>
         </div>
         <button type="button" className="btn" onClick={registrarTr}>Registrar transferencia</button>
@@ -233,15 +233,15 @@ export function FinanzasPage() {
           </div>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
             <div className="form-group" style={{ minWidth: 130 }}>
-              <label>Tipo</label>
-              <select value={invTipo} onChange={(e) => setInvTipo(e.target.value as 'entrada' | 'salida')}>
+              <label htmlFor="finanzas-tipo-7">Tipo</label>
+              <select id="finanzas-tipo-7" value={invTipo} onChange={(e) => setInvTipo(e.target.value as 'entrada' | 'salida')}>
                 <option value="entrada">+ Ingreso</option>
                 <option value="salida">- Retiro</option>
               </select>
             </div>
             <div className="form-group" style={{ minWidth: 130 }}>
-              <label>Monto (ARS)</label>
-              <input type="number" value={invMonto} onChange={(e) => setInvMonto(e.target.value)} />
+              <label htmlFor="finanzas-monto-ars-8">Monto (ARS)</label>
+              <input id="finanzas-monto-ars-8" type="number" value={invMonto} onChange={(e) => setInvMonto(e.target.value)} />
             </div>
             <button type="button" className="btn" onClick={confirmInv}>Confirmar</button>
             <button type="button" className="btn secundario" onClick={() => setInvWhich(null)}>Cancelar</button>
@@ -257,13 +257,13 @@ export function FinanzasPage() {
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
             {usdOp !== 'precio' && (
               <div className="form-group" style={{ minWidth: 120 }}>
-                <label>Cantidad USD</label>
-                <input type="number" step="0.01" value={usdCant} onChange={(e) => setUsdCant(e.target.value)} placeholder="Ej: 50" />
+                <label htmlFor="finanzas-cantidad-usd-9">Cantidad USD</label>
+                <input id="finanzas-cantidad-usd-9" type="number" step="0.01" value={usdCant} onChange={(e) => setUsdCant(e.target.value)} placeholder="Ej: 50" />
               </div>
             )}
             <div className="form-group" style={{ minWidth: 140 }}>
-              <label>Precio ARS por USD</label>
-              <input type="number" value={usdPrecio} onChange={(e) => setUsdPrecio(e.target.value)} placeholder="Ej: 1300" />
+              <label htmlFor="finanzas-precio-ars-por-usd-10">Precio ARS por USD</label>
+              <input id="finanzas-precio-ars-por-usd-10" type="number" value={usdPrecio} onChange={(e) => setUsdPrecio(e.target.value)} placeholder="Ej: 1300" />
             </div>
             {usdOp !== 'precio' && (
               <div className="form-group" style={{ minWidth: 140 }}>
@@ -277,8 +277,8 @@ export function FinanzasPage() {
             )}
             {usdOp !== 'precio' && (
               <div className="form-group" style={{ flex: 2, minWidth: 180 }}>
-                <label>Motivo / Detalle</label>
-                <input value={usdMotivo} onChange={(e) => setUsdMotivo(e.target.value)} placeholder="Ej: Compra para ahorro" />
+                <label htmlFor="finanzas-motivo-detalle-11">Motivo / Detalle</label>
+                <input id="finanzas-motivo-detalle-11" value={usdMotivo} onChange={(e) => setUsdMotivo(e.target.value)} placeholder="Ej: Compra para ahorro" />
               </div>
             )}
             <button type="button" className="btn" onClick={guardarUsd}>Guardar</button>

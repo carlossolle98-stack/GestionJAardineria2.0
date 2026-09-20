@@ -122,16 +122,16 @@ export function ClienteHistorial({ cliente }: Props) {
         <div style={{ marginTop: 12, padding: 14, background: '#fff', borderRadius: 10, border: '1px solid rgba(74,140,63,0.2)' }}>
           <div className="form-grid" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(140px,1fr))' }}>
             <div className="form-group">
-              <label>Fecha</label>
-              <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
+              <label htmlFor="clientehistorial-fecha-1">Fecha</label>
+              <input id="clientehistorial-fecha-1" type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
             </div>
             <div className="form-group">
-              <label>Monto</label>
-              <input type="number" value={monto} onChange={(e) => setMonto(e.target.value)} placeholder="45000" />
+              <label htmlFor="clientehistorial-monto-2">Monto</label>
+              <input id="clientehistorial-monto-2" type="number" value={monto} onChange={(e) => setMonto(e.target.value)} placeholder="45000" />
             </div>
             <div className="form-group">
-              <label>Horas</label>
-              <select value={horas} onChange={(e) => setHoras(e.target.value)}>
+              <label htmlFor="clientehistorial-horas-3">Horas</label>
+              <select id="clientehistorial-horas-3" value={horas} onChange={(e) => setHoras(e.target.value)}>
                 <option value="">—</option>
                 <option value="0.5">0.5</option>
                 <option value="1">1</option>

@@ -58,8 +58,8 @@ export function WhatsappPage() {
       </div>
       <div className="tabla-wrap" style={{ padding: 20 }}>
         <div className="form-group" style={{ marginBottom: 12 }}>
-          <label>Texto del chat</label>
-          <textarea rows={6} value={pegado} onChange={(e) => setPegado(e.target.value)} />
+          <label htmlFor="whatsapp-texto-del-chat-1">Texto del chat</label>
+          <textarea id="whatsapp-texto-del-chat-1" rows={6} value={pegado} onChange={(e) => setPegado(e.target.value)} />
         </div>
         <button
           type="button"

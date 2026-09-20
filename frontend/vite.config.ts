@@ -13,7 +13,12 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': { target: 'https://gestionjaardineria20-backend-production.up.railway.app', changeOrigin: true },
+      // Desarrollo contra el backend local. Apuntarlo a Railway escribe en la
+      // base de produccion desde la maquina de desarrollo.
+      '/api': {
+        target: process.env.VITE_PROXY_TARGET || 'http://localhost:4000',
+        changeOrigin: true,
+      },
     },
   },
 });
