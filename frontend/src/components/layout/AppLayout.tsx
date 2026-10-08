@@ -37,6 +37,7 @@ const GRUPOS: { titulo: string; tabs: Tab[] }[] = [
     tabs: [
       { to: '/inventario', label: 'Inventario', icono: '📦', permiso: 'inventario' },
       { to: '/proveedores', label: 'Proveedores', icono: '🏪', permiso: 'egresos' },
+      { to: '/activos', label: 'Activos', icono: '🔧', permiso: 'finanzas' },
     ],
   },
   {

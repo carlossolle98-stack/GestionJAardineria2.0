@@ -131,6 +131,17 @@ export type J2Ingreso = {
   medio: string;
 };
 
+export type Activo = {
+  _id: string;
+  nombre: string;
+  categoria: string;
+  valorCompra: number;
+  fechaCompra: string;
+  vidaUtilAnios: number;
+  estado: string;
+  notas?: string;
+};
+
 export type MovimientoInventario = {
   _id: string;
   fecha: string;
