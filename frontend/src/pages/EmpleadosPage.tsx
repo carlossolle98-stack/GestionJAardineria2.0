@@ -1,4 +1,4 @@
-import { useState, useMemo, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { money } from '@/lib/format';
 import { hoyLocal } from '@/lib/j2reducer';
 import { mesClaveRef } from '@/lib/j2local';
@@ -62,7 +62,7 @@ function FilaDetalle({
         justifyContent: 'space-between',
         alignItems: 'center',
         padding: 'var(--sp-2) 0',
-        borderBottom: '1px solid var(--fondo)',
+        borderBottom: 'var(--borde)',
         fontSize: grande ? 'var(--txt-lg)' : 'var(--txt-base)',
       }}
     >
@@ -101,11 +101,9 @@ function FichaEmpleado({ emp }: { emp: J2Empleado }) {
     .reduce((s, m) => s + m.monto, 0);
 
   const lBrutoNum = Number(lBruto) || 0;
-  const lAdelanto = emp.adelanto || 0;
-  const lNeto = useMemo(
-    () => Math.max(0, lBrutoNum - mutualMes - lAdelanto),
-    [lBrutoNum, mutualMes, lAdelanto]
-  );
+  const lAdelanto = Math.min(emp.adelanto || 0, lBrutoNum);
+  const lEgreso = lBrutoNum - lAdelanto;
+  const lNeto = Math.max(0, lEgreso - mutualMes);
 
   function abrir(op: Operacion) {
     setOperacion(op);
@@ -176,7 +174,7 @@ function FichaEmpleado({ emp }: { emp: J2Empleado }) {
       cuenta: lCuenta,
       fecha: lFecha,
     });
-    toast(`Liquidación de ${emp.nombre} registrada · neto ${money(lNeto)}`, { tono: 'exito' });
+    toast(`Liquidación de ${emp.nombre} registrada · a entregar ${money(lNeto)}`, { tono: 'exito' });
     cerrar();
   }
 
@@ -373,10 +371,16 @@ function FichaEmpleado({ emp }: { emp: J2Empleado }) {
               </div>
             </div>
 
-            {/* Desglose */}
+            {sueldosMes.length > 0 && (
+              <div className="alerta aviso" role="alert">
+                Este mes ya hay {money(totalSueldo)} registrados como sueldo de {emp.nombre}.
+                Revisá que no estés liquidando dos veces.
+              </div>
+            )}
+
             <div
               style={{
-                background: 'var(--fondo)',
+                background: 'var(--superficie-2)',
                 borderRadius: 'var(--r-md)',
                 padding: 'var(--sp-4)',
               }}
@@ -385,16 +389,22 @@ function FichaEmpleado({ emp }: { emp: J2Empleado }) {
               <FilaDetalle
                 label="− Mutual retenida este mes"
                 valor={mutualMes}
-                color="var(--rojo)"
+                color={mutualMes > 0 ? 'var(--rojo)' : undefined}
               />
               <FilaDetalle
-                label={`− Adelanto entregado${lAdelanto > 0 ? ' (se saldará)' : ''}`}
+                label="− Adelanto ya entregado"
                 valor={lAdelanto}
                 color={lAdelanto > 0 ? 'var(--rojo)' : undefined}
               />
-              <div style={{ borderTop: '2px solid var(--borde)', marginTop: 'var(--sp-2)', paddingTop: 'var(--sp-2)' }}>
+              <div
+                style={{
+                  borderTop: '2px solid var(--linea-fuerte)',
+                  marginTop: 'var(--sp-2)',
+                  paddingTop: 'var(--sp-2)',
+                }}
+              >
                 <FilaDetalle
-                  label="= Total neto a pagar"
+                  label="= A entregar al empleado"
                   valor={lNeto}
                   color="var(--verde-vivo)"
                   grande
@@ -402,11 +412,11 @@ function FichaEmpleado({ emp }: { emp: J2Empleado }) {
               </div>
             </div>
 
-            {lAdelanto > 0 && (
-              <p className="form-ayuda" style={{ marginTop: 0 }}>
-                El adelanto de {money(lAdelanto)} quedará saldado al confirmar.
-              </p>
-            )}
+            <p className="form-ayuda" style={{ marginTop: 0 }}>
+              Se registra un egreso de sueldo por {money(lEgreso)} (bruto menos adelanto). La
+              mutual ya figura en caja como retención.
+              {lAdelanto > 0 && ` El adelanto de ${money(lAdelanto)} queda saldado.`}
+            </p>
 
             <div className="form-group">
               <label htmlFor={`liq-cuenta-${emp.id}`}>Cuenta de pago</label>

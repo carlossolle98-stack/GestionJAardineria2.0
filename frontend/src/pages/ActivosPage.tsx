@@ -40,10 +40,10 @@ function badgeEstado(estado: string) {
 
 /** Barra de depreciación visual. */
 function BarraDep({ pct }: { pct: number }) {
-  const color = pct >= 80 ? '#c0392b' : pct >= 50 ? '#e67e22' : '#2e7d32';
+  const color = pct >= 80 ? 'var(--rojo)' : pct >= 50 ? 'var(--amarillo)' : 'var(--verde-vivo)';
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-      <div style={{ flex: 1, height: 6, background: 'var(--fondo)', borderRadius: 3, overflow: 'hidden', minWidth: 48 }}>
+      <div style={{ flex: 1, height: 6, background: 'var(--linea)', borderRadius: 3, overflow: 'hidden', minWidth: 48 }}>
         <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 3, transition: 'width 0.3s' }} />
       </div>
       <span style={{ fontSize: 11, color: 'var(--texto-2)', minWidth: 28 }}>{pct}%</span>

@@ -470,29 +470,33 @@ function transicion(d: J2Datos, a: J2Accion): J2Datos {
 
     case 'liquidarSueldo': {
       const emp = d.empleados.find((e) => e.id === a.empleadoId);
-      const neto = Math.max(0, a.bruto - a.mutual - a.adelanto);
+      const nombre = emp?.nombre ?? a.empleadoId;
+      const adelantoDescontado = Math.min(a.adelanto, a.bruto);
+      // La mutual no se resta acá: registrarMutual ya la sumó a la caja como retención.
+      const egresoMonto = a.bruto - adelantoDescontado;
       const egresoRow: J2Egreso = {
         id: nuevoId('eg'),
         fecha: a.fecha,
         tipo: 'sueldo',
-        categoria: emp?.nombre ?? a.empleadoId,
-        concepto: `Sueldo neto — ${emp?.nombre ?? a.empleadoId}`,
-        monto: neto,
+        categoria: nombre,
+        concepto: `Liquidación — ${nombre}`,
+        monto: egresoMonto,
         cuenta: a.cuenta,
       };
-      // Limpia el adelanto: ya quedó saldado en esta liquidación.
-      const sinAdelanto: J2Datos = {
+      const conLiquidacion: J2Datos = {
         ...d,
         egresos: [...d.egresos, egresoRow],
         empleados: d.empleados.map((e) =>
-          e.id === a.empleadoId ? { ...e, adelanto: 0 } : e
+          e.id === a.empleadoId
+            ? { ...e, adelanto: Math.max(0, (e.adelanto || 0) - adelantoDescontado) }
+            : e
         ),
       };
-      return aplicar(sinAdelanto, {
+      return aplicar(conLiquidacion, {
         tipo: 'egreso',
-        concepto: emp?.nombre ?? a.empleadoId,
-        detalle: `Sueldo neto (bruto ${a.bruto} − mutual ${a.mutual} − adelanto ${a.adelanto})`,
-        monto: -neto,
+        concepto: nombre,
+        detalle: `Liquidación (bruto ${a.bruto} − adelanto ${adelantoDescontado}; mutual ${a.mutual} retenida aparte)`,
+        monto: -egresoMonto,
         cuenta: a.cuenta,
         fecha: a.fecha,
       });
