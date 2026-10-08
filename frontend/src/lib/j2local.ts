@@ -2,7 +2,6 @@ import type { J2Cuentas, J2EgresoTipo, J2Empleado, J2Inversiones } from '@/types
 import type { J2Datos } from '@/lib/j2reducer';
 
 export const EMPLEADOS_DEFAULT: J2Empleado[] = [
-  { id: 'emp_angel', nombre: 'Ángel', activo: false, aguinaldo: 0 },
   { id: 'emp_carlos', nombre: 'Carlos', activo: true, aguinaldo: 0 },
 ];
 

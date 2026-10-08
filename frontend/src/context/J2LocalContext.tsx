@@ -88,6 +88,7 @@ type J2Ctx = J2Datos & {
   ingresarPorMedio: (medioEtiqueta: string, monto: number) => void;
   addEmpleado: (nombre: string) => void;
   toggleEmpleado: (id: string) => void;
+  removeEmpleado: (id: string) => void;
   registrarMutual: (empNombre: string, monto: number, cuenta: keyof J2Cuentas) => void;
   registrarAguinaldo: (empId: string, monto: number) => void;
   ajustarInteresesAguinaldo: (empId: string, intereses: number) => void;
@@ -320,6 +321,7 @@ export function J2LocalProvider({ children }: { children: ReactNode }) {
         }),
       addEmpleado: (nombre: string) => envia({ tipo: 'addEmpleado', nombre }),
       toggleEmpleado: (id: string) => envia({ tipo: 'toggleEmpleado', id }),
+      removeEmpleado: (id: string) => envia({ tipo: 'removeEmpleado', id }),
       registrarMutual: (empNombre: string, monto: number, cuenta: keyof J2Cuentas) =>
         envia({ tipo: 'registrarMutual', empleado: empNombre, monto, cuenta }),
       registrarAguinaldo: (empId: string, monto: number) =>

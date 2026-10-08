@@ -167,6 +167,7 @@ export type J2Accion =
   | { tipo: 'ingresarPorMedio'; cuenta: keyof J2Cuentas; monto: number; concepto: string }
   | { tipo: 'addEmpleado'; nombre: string }
   | { tipo: 'toggleEmpleado'; id: string }
+  | { tipo: 'removeEmpleado'; id: string }
   | { tipo: 'registrarMutual'; empleado: string; monto: number; cuenta: keyof J2Cuentas }
   | { tipo: 'registrarAguinaldo'; empleadoId: string; monto: number }
   | { tipo: 'interesesAguinaldo'; empleadoId: string; intereses: number }
@@ -425,6 +426,13 @@ function transicion(d: J2Datos, a: J2Accion): J2Datos {
         ...d,
         empleados: d.empleados.map((e) => (e.id === a.id ? { ...e, activo: !e.activo } : e)),
       };
+
+    case 'removeEmpleado': {
+      const emp = d.empleados.find((e) => e.id === a.id);
+      // Con saldo pendiente no se borra: se perdería el rastro de esa plata.
+      if (!emp || (emp.aguinaldo || 0) > 0 || (emp.adelanto || 0) > 0) return d;
+      return { ...d, empleados: d.empleados.filter((e) => e.id !== a.id) };
+    }
 
     case 'registrarMutual':
       return aplicar(d, {

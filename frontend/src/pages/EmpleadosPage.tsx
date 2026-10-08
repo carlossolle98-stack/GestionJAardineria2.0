@@ -5,7 +5,7 @@ import { mesClaveRef } from '@/lib/j2local';
 import type { J2Empleado } from '@/types';
 import { useJ2Local } from '@/context/J2LocalContext';
 import { useToast } from '@/context/ToastContext';
-import { Modal, ModalAcciones } from '@/components/Modal';
+import { Modal, ModalAcciones, ModalConfirmar } from '@/components/Modal';
 import { Vacio } from '@/components/Estados';
 
 /** Las cinco operaciones que se hacen sobre la ficha de un empleado. */
@@ -87,6 +87,8 @@ function FichaEmpleado({ emp }: { emp: J2Empleado }) {
   const [lBruto, setLBruto] = useState('');
   const [lFecha, setLFecha] = useState(hoyLocal());
   const [lCuenta, setLCuenta] = useState<'mp' | 'banco' | 'efectivo'>('banco');
+  const [confirmarBorrar, setConfirmarBorrar] = useState(false);
+  const saldoPendiente = (emp.aguinaldo || 0) + (emp.adelanto || 0);
 
   const sueldosMes = j2.egresos.filter(
     (e) => e.tipo === 'sueldo' && e.categoria === emp.nombre && e.fecha.startsWith(mc)
@@ -227,6 +229,23 @@ function FichaEmpleado({ emp }: { emp: J2Empleado }) {
           >
             {emp.activo ? 'Desactivar' : 'Activar'}
           </button>
+          <button
+            type="button"
+            className="btn secundario sm"
+            style={{ color: 'var(--rojo)' }}
+            onClick={() => {
+              if (saldoPendiente > 0) {
+                toast(
+                  `${emp.nombre} tiene ${money(saldoPendiente)} entre aguinaldo y adelanto. Saldalo antes de eliminarlo, o desactivalo.`,
+                  { tono: 'error' }
+                );
+                return;
+              }
+              setConfirmarBorrar(true);
+            }}
+          >
+            🗑 Eliminar
+          </button>
         </div>
       </div>
 
@@ -335,6 +354,27 @@ function FichaEmpleado({ emp }: { emp: J2Empleado }) {
             <ModalAcciones onCancelar={cerrar} textoConfirmar={TITULOS[operacion].confirmar} />
           </form>
         </Modal>
+      )}
+
+      {confirmarBorrar && (
+        <ModalConfirmar
+          titulo="Eliminar empleado"
+          peligro
+          textoConfirmar="Eliminar"
+          mensaje={
+            <>
+              Se elimina a <strong>{emp.nombre}</strong> de la lista. Los sueldos ya registrados
+              quedan en Egresos. Si trabajó con vos y dejó de hacerlo, mejor usá{' '}
+              <strong>Desactivar</strong>.
+            </>
+          }
+          onConfirmar={() => {
+            j2.removeEmpleado(emp.id);
+            setConfirmarBorrar(false);
+            toast(`${emp.nombre} eliminado`, { tono: 'exito' });
+          }}
+          onCerrar={() => setConfirmarBorrar(false)}
+        />
       )}
 
       {operacion === 'liquidar' && (

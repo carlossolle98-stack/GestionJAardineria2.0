@@ -4,6 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Jardinería 2.0</title>
+    <script>
+      // Antes del primer pintado, para que no parpadee el tema equivocado.
+      try {
+        var t = localStorage.getItem('j2_tema') || 'claro';
+        if (t !== 'auto') document.documentElement.dataset.tema = t;
+      } catch (e) {
+        document.documentElement.dataset.tema = 'claro';
+      }
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link

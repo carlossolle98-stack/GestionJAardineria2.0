@@ -46,6 +46,29 @@ const GRUPOS: { titulo: string; tabs: Tab[] }[] = [
   },
 ];
 
+type Tema = 'claro' | 'oscuro' | 'auto';
+const SIGUIENTE_TEMA: Record<Tema, Tema> = { claro: 'oscuro', oscuro: 'auto', auto: 'claro' };
+const LABEL_TEMA: Record<Tema, string> = { claro: '☀️ Claro', oscuro: '🌙 Oscuro', auto: '🖥️ Automático' };
+
+function leerTema(): Tema {
+  try {
+    const t = localStorage.getItem('j2_tema');
+    return t === 'oscuro' || t === 'auto' ? t : 'claro';
+  } catch {
+    return 'claro';
+  }
+}
+
+function aplicarTema(t: Tema) {
+  if (t === 'auto') delete document.documentElement.dataset.tema;
+  else document.documentElement.dataset.tema = t;
+  try {
+    localStorage.setItem('j2_tema', t);
+  } catch {
+    /* sin almacenamiento: el tema vale sólo para esta visita */
+  }
+}
+
 function iniciales(nombre: string) {
   return nombre
     .split(' ')
@@ -61,6 +84,7 @@ export function AppLayout() {
   const [menuAbierto, setMenuAbierto] = useState(false);
   const [usuarioAbierto, setUsuarioAbierto] = useState(false);
   const [cambiarPass, setCambiarPass] = useState(false);
+  const [tema, setTema] = useState<Tema>(leerTema);
   const menuUsuarioRef = useRef<HTMLDivElement>(null);
 
   const hoy = new Date().toLocaleDateString('es-AR', {
@@ -157,6 +181,18 @@ export function AppLayout() {
                     }}
                   >
                     🔑 Cambiar contraseña
+                  </button>
+                  <button
+                    type="button"
+                    className="menu-usuario-item"
+                    role="menuitem"
+                    onClick={() => {
+                      const t = SIGUIENTE_TEMA[tema];
+                      aplicarTema(t);
+                      setTema(t);
+                    }}
+                  >
+                    Tema: {LABEL_TEMA[tema]}
                   </button>
                   <button
                     type="button"

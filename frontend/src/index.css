@@ -669,18 +669,17 @@ tbody td {
 }
 .nav-tabs-inner {
   display: flex;
-  gap: var(--sp-5);
+  /* Con muchas secciones, bajan a otra fila en vez de esconderse a la derecha. */
+  flex-wrap: wrap;
+  column-gap: var(--sp-5);
+  row-gap: 0;
   padding: 0 var(--sp-5);
   max-width: var(--ancho-max);
   margin: 0 auto;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.nav-tabs-inner::-webkit-scrollbar {
-  display: none;
 }
 .nav-grupo {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 2px;
   position: relative;
