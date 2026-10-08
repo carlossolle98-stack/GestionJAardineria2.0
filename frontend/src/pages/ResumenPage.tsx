@@ -347,6 +347,33 @@ export function ResumenPage() {
         </div>
       </div>
 
+      {/* Control interno: descuadre de caja */}
+      {Object.keys(j2.descuadre).length > 0 && (
+        <div style={{ marginTop: 24 }}>
+          <div className="section-title" style={{ marginBottom: 8 }}>⚠ Control interno — Descuadre detectado</div>
+          <div className="alerta urgente" style={{ display: 'block' }}>
+            <p style={{ marginBottom: 8, fontSize: 13 }}>
+              El saldo registrado en las cuentas no coincide con lo que suma el libro de movimientos.
+              Puede haber un ingreso o egreso cargado fuera del sistema.
+            </p>
+            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+              {Object.entries(j2.descuadre).map(([cuenta, dif]) => {
+                const nombreCuenta: Record<string, string> = { mp: 'Mercado Pago', banco: 'Banco', efectivo: 'Efectivo' };
+                return (
+                  <div key={cuenta} style={{ fontFamily: 'DM Mono,monospace', fontSize: 13 }}>
+                    <strong>{nombreCuenta[cuenta] ?? cuenta}:</strong>{' '}
+                    <span style={{ color: dif > 0 ? '#2e7d32' : 'var(--rojo)' }}>
+                      {dif > 0 ? '+' : ''}{money(dif)}
+                    </span>
+                    {' '}(el saldo supera al libro)
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div
         style={{
           marginTop: 32,

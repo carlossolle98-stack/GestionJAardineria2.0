@@ -14,6 +14,7 @@ export function ClienteHistorial({ cliente }: Props) {
   const [fecha, setFecha] = useState(todayISO());
   const [monto, setMonto] = useState('');
   const [horas, setHoras] = useState('');
+  const [medio, setMedio] = useState(cliente.formaPago || 'Transferencia');
 
   const pagos = [...(cliente.pagos || [])].sort((a, b) => a.fecha.localeCompare(b.fecha));
   const total = pagos.reduce((s, p) => s + p.monto, 0);
@@ -26,6 +27,7 @@ export function ClienteHistorial({ cliente }: Props) {
         fecha,
         monto: Number(monto),
         horas: horas ? Number(horas) : 0,
+        medio,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['clientes'] });
@@ -80,13 +82,14 @@ export function ClienteHistorial({ cliente }: Props) {
             <th style={{ padding: 8 }}>Fecha</th>
             <th style={{ padding: 8 }}>Monto</th>
             <th style={{ padding: 8, textAlign: 'center' }}>Hs</th>
+            <th style={{ padding: 8 }}>Medio</th>
             <th style={{ padding: 8 }} />
           </tr>
         </thead>
         <tbody>
           {rows.length === 0 ? (
             <tr>
-              <td colSpan={4} style={{ padding: 16, color: '#bbb', textAlign: 'center' }}>
+              <td colSpan={5} style={{ padding: 16, color: '#bbb', textAlign: 'center' }}>
                 Sin visitas registradas
               </td>
             </tr>
@@ -98,6 +101,7 @@ export function ClienteHistorial({ cliente }: Props) {
                   {money(p.monto)}
                 </td>
                 <td style={{ padding: 8, textAlign: 'center' }}>{p.horas ? `${p.horas}` : '—'}</td>
+                <td style={{ padding: 8, color: '#666', fontSize: 11 }}>{p.medio || '—'}</td>
                 <td style={{ padding: 8 }}>
                   <button
                     type="button"
@@ -138,6 +142,14 @@ export function ClienteHistorial({ cliente }: Props) {
                 <option value="2">2</option>
                 <option value="4">4</option>
                 <option value="8">8</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label htmlFor="clientehistorial-medio-4">Medio de pago</label>
+              <select id="clientehistorial-medio-4" value={medio} onChange={(e) => setMedio(e.target.value)}>
+                <option>Mercado Pago</option>
+                <option>Transferencia bancaria</option>
+                <option>Efectivo</option>
               </select>
             </div>
           </div>

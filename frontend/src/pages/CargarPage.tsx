@@ -29,39 +29,56 @@ export function CargarPage() {
   const [cMedio, setCMedio] = useState('Mercado Pago');
   const [cTipo, setCTipo] = useState('Cobro de trabajo');
   const [cDetalle, setCDetalle] = useState('');
+  const [cCombinado, setCCombinado] = useState(false);
+  const [cMonto2, setCMonto2] = useState('');
+  const [cMedio2, setCMedio2] = useState('Efectivo');
 
   const esVenta = cTipo === 'Venta vivero' || cTipo === 'Venta producto digital';
+  const montoTotal = cCombinado
+    ? (Number(cMonto) || 0) + (Number(cMonto2) || 0)
+    : Number(cMonto) || 0;
 
   const valorHoraPreview = useMemo(() => {
-    const m = Number(cMonto);
+    const m = montoTotal;
     const h = Number(cHoras);
     return m > 0 && h > 0 ? Math.round(m / h) : 0;
-  }, [cMonto, cHoras]);
+  }, [montoTotal, cHoras]);
 
   const mut = useMutation({
     mutationFn: async () => {
-      const monto = Number(cMonto);
+      const monto1 = Number(cMonto);
+      const monto2 = cCombinado ? Number(cMonto2) : 0;
       const horas = Number(cHoras) || 0;
-
-      // 1. Registrar cobro diario (log general)
       const tipoFinal = esVenta && cDetalle.trim() ? `${cTipo} — ${cDetalle.trim()}` : cTipo;
+
+      // 1. Registrar cobro(s) diario(s)
       const cobro = await sendJson<CobroDiario>('/api/cobros-diarios', 'POST', {
         cliente: cCliente.trim(),
-        monto,
+        monto: monto1,
         fecha: cFecha,
         medio: cMedio,
         tipo: tipoFinal,
       });
+      if (cCombinado && monto2 > 0) {
+        await sendJson('/api/cobros-diarios', 'POST', {
+          cliente: cCliente.trim(),
+          monto: monto2,
+          fecha: cFecha,
+          medio: cMedio2,
+          tipo: tipoFinal,
+        });
+      }
 
-      // 2. Registrar pago en la ficha del cliente (con horas → actualiza historial)
+      // 2. Registrar pago en ficha del cliente (total combinado)
       const clienteMatch = clientes.find(
         (c) => c.nombre.toLowerCase() === cCliente.trim().toLowerCase()
       );
       if (clienteMatch) {
         await sendJson(`/api/clientes/${clienteMatch._id}/pagos`, 'POST', {
           fecha: cFecha,
-          monto,
+          monto: monto1 + monto2,
           horas,
+          medio: cCombinado ? `${cMedio} + ${cMedio2}` : cMedio,
         });
       }
 
@@ -71,6 +88,7 @@ export function CargarPage() {
       const conceptoFinal = esVenta && cDetalle.trim()
         ? `${cTipo} — ${cDetalle.trim()}`
         : cTipo;
+      // Registrar uno o dos ingresos en j2 según la cuenta
       j2.addIngreso({
         fecha: cFecha,
         cliente: cCliente.trim(),
@@ -78,14 +96,24 @@ export function CargarPage() {
         monto: Number(cMonto),
         medio: cMedio,
       });
+      if (cCombinado && Number(cMonto2) > 0) {
+        j2.addIngreso({
+          fecha: cFecha,
+          cliente: cCliente.trim(),
+          concepto: conceptoFinal,
+          monto: Number(cMonto2),
+          medio: cMedio2,
+        });
+      }
       qc.invalidateQueries({ queryKey: ['cobros-diarios'] });
       qc.invalidateQueries({ queryKey: ['resumen'] });
       qc.invalidateQueries({ queryKey: ['clientes'] });
       setCCliente('');
       setCMonto('');
+      setCMonto2('');
       setCHoras('');
       setCDetalle('');
-      toast('✓ Cobro registrado y ficha de cliente actualizada');
+      toast(cCombinado ? '✓ Cobro combinado registrado' : '✓ Cobro registrado');
     },
     onError: (e: Error) => toast(e.message),
   });
@@ -93,6 +121,9 @@ export function CargarPage() {
   function registrar() {
     if (!cCliente.trim()) { toast('⚠ Ingresá el nombre del cliente'); return; }
     if (!Number(cMonto) || Number(cMonto) <= 0) { toast('⚠ Ingresá un monto válido'); return; }
+    if (cCombinado && (!Number(cMonto2) || Number(cMonto2) <= 0)) {
+      toast('⚠ Ingresá el segundo monto'); return;
+    }
     mut.mutate();
   }
 
@@ -164,7 +195,7 @@ export function CargarPage() {
             <input id="cargar-fecha-3" type="date" value={cFecha} onChange={(e) => setCFecha(e.target.value)} />
           </div>
           <div className="form-group">
-            <label htmlFor="cargar-medio-de-pago-4">Medio de pago</label>
+            <label htmlFor="cargar-medio-de-pago-4">{cCombinado ? 'Medio 1' : 'Medio de pago'}</label>
             <select id="cargar-medio-de-pago-4" value={cMedio} onChange={(e) => setCMedio(e.target.value)}>
               <option>Mercado Pago</option>
               <option>Transferencia bancaria</option>
@@ -194,6 +225,49 @@ export function CargarPage() {
             </div>
           )}
         </div>
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '10px 0', cursor: 'pointer', fontSize: 14 }}>
+          <input
+            type="checkbox"
+            checked={cCombinado}
+            onChange={(e) => { setCCombinado(e.target.checked); if (!e.target.checked) { setCMonto2(''); } }}
+          />
+          Pago combinado (dos medios)
+        </label>
+
+        {cCombinado && (
+          <div className="form-grid" style={{ marginBottom: 8 }}>
+            <div className="form-group">
+              <label>Monto 2</label>
+              <input
+                type="number"
+                value={cMonto2}
+                onChange={(e) => setCMonto2(e.target.value)}
+                placeholder="Ej: 20000"
+              />
+            </div>
+            <div className="form-group">
+              <label>Medio 2</label>
+              <select value={cMedio2} onChange={(e) => setCMedio2(e.target.value)}>
+                <option>Mercado Pago</option>
+                <option>Transferencia bancaria</option>
+                <option>Efectivo</option>
+              </select>
+            </div>
+          </div>
+        )}
+
+        {cCombinado && montoTotal > 0 && (
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: 8,
+            background: 'rgba(46,125,50,0.08)', border: '1px solid rgba(46,125,50,0.2)',
+            borderRadius: 8, padding: '6px 14px', marginBottom: 8, fontSize: 14,
+          }}>
+            <span style={{ color: '#555' }}>Total:</span>
+            <strong style={{ color: '#2e7d32', fontFamily: 'DM Mono,monospace' }}>{money(montoTotal)}</strong>
+            <span style={{ color: '#888', fontSize: 12 }}>({money(Number(cMonto))} {cMedio} + {money(Number(cMonto2) || 0)} {cMedio2})</span>
+          </div>
+        )}
 
         {valorHoraPreview > 0 && (
           <div style={{

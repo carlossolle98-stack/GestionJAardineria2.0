@@ -1,4 +1,4 @@
-export type Pago = { _id: string; fecha: string; monto: number; horas?: number };
+export type Pago = { _id: string; fecha: string; monto: number; horas?: number; medio?: string };
 
 export type Cliente = {
   _id: string;
