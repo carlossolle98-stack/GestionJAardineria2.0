@@ -24,6 +24,7 @@ const GRUPOS: { titulo: string; tabs: Tab[] }[] = [
     titulo: 'Dinero',
     tabs: [
       { to: '/', label: 'Resumen', icono: '📊', end: true, permiso: 'resumen' },
+      { to: '/graficos', label: 'Gráficos', icono: '📈', permiso: 'resumen' },
       { to: '/cobros', label: 'Cobros', icono: '💰', permiso: 'cobros' },
       { to: '/egresos', label: 'Egresos', icono: '💸', permiso: 'egresos' },
       { to: '/movimientos', label: 'Movimientos', icono: '📥', permiso: 'movimientos' },
