@@ -171,6 +171,15 @@ export type J2Accion =
   | { tipo: 'registrarAguinaldo'; empleadoId: string; monto: number }
   | { tipo: 'interesesAguinaldo'; empleadoId: string; intereses: number }
   | { tipo: 'registrarAdelanto'; empleadoId: string; monto: number; cuenta: keyof J2Cuentas }
+  | {
+      tipo: 'liquidarSueldo';
+      empleadoId: string;
+      bruto: number;
+      mutual: number;
+      adelanto: number;
+      cuenta: keyof J2Cuentas;
+      fecha: string;
+    }
   | { tipo: 'addDeudaCliente'; payload: Omit<J2DeudaCliente, 'id' | 'estado'> }
   | { tipo: 'pagarDeudaCliente'; id: string; cuenta: keyof J2Cuentas }
   | { tipo: 'removeDeudaCliente'; id: string }
@@ -456,6 +465,36 @@ function transicion(d: J2Datos, a: J2Accion): J2Datos {
         detalle: 'Adelanto de sueldo entregado',
         monto: -a.monto,
         cuenta: a.cuenta,
+      });
+    }
+
+    case 'liquidarSueldo': {
+      const emp = d.empleados.find((e) => e.id === a.empleadoId);
+      const neto = Math.max(0, a.bruto - a.mutual - a.adelanto);
+      const egresoRow: J2Egreso = {
+        id: nuevoId('eg'),
+        fecha: a.fecha,
+        tipo: 'sueldo',
+        categoria: emp?.nombre ?? a.empleadoId,
+        concepto: `Sueldo neto — ${emp?.nombre ?? a.empleadoId}`,
+        monto: neto,
+        cuenta: a.cuenta,
+      };
+      // Limpia el adelanto: ya quedó saldado en esta liquidación.
+      const sinAdelanto: J2Datos = {
+        ...d,
+        egresos: [...d.egresos, egresoRow],
+        empleados: d.empleados.map((e) =>
+          e.id === a.empleadoId ? { ...e, adelanto: 0 } : e
+        ),
+      };
+      return aplicar(sinAdelanto, {
+        tipo: 'egreso',
+        concepto: emp?.nombre ?? a.empleadoId,
+        detalle: `Sueldo neto (bruto ${a.bruto} − mutual ${a.mutual} − adelanto ${a.adelanto})`,
+        monto: -neto,
+        cuenta: a.cuenta,
+        fecha: a.fecha,
       });
     }
 
