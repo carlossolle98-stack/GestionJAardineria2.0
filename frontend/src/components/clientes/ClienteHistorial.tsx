@@ -115,7 +115,7 @@ export function ClienteHistorial({ cliente }: Props) {
       </table>
 
       <button type="button" className="btn sm" onClick={() => setShowForm((v) => !v)}>
-        + Registrar visita
+        + Registrar ingreso
       </button>
 
       {showForm && (

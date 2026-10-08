@@ -16,7 +16,7 @@ export function ResumenPage() {
   const [resetBusy, setResetBusy] = useState(false);
   const [confirmando, setConfirmando] = useState<'periodo' | 'seed' | null>(null);
   const [seedSecret, setSeedSecret] = useState('');
-  const { puede } = useAuth();
+  const { puede, esAdmin } = useAuth();
   const j2 = useJ2Local();
   const mc = mesClaveRef();
   const fijosMes   = j2.egresos.filter((e) => e.tipo === 'fijo'   && e.fecha.startsWith(mc));
@@ -187,12 +187,17 @@ export function ResumenPage() {
       // 1. Limpiar arrays locales (conserva cuentas, empleados, inversiones)
       j2.resetLocalData();
 
-      // 2. Resetear tabla histórica en el servidor → solo mes actual "En curso"
+      // 2. Actualizar tabla histórica: marcar mes anterior como cerrado y agregar el nuevo
+      const historialCerrado = (s.mesesHistoricos ?? []).map((m: { estado: string }) =>
+        m.estado === 'En curso' ? { ...m, estado: 'Cerrado' } : m
+      );
+      const nuevoMesEntry = { mes: mesActual, anio: anioActual, ingresos: 0, egresos: 0, estado: 'En curso' };
+      const yaExiste = historialCerrado.some(
+        (m: { mes: string; anio: number }) => m.mes === mesActual && m.anio === anioActual
+      );
       await sendJson('/api/settings', 'PUT', {
         ...s,
-        mesesHistoricos: [
-          { mes: mesActual, anio: anioActual, ingresos: 0, egresos: 0, estado: 'En curso' },
-        ],
+        mesesHistoricos: yaExiste ? historialCerrado : [...historialCerrado, nuevoMesEntry],
       });
 
       await qc.invalidateQueries({ queryKey: ['resumen'] });
@@ -353,14 +358,16 @@ export function ResumenPage() {
           alignItems: 'center',
         }}
       >
-        <button
-          type="button"
-          className="btn secundario"
-          disabled={resetBusy}
-          onClick={() => setConfirmando('periodo')}
-        >
-          {resetBusy ? '…' : '🔄 Iniciar nuevo período'}
-        </button>
+        {esAdmin && (
+          <button
+            type="button"
+            className="btn secundario"
+            disabled={resetBusy}
+            onClick={() => setConfirmando('periodo')}
+          >
+            {resetBusy ? '…' : '🔄 Iniciar nuevo período'}
+          </button>
+        )}
         {puede('ajustes') && (
           <button
             type="button"

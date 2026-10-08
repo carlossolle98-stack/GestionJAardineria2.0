@@ -234,14 +234,23 @@ export function CobrosPage() {
     j2.pagarDeudaCliente(id, pagoCuenta);
     setOpenPagoId(null);
 
-    // Si coincide con cliente formal → reducir badge en ficha del cliente
+    // Si coincide con cliente formal → reducir badge + registrar pago en historial
     const formal = buscarFormal(deuda.nombreCliente);
     if (formal) {
-      await sendJson(`/api/clientes/${formal._id}`, 'PATCH', {
-        deuda: Math.max(0, (formal.deuda || 0) - deuda.monto),
-      }).catch(() => {
-        toast('No se pudo actualizar la deuda en la ficha del cliente', { tono: 'error' });
-      });
+      await Promise.all([
+        sendJson(`/api/clientes/${formal._id}`, 'PATCH', {
+          deuda: Math.max(0, (formal.deuda || 0) - deuda.monto),
+        }).catch(() => {
+          toast('No se pudo actualizar la deuda en la ficha del cliente', { tono: 'error' });
+        }),
+        sendJson(`/api/clientes/${formal._id}/pagos`, 'POST', {
+          fecha: deuda.fechaPago || new Date().toISOString().slice(0, 10),
+          monto: deuda.monto,
+          horas: 0,
+          concepto: deuda.concepto,
+          medio: NOMBRES_CUENTA[pagoCuenta] || pagoCuenta,
+        }).catch(() => {}),
+      ]);
       qc.invalidateQueries({ queryKey: ['clientes'] });
     }
 

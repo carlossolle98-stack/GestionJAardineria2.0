@@ -138,6 +138,7 @@ export function CargarPage() {
             <label htmlFor="cargar-cliente-1">Cliente</label>
             <input id="cargar-cliente-1" value={cCliente} onChange={(e) => setCCliente(e.target.value)} list="dl-clientes" placeholder="Nombre del cliente" />
             <datalist id="dl-clientes">
+              <option value="Varios / Consumidor Final" />
               {clientes.map((c) => (
                 <option key={c._id} value={c.nombre} />
               ))}
