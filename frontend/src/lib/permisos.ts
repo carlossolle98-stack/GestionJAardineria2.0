@@ -18,6 +18,7 @@ export type Permiso =
   | 'movimientos'
   | 'finanzas'
   | 'empleados'
+  | 'inventario'
   | 'usuarios'
   | 'ajustes';
 
@@ -56,6 +57,7 @@ export const RUTA_POR_PERMISO: Record<Permiso, string> = {
   egresos: '/egresos',
   finanzas: '/finanzas',
   empleados: '/empleados',
+  inventario: '/inventario',
   usuarios: '/usuarios',
   ajustes: '/ajustes',
 };

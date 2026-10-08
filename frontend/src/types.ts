@@ -131,6 +131,24 @@ export type J2Ingreso = {
   medio: string;
 };
 
+export type MovimientoInventario = {
+  _id: string;
+  fecha: string;
+  tipo: 'entrada' | 'salida';
+  cantidad: number;
+  motivo: string;
+};
+
+export type ItemInventario = {
+  _id: string;
+  nombre: string;
+  categoria: string;
+  stock: number;
+  unidad: string;
+  stockMinimo: number;
+  movimientos: MovimientoInventario[];
+};
+
 export type J2DeudaCliente = {
   id: string;
   nombreCliente: string;

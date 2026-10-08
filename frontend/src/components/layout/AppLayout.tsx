@@ -32,6 +32,10 @@ const GRUPOS: { titulo: string; tabs: Tab[] }[] = [
     ],
   },
   {
+    titulo: 'Stock',
+    tabs: [{ to: '/inventario', label: 'Inventario', icono: '📦', permiso: 'inventario' }],
+  },
+  {
     titulo: 'Administración',
     tabs: [{ to: '/usuarios', label: 'Usuarios', icono: '🔑', permiso: 'usuarios' }],
   },
