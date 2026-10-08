@@ -74,7 +74,7 @@ export type ResumenPayload = {
 
 export type J2EgresoTipo = 'fijo' | 'varios' | 'sueldo' | 'mercaderia' | 'inventario' | 'bancario';
 
-export type J2Empleado = { id: string; nombre: string; activo: boolean; aguinaldo: number };
+export type J2Empleado = { id: string; nombre: string; activo: boolean; aguinaldo: number; adelanto?: number };
 
 export type J2MovLog = {
   id: string;

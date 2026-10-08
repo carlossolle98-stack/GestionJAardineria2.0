@@ -7,8 +7,8 @@ import { useToast } from '@/context/ToastContext';
 import { Modal, ModalAcciones } from '@/components/Modal';
 import { Vacio } from '@/components/Estados';
 
-/** Las cuatro operaciones que se hacen sobre la ficha de un empleado. */
-type Operacion = 'mutual' | 'aguinaldo' | 'intereses' | 'ajuste';
+/** Las cinco operaciones que se hacen sobre la ficha de un empleado. */
+type Operacion = 'mutual' | 'aguinaldo' | 'intereses' | 'ajuste' | 'adelanto';
 
 const TITULOS: Record<Operacion, { titulo: string; descripcion: string; confirmar: string }> = {
   mutual: {
@@ -30,6 +30,11 @@ const TITULOS: Record<Operacion, { titulo: string; descripcion: string; confirma
     titulo: 'Ajuste manual del saldo',
     descripcion: 'Corrige el total acumulado cuando no coincide con el resumen real.',
     confirmar: 'Ajustar saldo',
+  },
+  adelanto: {
+    titulo: 'Registrar adelanto de sueldo',
+    descripcion: 'El dinero sale de caja ahora y queda pendiente de descuento en el próximo sueldo.',
+    confirmar: 'Registrar adelanto',
   },
 };
 
@@ -82,6 +87,10 @@ function FichaEmpleado({ emp }: { emp: J2Empleado }) {
       case 'aguinaldo':
         j2.registrarAguinaldo(emp.id, m);
         toast(`Aguinaldo de ${emp.nombre} · ${money(m)}`, { tono: 'exito' });
+        break;
+      case 'adelanto':
+        j2.registrarAdelanto(emp.id, m, cuenta);
+        toast(`Adelanto entregado a ${emp.nombre} · ${money(m)}`, { tono: 'exito' });
         break;
       case 'intereses':
         j2.ajustarInteresesAguinaldo(emp.id, m);
@@ -166,6 +175,26 @@ function FichaEmpleado({ emp }: { emp: J2Empleado }) {
           </button>
         </div>
 
+        <div className="card amarillo" style={{ padding: 'var(--sp-4)' }}>
+          <div className="card-label">💵 Adelanto pendiente</div>
+          <div className="card-valor" style={{ fontSize: 20 }}>
+            {money(emp.adelanto || 0)}
+          </div>
+          <div className="card-sub">
+            {(emp.adelanto || 0) > 0
+              ? 'A descontar del próximo sueldo'
+              : 'Sin adelantos pendientes'}
+          </div>
+          <button
+            type="button"
+            className="btn sm"
+            style={{ marginTop: 'var(--sp-2)' }}
+            onClick={() => abrir('adelanto')}
+          >
+            Registrar adelanto
+          </button>
+        </div>
+
         <div className="card azul" style={{ padding: 'var(--sp-4)' }}>
           <div className="card-label">🏦 Aguinaldo en COCOS</div>
           <div className="card-valor" style={{ fontSize: 20 }}>
@@ -214,9 +243,11 @@ function FichaEmpleado({ emp }: { emp: J2Empleado }) {
               )}
             </div>
 
-            {operacion === 'mutual' && (
+            {(operacion === 'mutual' || operacion === 'adelanto') && (
               <div className="form-group">
-                <label htmlFor={`emp-cuenta-${emp.id}`}>Cuenta que recibe</label>
+                <label htmlFor={`emp-cuenta-${emp.id}`}>
+                  {operacion === 'mutual' ? 'Cuenta que recibe' : 'Cuenta de salida'}
+                </label>
                 <select
                   id={`emp-cuenta-${emp.id}`}
                   value={cuenta}

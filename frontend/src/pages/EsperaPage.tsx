@@ -61,10 +61,20 @@ export function EsperaPage() {
     []
   );
 
-  const { filas, orden, setOrden } = useOrden(filtrados, valoresOrden, {
+  const { filas: filasOrdenadas, orden, setOrden } = useOrden(filtrados, valoresOrden, {
     campo: 'espera',
     direccion: 'desc',
   });
+
+  const esOrdenManual = orden.campo === 'espera' && !hayFiltros;
+  // En modo manual respetamos el orden del array (posición en j2.listaEspera)
+  const filas = esOrdenManual
+    ? filtrados.slice().sort((a, b) => {
+        const ia = j2.listaEspera.findIndex((x) => x.id === a.id);
+        const ib = j2.listaEspera.findIndex((x) => x.id === b.id);
+        return ia - ib;
+      })
+    : filasOrdenadas;
 
   const hayFiltros = busqueda !== '' || urgencia !== 'todas';
   const limpiarFiltros = () => {
@@ -188,6 +198,26 @@ export function EsperaPage() {
                 {e.notas || '—'}
               </div>
               <div className="ec-acciones">
+                {esOrdenManual && (
+                  <>
+                    <button
+                      type="button"
+                      className="btn secundario sm"
+                      title="Subir prioridad"
+                      onClick={() => j2.moverListaEspera(e.id, 'arriba')}
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      className="btn secundario sm"
+                      title="Bajar prioridad"
+                      onClick={() => j2.moverListaEspera(e.id, 'abajo')}
+                    >
+                      ↓
+                    </button>
+                  </>
+                )}
                 <button
                   type="button"
                   className="btn sm"

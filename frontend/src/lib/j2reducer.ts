@@ -170,9 +170,11 @@ export type J2Accion =
   | { tipo: 'registrarMutual'; empleado: string; monto: number; cuenta: keyof J2Cuentas }
   | { tipo: 'registrarAguinaldo'; empleadoId: string; monto: number }
   | { tipo: 'interesesAguinaldo'; empleadoId: string; intereses: number }
+  | { tipo: 'registrarAdelanto'; empleadoId: string; monto: number; cuenta: keyof J2Cuentas }
   | { tipo: 'addDeudaCliente'; payload: Omit<J2DeudaCliente, 'id' | 'estado'> }
   | { tipo: 'pagarDeudaCliente'; id: string; cuenta: keyof J2Cuentas }
   | { tipo: 'removeDeudaCliente'; id: string }
+  | { tipo: 'moverListaEspera'; id: string; direccion: 'arriba' | 'abajo' }
   | { tipo: 'reiniciarPeriodo' };
 
 /** Acciones que no tiene sentido deshacer (carga inicial, el propio deshacer). */
@@ -217,6 +219,15 @@ function transicion(d: J2Datos, a: J2Accion): J2Datos {
 
     case 'removeListaEspera':
       return { ...d, listaEspera: d.listaEspera.filter((x) => x.id !== a.id) };
+
+    case 'moverListaEspera': {
+      const lista = [...d.listaEspera];
+      const idx = lista.findIndex((x) => x.id === a.id);
+      const dest = a.direccion === 'arriba' ? idx - 1 : idx + 1;
+      if (idx < 0 || dest < 0 || dest >= lista.length) return d;
+      [lista[idx], lista[dest]] = [lista[dest], lista[idx]];
+      return { ...d, listaEspera: lista };
+    }
 
     /* — Egresos — */
     case 'addEgreso': {
@@ -396,7 +407,7 @@ function transicion(d: J2Datos, a: J2Accion): J2Datos {
         ...d,
         empleados: [
           ...d.empleados,
-          { id: nuevoId('emp'), nombre: a.nombre, activo: true, aguinaldo: 0 },
+          { id: nuevoId('emp'), nombre: a.nombre, activo: true, aguinaldo: 0, adelanto: 0 },
         ],
       };
 
@@ -428,6 +439,23 @@ function transicion(d: J2Datos, a: J2Accion): J2Datos {
         concepto: `Aguinaldo retenido — ${emp?.nombre ?? a.empleadoId}`,
         monto: a.monto,
         cuenta: 'cocos',
+      });
+    }
+
+    case 'registrarAdelanto': {
+      const emp = d.empleados.find((e) => e.id === a.empleadoId);
+      const conAdelanto: J2Datos = {
+        ...d,
+        empleados: d.empleados.map((e) =>
+          e.id === a.empleadoId ? { ...e, adelanto: (e.adelanto || 0) + a.monto } : e
+        ),
+      };
+      return aplicar(conAdelanto, {
+        tipo: 'adelanto',
+        concepto: `Adelanto — ${emp?.nombre ?? a.empleadoId}`,
+        detalle: 'Adelanto de sueldo entregado',
+        monto: -a.monto,
+        cuenta: a.cuenta,
       });
     }
 
