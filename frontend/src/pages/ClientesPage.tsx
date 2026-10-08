@@ -53,6 +53,14 @@ export function ClientesPage() {
   const [nNombre, setNNombre] = useState('');
   const [nDir, setNDir] = useState('');
   const [nPago, setNPago] = useState('Transferencia');
+  const [nTel, setNTel] = useState('');
+
+  // Edición
+  const [editId, setEditId] = useState<string | null>(null);
+  const [eNombre, setENombre] = useState('');
+  const [eDir, setEDir] = useState('');
+  const [ePago, setEPago] = useState('');
+  const [eTel, setETel] = useState('');
 
   const { data = [], isLoading } = useQuery({
     queryKey: ['clientes'],
@@ -65,13 +73,29 @@ export function ClientesPage() {
         nombre: nNombre.trim(),
         direccion: nDir.trim() || 'dato pendiente',
         formaPago: nPago,
+        telefono: nTel.trim(),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['clientes'] });
-      setNNombre('');
-      setNDir('');
+      setNNombre(''); setNDir(''); setNTel('');
       setShowNew(false);
       toast('Cliente agregado', { tono: 'exito' });
+    },
+    onError: (e: Error) => toast(e.message, { tono: 'error' }),
+  });
+
+  const editCliente = useMutation({
+    mutationFn: () =>
+      sendJson<Cliente>(`/api/clientes/${editId}`, 'PATCH', {
+        nombre: eNombre.trim(),
+        direccion: eDir.trim(),
+        formaPago: ePago,
+        telefono: eTel.trim(),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['clientes'] });
+      setEditId(null);
+      toast('Cliente actualizado', { tono: 'exito' });
     },
     onError: (e: Error) => toast(e.message, { tono: 'error' }),
   });
@@ -351,15 +375,31 @@ export function ClientesPage() {
                             </div>
                           </td>
                           <td data-label="Acción" onClick={(e) => e.stopPropagation()}>
-                            <button
-                              type="button"
-                              className="btn secundario sm"
-                              style={{ color: 'var(--rojo)', border: '1px solid rgba(192,57,43,0.3)' }}
-                              aria-label={`Eliminar a ${c.nombre}`}
-                              onClick={() => setPendiente({ accion: 'eliminar', id: c._id, nombre: c.nombre })}
-                            >
-                              🗑
-                            </button>
+                            <div style={{ display: 'flex', gap: 4 }}>
+                              <button
+                                type="button"
+                                className="btn secundario sm"
+                                aria-label={`Editar a ${c.nombre}`}
+                                onClick={() => {
+                                  setEditId(c._id);
+                                  setENombre(c.nombre);
+                                  setEDir(c.direccion);
+                                  setEPago(c.formaPago);
+                                  setETel(c.telefono || '');
+                                }}
+                              >
+                                ✏️
+                              </button>
+                              <button
+                                type="button"
+                                className="btn secundario sm"
+                                style={{ color: 'var(--rojo)', border: '1px solid rgba(192,57,43,0.3)' }}
+                                aria-label={`Eliminar a ${c.nombre}`}
+                                onClick={() => setPendiente({ accion: 'eliminar', id: c._id, nombre: c.nombre })}
+                              >
+                                🗑
+                              </button>
+                            </div>
                           </td>
                         </tr>
                         {abierto && (
@@ -409,11 +449,56 @@ export function ClientesPage() {
                   <option>Mercado Pago</option>
                 </select>
               </div>
+              <div className="form-group">
+                <label htmlFor="clientes-tel-4">Teléfono</label>
+                <input id="clientes-tel-4" value={nTel} onChange={(e) => setNTel(e.target.value)} placeholder="Ej: 11 1234-5678" />
+              </div>
             </div>
             <ModalAcciones
               onCancelar={() => setShowNew(false)}
               textoConfirmar="Crear cliente"
               enviando={addCliente.isPending}
+            />
+          </form>
+        </Modal>
+      )}
+
+      {editId && (
+        <Modal titulo="Editar cliente" onCerrar={() => setEditId(null)}>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!eNombre.trim()) { toast('El nombre no puede quedar vacío', { tono: 'error' }); return; }
+              editCliente.mutate();
+            }}
+          >
+            <div className="form-grid">
+              <div className="form-group">
+                <label htmlFor="edit-nombre">Nombre</label>
+                <input id="edit-nombre" value={eNombre} onChange={(e) => setENombre(e.target.value)} required />
+              </div>
+              <div className="form-group">
+                <label htmlFor="edit-dir">Dirección</label>
+                <input id="edit-dir" value={eDir} onChange={(e) => setEDir(e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label htmlFor="edit-pago">Forma de pago</label>
+                <select id="edit-pago" value={ePago} onChange={(e) => setEPago(e.target.value)}>
+                  <option>Transferencia</option>
+                  <option>Contado</option>
+                  <option>Transf / Contado</option>
+                  <option>Mercado Pago</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label htmlFor="edit-tel">Teléfono</label>
+                <input id="edit-tel" value={eTel} onChange={(e) => setETel(e.target.value)} placeholder="Ej: 11 1234-5678" />
+              </div>
+            </div>
+            <ModalAcciones
+              onCancelar={() => setEditId(null)}
+              textoConfirmar="Guardar cambios"
+              enviando={editCliente.isPending}
             />
           </form>
         </Modal>

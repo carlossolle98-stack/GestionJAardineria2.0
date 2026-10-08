@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { getJson, sendJson } from '@/lib/api';
 import { mensajeWa, copiar } from '@/lib/whatsapp';
 import type { Prospecto } from '@/types';
-import { Modal, ModalAcciones } from '@/components/Modal';
+import { Modal, ModalAcciones, ModalConfirmar } from '@/components/Modal';
 import { useOrden, Th, BarraFiltros, coincideAlguno } from '@/components/Tabla';
 import { Vacio } from '@/components/Estados';
 import { useToast } from '@/context/ToastContext';
@@ -47,6 +47,11 @@ export function ProspectosPage() {
   const [show, setShow] = useState(false);
   const [form, setForm] = useState(FORM_VACIO);
 
+  const [editP, setEditP] = useState<Prospecto | null>(null);
+  const [eForm, setEForm] = useState(FORM_VACIO);
+  const [delId, setDelId] = useState<string | null>(null);
+  const [delNombre, setDelNombre] = useState('');
+
   const mut = useMutation({
     mutationFn: () => sendJson<Prospecto>('/api/prospectos', 'POST', form),
     onSuccess: () => {
@@ -54,6 +59,25 @@ export function ProspectosPage() {
       setShow(false);
       setForm(FORM_VACIO);
       toast('Prospecto guardado', { tono: 'exito' });
+    },
+    onError: (e: Error) => toast(e.message, { tono: 'error' }),
+  });
+
+  const editMut = useMutation({
+    mutationFn: () => sendJson<Prospecto>(`/api/prospectos/${editP?._id}`, 'PATCH', eForm),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['prospectos'] });
+      setEditP(null);
+      toast('Prospecto actualizado', { tono: 'exito' });
+    },
+    onError: (e: Error) => toast(e.message, { tono: 'error' }),
+  });
+
+  const delMut = useMutation({
+    mutationFn: (id: string) => sendJson(`/api/prospectos/${id}`, 'DELETE'),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['prospectos'] });
+      toast('Prospecto eliminado', { tono: 'exito' });
     },
     onError: (e: Error) => toast(e.message, { tono: 'error' }),
   });
@@ -243,9 +267,37 @@ export function ProspectosPage() {
                       <span className="badge pendiente">A gestionar</span>
                     </td>
                     <td>
-                      <button type="button" className="btn sm" onClick={() => contactar(p)}>
-                        💬 WA
-                      </button>
+                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                        <button type="button" className="btn sm" onClick={() => contactar(p)}>
+                          💬 WA
+                        </button>
+                        <button
+                          type="button"
+                          className="btn secundario sm"
+                          onClick={() => {
+                            setEditP(p);
+                            setEForm({
+                              nombre: p.nombre,
+                              zona: p.zona,
+                              tipoTrabajo: p.tipoTrabajo,
+                              frecuencia: p.frecuencia,
+                              disponibilidad: p.disponibilidad,
+                              estado: p.estado,
+                              notas: p.notas || '',
+                            });
+                          }}
+                        >
+                          ✏️
+                        </button>
+                        <button
+                          type="button"
+                          className="btn secundario sm"
+                          style={{ color: 'var(--rojo)', border: '1px solid rgba(192,57,43,0.3)' }}
+                          onClick={() => { setDelId(p._id); setDelNombre(p.nombre); }}
+                        >
+                          🗑
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -263,6 +315,80 @@ export function ProspectosPage() {
           Zona exacta · Tipo de trabajo · m² o fotos · Frecuencia · Disponibilidad · Acceso moto/camioneta
         </div>
       </div>
+
+      {editP && (
+        <Modal titulo="Editar prospecto" ancho="ancho" onCerrar={() => setEditP(null)}>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!eForm.nombre.trim()) { toast('El nombre no puede quedar vacío', { tono: 'error' }); return; }
+              editMut.mutate();
+            }}
+          >
+            <div className="form-grid">
+              <div className="form-group">
+                <label htmlFor="ep-nombre">Nombre</label>
+                <input id="ep-nombre" value={eForm.nombre} onChange={(e) => setEForm({ ...eForm, nombre: e.target.value })} required />
+              </div>
+              <div className="form-group">
+                <label htmlFor="ep-zona">Zona</label>
+                <input id="ep-zona" value={eForm.zona} onChange={(e) => setEForm({ ...eForm, zona: e.target.value })} />
+              </div>
+              <div className="form-group">
+                <label htmlFor="ep-tipo">Tipo trabajo</label>
+                <select id="ep-tipo" value={eForm.tipoTrabajo} onChange={(e) => setEForm({ ...eForm, tipoTrabajo: e.target.value })}>
+                  <option value="">Seleccionar…</option>
+                  <option>Mantenimiento mensual</option>
+                  <option>Poda</option>
+                  <option>Desmalezado</option>
+                  <option>Diseño de jardín</option>
+                  <option>Vivero / venta</option>
+                  <option>Otro</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label htmlFor="ep-frec">Frecuencia</label>
+                <select id="ep-frec" value={eForm.frecuencia} onChange={(e) => setEForm({ ...eForm, frecuencia: e.target.value })}>
+                  <option value="">Sin definir</option>
+                  <option>Mensual</option>
+                  <option>Quincenal</option>
+                  <option>Semanal</option>
+                  <option>Una sola vez</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label htmlFor="ep-disp">Disponibilidad</label>
+                <input id="ep-disp" value={eForm.disponibilidad} onChange={(e) => setEForm({ ...eForm, disponibilidad: e.target.value })} />
+              </div>
+              <div className="form-group">
+                <label htmlFor="ep-estado">Estado</label>
+                <select id="ep-estado" value={eForm.estado} onChange={(e) => setEForm({ ...eForm, estado: e.target.value })}>
+                  <option>Presupuesto pendiente</option>
+                  <option>A confirmar</option>
+                  <option>Espera / sin lugar</option>
+                  <option>En negociación</option>
+                </select>
+              </div>
+            </div>
+            <div className="form-group" style={{ marginBottom: 'var(--sp-3)' }}>
+              <label htmlFor="ep-notas">Notas</label>
+              <textarea id="ep-notas" rows={2} value={eForm.notas} onChange={(e) => setEForm({ ...eForm, notas: e.target.value })} />
+            </div>
+            <ModalAcciones onCancelar={() => setEditP(null)} textoConfirmar="Guardar cambios" enviando={editMut.isPending} />
+          </form>
+        </Modal>
+      )}
+
+      {delId && (
+        <ModalConfirmar
+          titulo="Eliminar prospecto"
+          peligro
+          textoConfirmar="Eliminar"
+          mensaje={<>Se elimina a <strong>{delNombre}</strong> del pipeline. Esta acción no se puede deshacer.</>}
+          onConfirmar={() => { delMut.mutate(delId); setDelId(null); }}
+          onCerrar={() => setDelId(null)}
+        />
+      )}
 
       {show && (
         <Modal

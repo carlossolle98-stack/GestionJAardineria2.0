@@ -36,6 +36,14 @@ export function AgendaPage() {
   const [tDur, setTDur] = useState('1 hora');
   const [tTipo, setTTipo] = useState('Cliente fijo');
 
+  // ── Edición de turno ────────────────────────────────────────
+  const [editT, setEditT] = useState<Turno | null>(null);
+  const [etCliente, setEtCliente] = useState('');
+  const [etFecha, setEtFecha] = useState('');
+  const [etHora, setEtHora] = useState('');
+  const [etDur, setEtDur] = useState('1 hora');
+  const [etTipo, setEtTipo] = useState('Cliente fijo');
+
   // ── Filtros de la semana mostrada ───────────────────────────
   const [busqueda, setBusqueda] = useState('');
   const [filEstado, setFilEstado] = useState('');
@@ -80,6 +88,24 @@ export function AgendaPage() {
       qc.invalidateQueries({ queryKey: ['turnos'] });
       qc.invalidateQueries({ queryKey: ['turnos-all'] });
       toast('Turno eliminado', { tono: 'exito' });
+    },
+    onError: (e: Error) => toast(e.message, { tono: 'error' }),
+  });
+
+  const editMutT = useMutation({
+    mutationFn: () =>
+      sendJson<Turno>(`/api/turnos/${editT?._id}`, 'PATCH', {
+        cliente: etCliente.trim(),
+        fecha: etFecha,
+        hora: etHora,
+        duracion: etDur,
+        tipo: etTipo,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['turnos'] });
+      qc.invalidateQueries({ queryKey: ['turnos-all'] });
+      setEditT(null);
+      toast('Turno actualizado', { tono: 'exito' });
     },
     onError: (e: Error) => toast(e.message, { tono: 'error' }),
   });
@@ -315,6 +341,21 @@ export function AgendaPage() {
                       </button>
                       <button
                         type="button"
+                        className="btn secundario sm"
+                        aria-label={`Editar turno de ${t.cliente}`}
+                        onClick={() => {
+                          setEditT(t);
+                          setEtCliente(t.cliente);
+                          setEtFecha(t.fecha);
+                          setEtHora(t.hora);
+                          setEtDur(t.duracion);
+                          setEtTipo(t.tipo);
+                        }}
+                      >
+                        ✏️
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => delMut.mutate(t._id)}
                         aria-label={`Eliminar turno de ${t.cliente}`}
                         style={{ opacity: 0.5, border: 'none', background: 'none', cursor: 'pointer' }}
@@ -333,6 +374,47 @@ export function AgendaPage() {
             </div>
           );
         })
+      )}
+
+      {/* ── Modal: editar turno ── */}
+      {editT && (
+        <Modal titulo="Editar turno" onCerrar={() => setEditT(null)}>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!etCliente.trim()) { toast('⚠ Ingresá el nombre del cliente', { tono: 'error' }); return; }
+              editMutT.mutate();
+            }}
+          >
+            <div className="form-grid">
+              <div className="form-group">
+                <label htmlFor="et-cliente">Cliente</label>
+                <input id="et-cliente" value={etCliente} onChange={(e) => setEtCliente(e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label htmlFor="et-fecha">Fecha</label>
+                <input id="et-fecha" type="date" value={etFecha} onChange={(e) => setEtFecha(e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label htmlFor="et-hora">Hora</label>
+                <input id="et-hora" type="time" value={etHora} onChange={(e) => setEtHora(e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label htmlFor="et-dur">Duración</label>
+                <select id="et-dur" value={etDur} onChange={(e) => setEtDur(e.target.value)}>
+                  {DURACIONES.map((d) => <option key={d}>{d}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label htmlFor="et-tipo">Tipo</label>
+                <select id="et-tipo" value={etTipo} onChange={(e) => setEtTipo(e.target.value)}>
+                  {TIPOS.map((t) => <option key={t}>{t}</option>)}
+                </select>
+              </div>
+            </div>
+            <ModalAcciones onCancelar={() => setEditT(null)} textoConfirmar="Guardar cambios" enviando={editMutT.isPending} />
+          </form>
+        </Modal>
       )}
 
       {/* ── Modal: alta de turno ── */}
