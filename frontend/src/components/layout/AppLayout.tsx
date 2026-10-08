@@ -16,7 +16,7 @@ const GRUPOS: { titulo: string; tabs: Tab[] }[] = [
       { to: '/clientes', label: 'Clientes', icono: '👥', permiso: 'clientes' },
       { to: '/prospectos', label: 'Prospectos', icono: '🌱', permiso: 'prospectos' },
       { to: '/espera', label: 'En espera', icono: '⏳', permiso: 'espera' },
-      { to: '/cargar', label: 'Cargar', icono: '➕', permiso: 'cargar' },
+      { to: '/cargar', label: 'Ingresos', icono: '➕', permiso: 'cargar' },
       { to: '/whatsapp', label: 'WhatsApp', icono: '💬', permiso: 'whatsapp' },
     ],
   },
