@@ -33,7 +33,10 @@ const GRUPOS: { titulo: string; tabs: Tab[] }[] = [
   },
   {
     titulo: 'Stock',
-    tabs: [{ to: '/inventario', label: 'Inventario', icono: '📦', permiso: 'inventario' }],
+    tabs: [
+      { to: '/inventario', label: 'Inventario', icono: '📦', permiso: 'inventario' },
+      { to: '/proveedores', label: 'Proveedores', icono: '🏪', permiso: 'egresos' },
+    ],
   },
   {
     titulo: 'Administración',
