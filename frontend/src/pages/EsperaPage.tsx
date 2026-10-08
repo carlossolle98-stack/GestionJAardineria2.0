@@ -66,6 +66,7 @@ export function EsperaPage() {
     direccion: 'desc',
   });
 
+  const hayFiltros = busqueda !== '' || urgencia !== 'todas';
   const esOrdenManual = orden.campo === 'espera' && !hayFiltros;
   // En modo manual respetamos el orden del array (posición en j2.listaEspera)
   const filas = esOrdenManual
@@ -76,7 +77,6 @@ export function EsperaPage() {
       })
     : filasOrdenadas;
 
-  const hayFiltros = busqueda !== '' || urgencia !== 'todas';
   const limpiarFiltros = () => {
     setBusqueda('');
     setUrgencia('todas');
