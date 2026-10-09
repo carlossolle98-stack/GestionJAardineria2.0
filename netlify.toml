@@ -2,7 +2,8 @@
   base    = "frontend"
   command = "npm install && npm run build"
   publish = "dist"
-  # deploy trigger — 2026-10 — 2026-05
+  # Si el push no toca frontend/, no se compila (cada build gasta créditos).
+  ignore  = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- ."
 
 [build.environment]
   VITE_API_URL = "https://gestionjaardineria20-backend-production.up.railway.app"
