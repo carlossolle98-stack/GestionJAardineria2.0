@@ -19,11 +19,12 @@ import {
   totalesDelLog,
   type J2Accion,
   type J2Datos,
+  type NuevoCredito,
 } from '@/lib/j2reducer';
 import type {
-  J2Credito,
   J2Cuentas,
   J2DeudaCliente,
+  J2Egreso,
   J2EgresoTipo,
   J2Ingreso,
   J2ListaEspera,
@@ -67,6 +68,9 @@ type J2Ctx = J2Datos & {
   totalLiquido: number;
   /** Diferencia entre el saldo guardado y la suma del libro de movimientos. */
   descuadre: Record<string, number>;
+  /** `egresos` e `ingresos` llegan sin los anulados; éstos quedan aparte para mostrarlos. */
+  egresosAnulados: J2Egreso[];
+  ingresosAnulados: J2Ingreso[];
 
   addListaEspera: (p: Omit<J2ListaEspera, 'id'>) => void;
   removeListaEspera: (id: string) => void;
@@ -78,9 +82,9 @@ type J2Ctx = J2Datos & {
     monto: number;
     cuenta: keyof J2Cuentas;
   }) => void;
-  removeEgreso: (id: string) => void;
+  anularEgreso: (id: string, motivo: string) => void;
   addIngreso: (p: Omit<J2Ingreso, 'id'>) => void;
-  removeIngreso: (id: string) => void;
+  anularIngreso: (id: string, motivo: string) => void;
   setCuentaSaldo: (k: keyof J2Cuentas, monto: number, motivo: string) => void;
   registrarTransferencia: (p: {
     de: string;
@@ -96,17 +100,21 @@ type J2Ctx = J2Datos & {
   addInversion: (nombre: string) => void;
   toggleInversion: (id: string) => void;
   rendimientoInversion: (id: string, monto: number, fecha: string) => void;
-  movCapital: (p: Omit<J2MovCapital, 'id'>) => void;
-  anularCapital: (id: string) => void;
-  recibirCredito: (p: Omit<J2Credito, 'id' | 'saldo'>) => void;
-  anularCredito: (id: string) => void;
+  corregirInversion: (id: string, nuevoSaldo: number, motivo: string) => void;
+  movCapital: (p: Omit<J2MovCapital, 'id' | 'anulado'>) => void;
+  anularCapital: (id: string, motivo: string) => void;
+  recibirCredito: (p: NuevoCredito) => void;
+  anularCredito: (id: string, motivo: string) => void;
   pagarCuotaCredito: (p: {
     creditoId: string;
-    capital: number;
+    total: number;
     interes: number;
     cuenta: keyof J2Cuentas;
     fecha: string;
   }) => void;
+  anularCuotaCredito: (creditoId: string, pagoId: string, motivo: string) => void;
+  ajustarCredito: (creditoId: string, nuevoSaldo: number, motivo: string) => void;
+  compraActivo: (p: { nombre: string; monto: number; cuenta: keyof J2Cuentas; fecha: string }) => void;
   ingresarPorMedio: (medioEtiqueta: string, monto: number) => void;
   addEmpleado: (nombre: string) => void;
   toggleEmpleado: (id: string) => void;
@@ -315,9 +323,9 @@ export function J2LocalProvider({ children }: { children: ReactNode }) {
         monto: number;
         cuenta: keyof J2Cuentas;
       }) => envia({ tipo: 'addEgreso', payload: p }),
-      removeEgreso: (id: string) => envia({ tipo: 'removeEgreso', id }),
+      anularEgreso: (id: string, motivo: string) => envia({ tipo: 'anularEgreso', id, motivo }),
       addIngreso: (p: Omit<J2Ingreso, 'id'>) => envia({ tipo: 'addIngreso', payload: p }),
-      removeIngreso: (id: string) => envia({ tipo: 'removeIngreso', id }),
+      anularIngreso: (id: string, motivo: string) => envia({ tipo: 'anularIngreso', id, motivo }),
       setCuentaSaldo: (k: keyof J2Cuentas, monto: number, motivo: string) =>
         envia({ tipo: 'setCuentaSaldo', cuenta: k, monto, motivo }),
       registrarTransferencia: (p: {
@@ -337,18 +345,25 @@ export function J2LocalProvider({ children }: { children: ReactNode }) {
       toggleInversion: (id: string) => envia({ tipo: 'toggleInversion', id }),
       rendimientoInversion: (id: string, monto: number, fecha: string) =>
         envia({ tipo: 'rendimientoInversion', id, monto, fecha }),
-      movCapital: (p: Omit<J2MovCapital, 'id'>) => envia({ tipo: 'movCapital', payload: p }),
-      anularCapital: (id: string) => envia({ tipo: 'anularCapital', id }),
-      recibirCredito: (p: Omit<J2Credito, 'id' | 'saldo'>) =>
-        envia({ tipo: 'recibirCredito', payload: p }),
-      anularCredito: (id: string) => envia({ tipo: 'anularCredito', id }),
+      corregirInversion: (id: string, nuevoSaldo: number, motivo: string) =>
+        envia({ tipo: 'corregirInversion', id, nuevoSaldo, motivo }),
+      movCapital: (p: Omit<J2MovCapital, 'id' | 'anulado'>) => envia({ tipo: 'movCapital', payload: p }),
+      anularCapital: (id: string, motivo: string) => envia({ tipo: 'anularCapital', id, motivo }),
+      recibirCredito: (p: NuevoCredito) => envia({ tipo: 'recibirCredito', payload: p }),
+      anularCredito: (id: string, motivo: string) => envia({ tipo: 'anularCredito', id, motivo }),
       pagarCuotaCredito: (p: {
         creditoId: string;
-        capital: number;
+        total: number;
         interes: number;
         cuenta: keyof J2Cuentas;
         fecha: string;
       }) => envia({ tipo: 'pagarCuotaCredito', ...p }),
+      anularCuotaCredito: (creditoId: string, pagoId: string, motivo: string) =>
+        envia({ tipo: 'anularCuotaCredito', creditoId, pagoId, motivo }),
+      ajustarCredito: (creditoId: string, nuevoSaldo: number, motivo: string) =>
+        envia({ tipo: 'ajustarCredito', creditoId, nuevoSaldo, motivo }),
+      compraActivo: (p: { nombre: string; monto: number; cuenta: keyof J2Cuentas; fecha: string }) =>
+        envia({ tipo: 'compraActivo', ...p }),
       ingresarPorMedio: (medioEtiqueta: string, monto: number) =>
         envia({
           tipo: 'ingresarPorMedio',
@@ -404,6 +419,10 @@ export function J2LocalProvider({ children }: { children: ReactNode }) {
   const value = useMemo<J2Ctx>(
     () => ({
       ...datos,
+      egresos: datos.egresos.filter((e) => !e.anulado),
+      ingresos: datos.ingresos.filter((i) => !i.anulado),
+      egresosAnulados: datos.egresos.filter((e) => e.anulado),
+      ingresosAnulados: datos.ingresos.filter((i) => i.anulado),
       sync,
       puedeDeshacer: estado.pasado.length > 0,
       totalLiquido,

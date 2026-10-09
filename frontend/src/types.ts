@@ -86,6 +86,9 @@ export type J2MovLog = {
   cuenta: string;
 };
 
+/** Un registro anulado no se borra: queda visible con el motivo y se compensa con un contraasiento. */
+export type J2Anulacion = { fecha: string; motivo: string };
+
 export type J2Egreso = {
   id: string;
   fecha: string;
@@ -94,6 +97,11 @@ export type J2Egreso = {
   concepto: string;
   monto: number;
   cuenta: 'mp' | 'banco' | 'efectivo';
+  anulado?: J2Anulacion;
+  /** De dónde salió el egreso, para que al anularlo se revierta todo lo que hizo. */
+  origen?:
+    | { tipo: 'liquidacion'; empleadoId: string; adelanto: number }
+    | { tipo: 'credito'; creditoId: string; pagoId: string };
 };
 
 export type J2Transferencia = {
@@ -118,7 +126,19 @@ export type J2Cuentas = { mp: number; banco: number; efectivo: number };
 
 export type J2Inversion = { id: string; nombre: string; saldo: number; activa: boolean };
 
-/** Plata prestada por un banco o financiera: entra a caja pero es deuda, no ingreso. */
+export type J2PagoCredito = {
+  id: string;
+  fecha: string;
+  capital: number;
+  interes: number;
+  cuenta: string;
+  egresoId?: string;
+  anulado?: J2Anulacion;
+};
+
+export type J2AjusteCredito = { id: string; fecha: string; diferencia: number; motivo: string };
+
+/** Plata prestada por un banco o financiera: entra a caja y queda como deuda, no como ingreso. */
 export type J2Credito = {
   id: string;
   fecha: string;
@@ -126,7 +146,11 @@ export type J2Credito = {
   monto: number;
   saldo: number;
   cuenta: string;
+  cuotas?: number;
   nota?: string;
+  pagos: J2PagoCredito[];
+  ajustes: J2AjusteCredito[];
+  anulado?: J2Anulacion;
 };
 
 /** Aporte o retiro de un socio: mueve caja pero no es ingreso ni gasto del negocio. */
@@ -138,6 +162,7 @@ export type J2MovCapital = {
   monto: number;
   cuenta: string;
   nota?: string;
+  anulado?: J2Anulacion;
 };
 
 export type J2Inversiones = {
@@ -154,6 +179,7 @@ export type J2Ingreso = {
   concepto: string;
   monto: number;
   medio: string;
+  anulado?: J2Anulacion;
 };
 
 export type Activo = {

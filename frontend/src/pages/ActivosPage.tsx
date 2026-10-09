@@ -2,28 +2,17 @@ import { useMemo, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getJson, sendJson } from '@/lib/api';
 import { money } from '@/lib/format';
+import { valorLibros } from '@/lib/activos';
 import type { Activo } from '@/types';
 import { Modal, ModalAcciones, ModalConfirmar } from '@/components/Modal';
 import { BarraFiltros, coincideAlguno, Th, useOrden } from '@/components/Tabla';
 import { Vacio } from '@/components/Estados';
 import { useToast } from '@/context/ToastContext';
+import { useJ2Local } from '@/context/J2LocalContext';
 
 const CATEGORIAS = ['Herramienta', 'Vehículo', 'Equipo eléctrico', 'Equipo de riego', 'Maquinaria', 'Otro'];
 const ESTADOS_ACTIVO = ['Activo', 'En reparación', 'Dado de baja'];
 type ColActivo = 'nombre' | 'categoria' | 'valorCompra' | 'valorLibros' | 'estado';
-
-/** Años transcurridos desde una fecha ISO. */
-function aniosDesde(fecha: string): number {
-  const ms = Date.now() - new Date(fecha).getTime();
-  return ms / (1000 * 60 * 60 * 24 * 365.25);
-}
-
-/** Valor libro con depreciación lineal. */
-function valorLibros(a: Activo): number {
-  if (a.vidaUtilAnios <= 0) return a.valorCompra;
-  const dep = (a.valorCompra / a.vidaUtilAnios) * aniosDesde(a.fechaCompra);
-  return Math.max(0, a.valorCompra - dep);
-}
 
 /** Porcentaje depreciado. */
 function pctDep(a: Activo): number {
@@ -54,6 +43,7 @@ function BarraDep({ pct }: { pct: number }) {
 export function ActivosPage() {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const j2 = useJ2Local();
 
   const { data = [], isLoading, error: errorCarga } = useQuery({
     queryKey: ['activos'],
@@ -73,6 +63,7 @@ export function ActivosPage() {
   const [nVida, setNVida] = useState('5');
   const [nEstado, setNEstado] = useState('Activo');
   const [nNotas, setNNotas] = useState('');
+  const [nPago, setNPago] = useState<'ninguna' | 'mp' | 'banco' | 'efectivo'>('ninguna');
 
   // Edición
   const [editA, setEditA] = useState<Activo | null>(null);
@@ -99,9 +90,13 @@ export function ActivosPage() {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['activos'] });
-      setNNombre(''); setNValor(''); setNFecha(''); setNNotas('');
+      // La compra sale de caja recién cuando el activo quedó guardado.
+      if (nPago !== 'ninguna') {
+        j2.compraActivo({ nombre: nNombre.trim(), monto: Number(nValor), cuenta: nPago, fecha: nFecha });
+      }
+      setNNombre(''); setNValor(''); setNFecha(''); setNNotas(''); setNPago('ninguna');
       setShowNew(false);
-      toast('Activo registrado', { tono: 'exito' });
+      toast(nPago !== 'ninguna' ? 'Activo registrado y pago descontado de la caja' : 'Activo registrado', { tono: 'exito' });
     },
     onError: (e: Error) => toast(e.message, { tono: 'error' }),
   });
@@ -393,6 +388,18 @@ export function ActivosPage() {
             <div className="form-group" style={{ marginBottom: 'var(--sp-3)' }}>
               <label htmlFor="act-notas">Notas</label>
               <input id="act-notas" value={nNotas} onChange={(e) => setNNotas(e.target.value)} placeholder="Ej: comprado en Ferreria López, modelo 2023" />
+            </div>
+            <div className="form-group" style={{ marginBottom: 'var(--sp-3)' }}>
+              <label htmlFor="act-pago">¿Cómo se pagó?</label>
+              <select id="act-pago" value={nPago} onChange={(e) => setNPago(e.target.value as typeof nPago)}>
+                <option value="ninguna">No mover caja (ya era de la empresa o lo aportó un socio)</option>
+                <option value="mp">Pagado desde Mercado Pago</option>
+                <option value="banco">Pagado desde Banco</option>
+                <option value="efectivo">Pagado desde Efectivo</option>
+              </select>
+              <p className="form-ayuda">
+                Comprar un bien no es un gasto del mes: la plata sale de la caja y pasa a ser parte del activo. Si lo compraste con el crédito, elegí la cuenta donde entró el crédito.
+              </p>
             </div>
             {addMut.error && (
               <div className="alerta urgente" role="alert">No se pudo guardar: {addMut.error.message}</div>

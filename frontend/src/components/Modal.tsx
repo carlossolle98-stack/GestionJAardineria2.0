@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 const FOCUSABLES =
   'input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])';
@@ -167,6 +167,54 @@ export function ModalConfirmar({
           onCerrar();
         }}
       />
+    </Modal>
+  );
+}
+
+/**
+ * Anulación con contraasiento: el registro no se borra, queda marcado como
+ * anulado con el motivo, y los saldos se corrigen con un movimiento inverso.
+ */
+export function ModalAnular({
+  titulo,
+  mensaje,
+  onConfirmar,
+  onCerrar,
+}: {
+  titulo: string;
+  mensaje: ReactNode;
+  onConfirmar: (motivo: string) => void;
+  onCerrar: () => void;
+}) {
+  const [motivo, setMotivo] = useState('');
+  return (
+    <Modal titulo={titulo} onCerrar={onCerrar} ancho="chico">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!motivo.trim()) return;
+          onConfirmar(motivo.trim());
+          onCerrar();
+        }}
+        style={{ display: 'grid', gap: 'var(--sp-4)' }}
+      >
+        <div style={{ fontSize: 'var(--txt-md)', color: 'var(--texto-2)' }}>{mensaje}</div>
+        <div className="form-group">
+          <label htmlFor="anular-motivo">Motivo</label>
+          <input
+            id="anular-motivo"
+            value={motivo}
+            onChange={(e) => setMotivo(e.target.value)}
+            placeholder="Ej: cargado dos veces, monto equivocado"
+            required
+            autoFocus
+          />
+          <p className="form-ayuda">
+            El registro queda visible como anulado y se carga un movimiento inverso, así los saldos vuelven a cerrar.
+          </p>
+        </div>
+        <ModalAcciones onCancelar={onCerrar} peligro textoConfirmar="Anular" confirmarDisabled={!motivo.trim()} />
+      </form>
     </Modal>
   );
 }

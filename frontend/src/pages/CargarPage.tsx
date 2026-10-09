@@ -2,9 +2,11 @@ import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getJson, sendJson } from '@/lib/api';
 import { money, todayISO } from '@/lib/format';
-import type { Cliente, CobroDiario } from '@/types';
+import { mesClaveRef } from '@/lib/j2local';
+import type { Cliente, CobroDiario, J2Ingreso } from '@/types';
 import { useToast } from '@/context/ToastContext';
 import { useJ2Local } from '@/context/J2LocalContext';
+import { ModalAnular } from '@/components/Modal';
 
 export function CargarPage() {
   const qc = useQueryClient();
@@ -32,6 +34,13 @@ export function CargarPage() {
   const [cCombinado, setCCombinado] = useState(false);
   const [cMonto2, setCMonto2] = useState('');
   const [cMedio2, setCMedio2] = useState('Efectivo');
+  const [anularI, setAnularI] = useState<J2Ingreso | null>(null);
+  const [verAnulados, setVerAnulados] = useState(false);
+  const mc = mesClaveRef();
+  const ingresosMes = useMemo(
+    () => j2.ingresos.filter((i) => i.fecha.startsWith(mc)).sort((a, b) => b.fecha.localeCompare(a.fecha)),
+    [j2.ingresos, mc]
+  );
 
   const esVenta = cTipo === 'Venta vivero' || cTipo === 'Venta producto digital';
   const montoTotal = cCombinado
@@ -326,6 +335,87 @@ export function CargarPage() {
           </div>
         )}
       </div>
+
+      <div style={{ marginTop: 24 }}>
+        <div className="section-title" style={{ marginBottom: 12 }}>
+          Ingresos del mes — Total: {money(ingresosMes.reduce((s, i) => s + i.monto, 0))}
+        </div>
+        {ingresosMes.length === 0 ? (
+          <div className="empty-state">Sin ingresos este mes</div>
+        ) : (
+          <div className="tabla-wrap">
+            <div className="tabla-scroll">
+              <table className="responsive">
+                <thead>
+                  <tr><th>Fecha</th><th>Cliente</th><th>Concepto</th><th>Medio</th><th>Monto</th><th>Acción</th></tr>
+                </thead>
+                <tbody>
+                  {ingresosMes.map((i) => (
+                    <tr key={i.id}>
+                      <td data-label="Fecha" style={{ fontFamily: 'var(--fuente-mono)', fontSize: 12 }}>{i.fecha}</td>
+                      <td data-label="Cliente"><strong>{i.cliente}</strong></td>
+                      <td data-label="Concepto">{i.concepto}</td>
+                      <td data-label="Medio">{i.medio}</td>
+                      <td data-label="Monto" style={{ color: 'var(--verde-vivo)', fontWeight: 600, fontFamily: 'var(--fuente-mono)' }}>+{money(i.monto)}</td>
+                      <td data-label="Acción">
+                        <button type="button" className="btn secundario sm" style={{ color: 'var(--rojo)' }} onClick={() => setAnularI(i)}>
+                          Anular
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {j2.ingresosAnulados.length > 0 && (
+          <div style={{ marginTop: 'var(--sp-3)' }}>
+            <button type="button" className="btn fantasma sm" onClick={() => setVerAnulados((v) => !v)}>
+              {verAnulados ? '▾' : '▸'} Anulados ({j2.ingresosAnulados.length})
+            </button>
+            {verAnulados && (
+              <div className="tabla-wrap" style={{ marginTop: 'var(--sp-2)' }}>
+                <div className="tabla-scroll">
+                  <table className="responsive">
+                    <thead><tr><th>Fecha</th><th>Cliente</th><th>Monto</th><th>Anulado</th><th>Motivo</th></tr></thead>
+                    <tbody>
+                      {j2.ingresosAnulados.map((i) => (
+                        <tr key={i.id} style={{ color: 'var(--texto-3)' }}>
+                          <td data-label="Fecha" style={{ fontFamily: 'var(--fuente-mono)', fontSize: 12 }}>{i.fecha}</td>
+                          <td data-label="Cliente">{i.cliente} · {i.concepto}</td>
+                          <td data-label="Monto" style={{ fontFamily: 'var(--fuente-mono)', textDecoration: 'line-through' }}>{money(i.monto)}</td>
+                          <td data-label="Anulado" style={{ fontFamily: 'var(--fuente-mono)', fontSize: 12 }}>{i.anulado?.fecha}</td>
+                          <td data-label="Motivo">{i.anulado?.motivo}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {anularI && (
+        <ModalAnular
+          titulo="Anular ingreso"
+          mensaje={
+            <>
+              Se anula el ingreso de <strong>{anularI.cliente}</strong> por <strong>{money(anularI.monto)}</strong>:
+              sale de la caja y deja de contar en el resultado del mes. Si también quedó en el historial de pagos
+              del cliente, revisalo en su ficha.
+            </>
+          }
+          onConfirmar={(motivo) => {
+            j2.anularIngreso(anularI.id, motivo);
+            toast('Ingreso anulado', { tono: 'exito' });
+          }}
+          onCerrar={() => setAnularI(null)}
+        />
+      )}
 
       <div className="sep" />
       <div className="section-title" style={{ marginBottom: 12 }}>Exportar</div>

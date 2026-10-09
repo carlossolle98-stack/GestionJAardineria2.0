@@ -7,7 +7,8 @@ import { diasDesde, mesClaveRef } from '@/lib/j2local';
 import { useJ2Local } from '@/context/J2LocalContext';
 import { useAuth } from '@/context/AuthContext';
 import { Dialogo, ConfirmarDialogo } from '@/components/Modal';
-import type { ResumenPayload, Turno } from '@/types';
+import { totalBienesDeUso } from '@/lib/activos';
+import type { Activo, ResumenPayload, Turno } from '@/types';
 
 export function ResumenPage() {
   const qc = useQueryClient();
@@ -36,7 +37,7 @@ export function ResumenPage() {
   const totalUSD = inv.usd.cantidad * inv.usd.precio;
   const invActivas = inv.items.filter((i) => i.activa || i.saldo !== 0);
   const totalInv = invActivas.reduce((s, i) => s + i.saldo, 0) + totalUSD;
-  const deudaCreditos = inv.creditos.reduce((s, x) => s + x.saldo, 0);
+  const deudaCreditos = inv.creditos.filter((x) => !x.anulado).reduce((s, x) => s + x.saldo, 0);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['resumen'],
@@ -47,6 +48,15 @@ export function ResumenPage() {
     queryKey: ['turnos-all'],
     queryFn: () => getJson<Turno[]>('/api/turnos'),
   });
+
+  // Los bienes de uso suman al patrimonio; si no se pueden leer, el balance lo aclara.
+  const { data: activosFijos, isError: sinActivos } = useQuery({
+    queryKey: ['activos'],
+    queryFn: () => getJson<Activo[]>('/api/activos'),
+    enabled: puede('finanzas'),
+    retry: false,
+  });
+  const totalBienes = totalBienesDeUso(activosFijos ?? []);
 
   const hoy = todayISO();
 
@@ -146,7 +156,8 @@ export function ResumenPage() {
     deudaPendientes.length > 0
       ? deudaPendientes.map((d) => `${d.nombreCliente.split(' ')[0]} ${money(d.monto)}`).join(' · ')
       : 'Sin deudas pendientes';
-  const patrimonioTotal = cajaLiquidaTotal + totalInv + totalDeudaPendiente - deudaCreditos;
+  const totalActivos = cajaLiquidaTotal + totalInv + totalDeudaPendiente + totalBienes;
+  const patrimonioTotal = totalActivos - deudaCreditos;
   const meses = s.mesesHistoricos;
 
   const MESES_NUM: Record<string, string> = {
@@ -258,12 +269,36 @@ export function ResumenPage() {
           </div>
         </div>
         <div className="card tierra">
-          <div className="card-label">Patrimonio Total</div>
+          <div className="card-label">Patrimonio neto</div>
           <div className="card-valor">{money(patrimonioTotal)}</div>
           <div className="card-sub">
-            Caja {money(cajaLiquidaTotal)} · Inv. {money(totalInv)} · C×C {money(totalDeudaPendiente)}
-            {deudaCreditos > 0 && ` · Créditos −${money(deudaCreditos)}`}
+            Tiene {money(totalActivos)} · Debe {money(deudaCreditos)}
           </div>
+        </div>
+      </div>
+
+      <div className="tabla-wrap" style={{ marginBottom: 'var(--sp-7)' }}>
+        <div className="tabla-scroll">
+          <table>
+            <thead>
+              <tr><th>Lo que tiene la empresa</th><th style={{ textAlign: 'right' }}>Monto</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Caja (Mercado Pago, banco y efectivo)</td><td style={{ textAlign: 'right', fontFamily: 'var(--fuente-mono)' }}>{money(cajaLiquidaTotal)}</td></tr>
+              <tr><td>Inversiones y dólares</td><td style={{ textAlign: 'right', fontFamily: 'var(--fuente-mono)' }}>{money(totalInv)}</td></tr>
+              <tr><td>Cuentas por cobrar</td><td style={{ textAlign: 'right', fontFamily: 'var(--fuente-mono)' }}>{money(totalDeudaPendiente)}</td></tr>
+              <tr>
+                <td>
+                  Bienes de uso (valor libro)
+                  {sinActivos && <span style={{ fontSize: 12, color: 'var(--texto-3)' }}> · no se pudieron leer, no están sumados</span>}
+                </td>
+                <td style={{ textAlign: 'right', fontFamily: 'var(--fuente-mono)' }}>{money(Math.round(totalBienes))}</td>
+              </tr>
+              <tr style={{ fontWeight: 700 }}><td>Total activos</td><td style={{ textAlign: 'right', fontFamily: 'var(--fuente-mono)' }}>{money(Math.round(totalActivos))}</td></tr>
+              <tr><td>Menos: deuda por créditos</td><td style={{ textAlign: 'right', fontFamily: 'var(--fuente-mono)', color: 'var(--rojo)' }}>−{money(deudaCreditos)}</td></tr>
+              <tr style={{ fontWeight: 700 }}><td>Patrimonio neto</td><td style={{ textAlign: 'right', fontFamily: 'var(--fuente-mono)' }}>{money(Math.round(patrimonioTotal))}</td></tr>
+            </tbody>
+          </table>
         </div>
       </div>
 

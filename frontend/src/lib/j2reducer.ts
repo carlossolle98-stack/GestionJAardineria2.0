@@ -16,7 +16,9 @@
  */
 
 import type {
+  J2Anulacion,
   J2Credito,
+  J2PagoCredito,
   J2Cuentas,
   J2DeudaCliente,
   J2Egreso,
@@ -95,7 +97,9 @@ export function normalizarInversiones(raw: unknown): J2Inversiones {
   return {
     items,
     usd: { cantidad: usd?.cantidad || 0, precio: usd?.precio || 0 },
-    creditos: Array.isArray(r.creditos) ? (r.creditos as J2Credito[]) : [],
+    creditos: Array.isArray(r.creditos)
+      ? (r.creditos as J2Credito[]).map((c) => ({ ...c, pagos: c.pagos ?? [], ajustes: c.ajustes ?? [] }))
+      : [],
     capital: Array.isArray(r.capital) ? (r.capital as J2MovCapital[]) : [],
   };
 }
@@ -156,9 +160,46 @@ function aplicar(d: J2Datos, mov: Movimiento): J2Datos {
   };
 }
 
+function anulacion(motivo: string): J2Anulacion {
+  return { fecha: hoyLocal(), motivo: motivo.trim() || 'Sin motivo' };
+}
+
+/**
+ * Contraasiento de un egreso: lo marca anulado, devuelve la plata a la cuenta
+ * y deshace lo que el egreso había hecho (por ejemplo, el adelanto que saldó).
+ */
+function contraEgreso(d: J2Datos, id: string, an: J2Anulacion): J2Datos {
+  const row = d.egresos.find((x) => x.id === id);
+  if (!row || row.anulado) return d;
+  let paso: J2Datos = {
+    ...d,
+    egresos: d.egresos.map((x) => (x.id === id ? { ...x, anulado: an } : x)),
+  };
+  const o = row.origen;
+  if (o?.tipo === 'liquidacion' && o.adelanto > 0) {
+    paso = {
+      ...paso,
+      empleados: paso.empleados.map((e) =>
+        e.id === o.empleadoId ? { ...e, adelanto: (e.adelanto || 0) + o.adelanto } : e
+      ),
+    };
+  }
+  return aplicar(paso, {
+    tipo: 'egreso_anulado',
+    concepto: `Anulación — ${row.categoria}`,
+    detalle: an.motivo,
+    monto: row.monto,
+    cuenta: row.cuenta,
+    fecha: an.fecha,
+    afectaSaldo: row.tipo !== 'inventario',
+  });
+}
+
 /* ------------------------------------------------------------------ *
  * Acciones
  * ------------------------------------------------------------------ */
+
+export type NuevoCredito = Omit<J2Credito, 'id' | 'saldo' | 'pagos' | 'ajustes' | 'anulado'>;
 
 export type J2Accion =
   | { tipo: 'hidratar'; datos: Partial<J2Datos> }
@@ -176,9 +217,9 @@ export type J2Accion =
         cuenta: keyof J2Cuentas;
       };
     }
-  | { tipo: 'removeEgreso'; id: string }
+  | { tipo: 'anularEgreso'; id: string; motivo: string }
   | { tipo: 'addIngreso'; payload: Omit<J2Ingreso, 'id'> }
-  | { tipo: 'removeIngreso'; id: string }
+  | { tipo: 'anularIngreso'; id: string; motivo: string }
   | { tipo: 'setCuentaSaldo'; cuenta: keyof J2Cuentas; monto: number; motivo: string }
   | {
       tipo: 'transferencia';
@@ -197,18 +238,22 @@ export type J2Accion =
   | { tipo: 'addInversion'; nombre: string }
   | { tipo: 'toggleInversion'; id: string }
   | { tipo: 'rendimientoInversion'; id: string; monto: number; fecha: string }
-  | { tipo: 'movCapital'; payload: Omit<J2MovCapital, 'id'> }
-  | { tipo: 'anularCapital'; id: string }
-  | { tipo: 'recibirCredito'; payload: Omit<J2Credito, 'id' | 'saldo'> }
-  | { tipo: 'anularCredito'; id: string }
+  | { tipo: 'corregirInversion'; id: string; nuevoSaldo: number; motivo: string }
+  | { tipo: 'movCapital'; payload: Omit<J2MovCapital, 'id' | 'anulado'> }
+  | { tipo: 'anularCapital'; id: string; motivo: string }
+  | { tipo: 'recibirCredito'; payload: NuevoCredito }
+  | { tipo: 'anularCredito'; id: string; motivo: string }
   | {
       tipo: 'pagarCuotaCredito';
       creditoId: string;
-      capital: number;
+      total: number;
       interes: number;
       cuenta: keyof J2Cuentas;
       fecha: string;
     }
+  | { tipo: 'anularCuotaCredito'; creditoId: string; pagoId: string; motivo: string }
+  | { tipo: 'ajustarCredito'; creditoId: string; nuevoSaldo: number; motivo: string }
+  | { tipo: 'compraActivo'; nombre: string; monto: number; cuenta: keyof J2Cuentas; fecha: string }
   | { tipo: 'ingresarPorMedio'; cuenta: keyof J2Cuentas; monto: number; concepto: string }
   | { tipo: 'addEmpleado'; nombre: string }
   | { tipo: 'toggleEmpleado'; id: string }
@@ -306,18 +351,11 @@ function transicion(d: J2Datos, a: J2Accion): J2Datos {
       });
     }
 
-    case 'removeEgreso': {
+    case 'anularEgreso': {
       const row = d.egresos.find((x) => x.id === a.id);
-      if (!row) return d;
-      const sinEgreso = { ...d, egresos: d.egresos.filter((x) => x.id !== a.id) };
-      return aplicar(sinEgreso, {
-        tipo: 'egreso_anulado',
-        concepto: `Anulación — ${row.categoria}`,
-        detalle: row.concepto,
-        monto: row.monto,
-        cuenta: row.cuenta,
-        afectaSaldo: row.tipo !== 'inventario',
-      });
+      // Los intereses de un crédito se anulan junto con su cuota, desde Finanzas.
+      if (!row || row.anulado || row.origen?.tipo === 'credito') return d;
+      return contraEgreso(d, a.id, anulacion(a.motivo));
     }
 
     /* — Ingresos — */
@@ -335,16 +373,21 @@ function transicion(d: J2Datos, a: J2Accion): J2Datos {
       });
     }
 
-    case 'removeIngreso': {
+    case 'anularIngreso': {
       const row = d.ingresos.find((x) => x.id === a.id);
-      if (!row) return d;
-      const sinIngreso = { ...d, ingresos: d.ingresos.filter((x) => x.id !== a.id) };
-      return aplicar(sinIngreso, {
+      if (!row || row.anulado) return d;
+      const an = anulacion(a.motivo);
+      const marcado = {
+        ...d,
+        ingresos: d.ingresos.map((x) => (x.id === a.id ? { ...x, anulado: an } : x)),
+      };
+      return aplicar(marcado, {
         tipo: 'ingreso_anulado',
         concepto: `Anulación — ${row.cliente || 'Cobro'}`,
-        detalle: row.concepto,
+        detalle: an.motivo,
         monto: -row.monto,
         cuenta: medioACuenta(row.medio),
+        fecha: an.fecha,
       });
     }
 
@@ -490,22 +533,34 @@ function transicion(d: J2Datos, a: J2Accion): J2Datos {
 
     case 'anularCapital': {
       const row = d.inversiones.capital.find((x) => x.id === a.id);
-      if (!row) return d;
-      const sinMov = {
+      if (!row || row.anulado) return d;
+      const an = anulacion(a.motivo);
+      const marcado = {
         ...d,
-        inversiones: { ...d.inversiones, capital: d.inversiones.capital.filter((x) => x.id !== a.id) },
+        inversiones: {
+          ...d.inversiones,
+          capital: d.inversiones.capital.map((x) => (x.id === a.id ? { ...x, anulado: an } : x)),
+        },
       };
-      return aplicar(sinMov, {
+      return aplicar(marcado, {
         tipo: 'capital_anulado',
         concepto: `Anulación ${row.tipo === 'aporte' ? 'aporte' : 'retiro'} — ${row.socio}`,
+        detalle: an.motivo,
         monto: row.tipo === 'aporte' ? -row.monto : row.monto,
         cuenta: row.cuenta,
+        fecha: an.fecha,
       });
     }
 
     /* — Créditos — */
     case 'recibirCredito': {
-      const row: J2Credito = { ...a.payload, id: nuevoId('cred'), saldo: a.payload.monto };
+      const row: J2Credito = {
+        ...a.payload,
+        id: nuevoId('cred'),
+        saldo: a.payload.monto,
+        pagos: [],
+        ajustes: [],
+      };
       const conCredito = {
         ...d,
         inversiones: { ...d.inversiones, creditos: [...d.inversiones.creditos, row] },
@@ -522,30 +577,39 @@ function transicion(d: J2Datos, a: J2Accion): J2Datos {
 
     case 'anularCredito': {
       const row = d.inversiones.creditos.find((x) => x.id === a.id);
-      // Sólo se anula si no tiene cuotas pagas; si no, el historial quedaría incoherente.
-      if (!row || row.saldo !== row.monto) return d;
-      const sinCredito = {
+      // Con cuotas vigentes no se anula entero: primero se anulan las cuotas.
+      if (!row || row.anulado || row.pagos.some((p) => !p.anulado)) return d;
+      const an = anulacion(a.motivo);
+      const marcado = {
         ...d,
-        inversiones: { ...d.inversiones, creditos: d.inversiones.creditos.filter((x) => x.id !== a.id) },
+        inversiones: {
+          ...d.inversiones,
+          creditos: d.inversiones.creditos.map((x) => (x.id === a.id ? { ...x, anulado: an, saldo: 0 } : x)),
+        },
       };
-      return aplicar(sinCredito, {
+      return aplicar(marcado, {
         tipo: 'credito_anulado',
         concepto: `Anulación crédito — ${row.entidad}`,
+        detalle: an.motivo,
         monto: -row.monto,
         cuenta: row.cuenta,
+        fecha: an.fecha,
       });
     }
 
     case 'pagarCuotaCredito': {
       const cred = d.inversiones.creditos.find((x) => x.id === a.creditoId);
-      if (!cred || a.capital < 0 || a.interes < 0 || a.capital + a.interes <= 0) return d;
-      const capital = Math.min(a.capital, cred.saldo);
+      if (!cred || cred.anulado || a.interes < 0 || a.total <= 0 || a.interes > a.total) return d;
+      const capital = Math.min(a.total - a.interes, cred.saldo);
+      const pagoId = nuevoId('pago');
+      const egresoId = a.interes > 0 ? nuevoId('eg') : undefined;
+      const pago: J2PagoCredito = { id: pagoId, fecha: a.fecha, capital, interes: a.interes, cuenta: a.cuenta, egresoId };
       let paso: J2Datos = {
         ...d,
         inversiones: {
           ...d.inversiones,
           creditos: d.inversiones.creditos.map((x) =>
-            x.id === cred.id ? { ...x, saldo: x.saldo - capital } : x
+            x.id === cred.id ? { ...x, saldo: x.saldo - capital, pagos: [...x.pagos, pago] } : x
           ),
         },
       };
@@ -561,21 +625,111 @@ function transicion(d: J2Datos, a: J2Accion): J2Datos {
         });
       }
       // El interés sí es un costo del negocio: va a Egresos.
-      if (a.interes > 0) {
-        paso = transicion(paso, {
-          tipo: 'addEgreso',
-          payload: {
-            fecha: a.fecha,
-            tipo: 'bancario',
-            categoria: `Intereses — ${cred.entidad}`,
-            concepto: 'Intereses de crédito',
-            monto: a.interes,
-            cuenta: a.cuenta,
-          },
-        });
+      if (egresoId) {
+        const eg: J2Egreso = {
+          id: egresoId,
+          fecha: a.fecha,
+          tipo: 'bancario',
+          categoria: `Intereses — ${cred.entidad}`,
+          concepto: 'Intereses de crédito',
+          monto: a.interes,
+          cuenta: a.cuenta,
+          origen: { tipo: 'credito', creditoId: cred.id, pagoId },
+        };
+        paso = aplicar(
+          { ...paso, egresos: [...paso.egresos, eg] },
+          { tipo: 'egreso', concepto: eg.categoria, detalle: eg.concepto, monto: -a.interes, cuenta: a.cuenta, fecha: a.fecha }
+        );
       }
       return paso;
     }
+
+    case 'anularCuotaCredito': {
+      const cred = d.inversiones.creditos.find((x) => x.id === a.creditoId);
+      const pago = cred?.pagos.find((p) => p.id === a.pagoId);
+      if (!cred || !pago || pago.anulado) return d;
+      const an = anulacion(a.motivo);
+      let paso: J2Datos = {
+        ...d,
+        inversiones: {
+          ...d.inversiones,
+          creditos: d.inversiones.creditos.map((x) =>
+            x.id === cred.id
+              ? {
+                  ...x,
+                  saldo: x.saldo + pago.capital,
+                  pagos: x.pagos.map((p) => (p.id === pago.id ? { ...p, anulado: an } : p)),
+                }
+              : x
+          ),
+        },
+      };
+      if (pago.capital > 0) {
+        paso = aplicar(paso, {
+          tipo: 'credito_cuota_anulada',
+          concepto: `Anulación cuota — ${cred.entidad}`,
+          detalle: an.motivo,
+          monto: pago.capital,
+          cuenta: pago.cuenta,
+          fecha: an.fecha,
+        });
+      }
+      if (pago.egresoId) paso = contraEgreso(paso, pago.egresoId, an);
+      return paso;
+    }
+
+    case 'ajustarCredito': {
+      const cred = d.inversiones.creditos.find((x) => x.id === a.creditoId);
+      if (!cred || cred.anulado || a.nuevoSaldo < 0) return d;
+      const diferencia = a.nuevoSaldo - cred.saldo;
+      if (diferencia === 0) return d;
+      const an = anulacion(a.motivo);
+      const ajuste = { id: nuevoId('aj'), fecha: an.fecha, diferencia, motivo: an.motivo };
+      const conAjuste = {
+        ...d,
+        inversiones: {
+          ...d.inversiones,
+          creditos: d.inversiones.creditos.map((x) =>
+            x.id === cred.id ? { ...x, saldo: a.nuevoSaldo, ajustes: [...x.ajustes, ajuste] } : x
+          ),
+        },
+      };
+      // Corrige lo que se debe sin mover caja: queda asentado para que se vea.
+      return aplicar(conAjuste, {
+        tipo: 'credito_ajuste',
+        concepto: `Ajuste deuda — ${cred.entidad}`,
+        detalle: an.motivo,
+        monto: diferencia,
+        cuenta: 'credito',
+        fecha: an.fecha,
+        afectaSaldo: false,
+      });
+    }
+
+    case 'corregirInversion': {
+      const item = d.inversiones.items.find((i) => i.id === a.id);
+      if (!item) return d;
+      const diferencia = a.nuevoSaldo - item.saldo;
+      if (diferencia === 0) return d;
+      return aplicar(d, {
+        tipo: 'correccion',
+        concepto: `Corrección de saldo — ${item.nombre}`,
+        detalle: a.motivo.trim() || 'Sin motivo',
+        monto: diferencia,
+        cuenta: a.id,
+      });
+    }
+
+    /* — Compra de un bien de uso: cambia plata por un activo, no es gasto — */
+    case 'compraActivo':
+      if (a.monto <= 0) return d;
+      return aplicar(d, {
+        tipo: 'compra_activo',
+        concepto: `Compra de activo — ${a.nombre}`,
+        monto: -a.monto,
+        cuenta: a.cuenta,
+        fecha: a.fecha,
+      });
 
     case 'ingresarPorMedio':
       return aplicar(d, {
@@ -664,6 +818,7 @@ function transicion(d: J2Datos, a: J2Accion): J2Datos {
         concepto: `Liquidación — ${nombre}`,
         monto: egresoMonto,
         cuenta: a.cuenta,
+        origen: { tipo: 'liquidacion', empleadoId: a.empleadoId, adelanto: adelantoDescontado },
       };
       const conLiquidacion: J2Datos = {
         ...d,

@@ -5,7 +5,7 @@ import type { J2Egreso, J2EgresoTipo } from '@/types';
 import { useJ2Local } from '@/context/J2LocalContext';
 import { useToast } from '@/context/ToastContext';
 import { useOrden, Th, BarraFiltros, coincideAlguno } from '@/components/Tabla';
-import { Modal, ModalAcciones } from '@/components/Modal';
+import { Modal, ModalAcciones, ModalAnular } from '@/components/Modal';
 import { Vacio } from '@/components/Estados';
 
 const CATS_FIJO = ['Monotributo', 'Seguro', 'Mutual', 'Marketing', 'ChatGPT', 'Claude', 'Otro'];
@@ -35,9 +35,11 @@ function nombreMes(clave: string) {
 }
 
 export function EgresosPage() {
-  const { toast, toastDeshacer } = useToast();
+  const { toast } = useToast();
   const j2 = useJ2Local();
   const mc = mesClaveRef();
+  const [anularE, setAnularE] = useState<J2Egreso | null>(null);
+  const [verAnulados, setVerAnulados] = useState(false);
 
   // Formulario de alta (ahora vive dentro del modal)
   const [abierto, setAbierto] = useState(false);
@@ -356,23 +358,18 @@ export function EgresosPage() {
                     <td data-label="Acción">
                       <button
                         type="button"
-                        aria-label={`Eliminar egreso de ${e.categoria}`}
+                        className="btn secundario sm"
+                        style={{ color: 'var(--rojo)' }}
+                        aria-label={`Anular egreso de ${e.categoria}`}
                         onClick={() => {
-                          j2.removeEgreso(e.id);
-                          toastDeshacer(
-                            `Egreso de $${e.monto.toLocaleString('es-AR')} eliminado`,
-                            j2.deshacer
-                          );
-                        }}
-                        style={{
-                          background: 'none',
-                          border: '1px solid rgba(192,57,43,0.3)',
-                          borderRadius: 6,
-                          cursor: 'pointer',
-                          color: 'var(--rojo)',
+                          if (e.origen?.tipo === 'credito') {
+                            toast('Este interés es parte de una cuota de crédito. Anulá la cuota desde Finanzas → Capital y créditos.', { tono: 'error' });
+                            return;
+                          }
+                          setAnularE(e);
                         }}
                       >
-                        🗑
+                        Anular
                       </button>
                     </td>
                   </tr>
@@ -381,6 +378,58 @@ export function EgresosPage() {
             </table>
           </div>
         </div>
+      )}
+
+      {j2.egresosAnulados.length > 0 && (
+        <div style={{ marginTop: 'var(--sp-4)' }}>
+          <button type="button" className="btn fantasma sm" onClick={() => setVerAnulados((v) => !v)}>
+            {verAnulados ? '▾' : '▸'} Anulados ({j2.egresosAnulados.length})
+          </button>
+          {verAnulados && (
+            <div className="tabla-wrap" style={{ marginTop: 'var(--sp-2)' }}>
+              <div className="tabla-scroll">
+                <table className="responsive">
+                  <thead>
+                    <tr><th>Fecha</th><th>Categoría</th><th>Monto</th><th>Anulado</th><th>Motivo</th></tr>
+                  </thead>
+                  <tbody>
+                    {j2.egresosAnulados.map((e) => (
+                      <tr key={e.id} style={{ color: 'var(--texto-3)' }}>
+                        <td data-label="Fecha" style={{ fontFamily: 'var(--fuente-mono)', fontSize: 12 }}>{e.fecha}</td>
+                        <td data-label="Categoría">{e.categoria}{e.concepto && ` · ${e.concepto}`}</td>
+                        <td data-label="Monto" style={{ fontFamily: 'var(--fuente-mono)', textDecoration: 'line-through' }}>
+                          ${e.monto.toLocaleString('es-AR')}
+                        </td>
+                        <td data-label="Anulado" style={{ fontFamily: 'var(--fuente-mono)', fontSize: 12 }}>{e.anulado?.fecha}</td>
+                        <td data-label="Motivo">{e.anulado?.motivo}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {anularE && (
+        <ModalAnular
+          titulo="Anular egreso"
+          mensaje={
+            <>
+              Se anula el egreso de <strong>{anularE.categoria}</strong> por{' '}
+              <strong>${anularE.monto.toLocaleString('es-AR')}</strong> y la plata vuelve a{' '}
+              {NOMBRES_CUENTA[anularE.cuenta]}.
+              {anularE.origen?.tipo === 'liquidacion' && anularE.origen.adelanto > 0 &&
+                ` El adelanto de $${anularE.origen.adelanto.toLocaleString('es-AR')} vuelve a quedar pendiente.`}
+            </>
+          }
+          onConfirmar={(motivo) => {
+            j2.anularEgreso(anularE.id, motivo);
+            toast('Egreso anulado', { tono: 'exito' });
+          }}
+          onCerrar={() => setAnularE(null)}
+        />
       )}
 
       {abierto && (

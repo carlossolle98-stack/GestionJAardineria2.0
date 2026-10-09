@@ -1,11 +1,11 @@
-import { useRef, useState } from 'react';
+import { Fragment, useRef, useState, type ReactNode } from 'react';
 import { money, todayISO } from '@/lib/format';
 import { NOMBRES_CUENTA } from '@/lib/j2local';
 import { nombreCuenta } from '@/lib/j2reducer';
 import { useJ2Local } from '@/context/J2LocalContext';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
-import { Modal, ModalAcciones, ModalConfirmar } from '@/components/Modal';
+import { Modal, ModalAcciones, ModalAnular } from '@/components/Modal';
 import type { J2Credito, J2Inversion } from '@/types';
 
 type UsdOp = 'comprar' | 'vender' | 'precio' | null;
@@ -55,10 +55,15 @@ export function FinanzasPage() {
   const [capFecha, setCapFecha] = useState(todayISO());
   const [capQuien, setCapQuien] = useState(usuario?.nombre ?? '');
   const [capNota, setCapNota] = useState('');
+  const [capCuotas, setCapCuotas] = useState('');
 
   const [cuota, setCuota] = useState<J2Credito | null>(null);
-  const [cuCapital, setCuCapital] = useState('');
+  const [cuTotal, setCuTotal] = useState('');
   const [cuInteres, setCuInteres] = useState('');
+  const [verPagos, setVerPagos] = useState<string | null>(null);
+  const [ajuste, setAjuste] = useState<{ tipo: 'credito' | 'inversion'; id: string; nombre: string; actual: number } | null>(null);
+  const [ajSaldo, setAjSaldo] = useState('');
+  const [ajMotivo, setAjMotivo] = useState('');
   const [cuCuenta, setCuCuenta] = useState<Liquida>('banco');
   const [cuFecha, setCuFecha] = useState(todayISO());
 
@@ -67,7 +72,7 @@ export function FinanzasPage() {
   const [rendMonto, setRendMonto] = useState('');
   const [rendFecha, setRendFecha] = useState(todayISO());
 
-  const [anular, setAnular] = useState<{ tipo: 'capital' | 'credito'; id: string; texto: string } | null>(null);
+  const [anular, setAnular] = useState<{ titulo: string; mensaje: ReactNode; hacer: (motivo: string) => void } | null>(null);
 
   const [usdOp, setUsdOp] = useState<UsdOp>(null);
   const [usdPrecio, setUsdPrecio] = useState('');
@@ -80,7 +85,8 @@ export function FinanzasPage() {
   const activas = inv.items.filter((i) => i.activa);
   const archivadas = inv.items.filter((i) => !i.activa);
   const totalUSD = inv.usd.cantidad * inv.usd.precio;
-  const deudaCreditos = inv.creditos.reduce((s, x) => s + x.saldo, 0);
+  const creditosVigentes = inv.creditos.filter((x) => !x.anulado && x.saldo > 0);
+  const deudaCreditos = creditosVigentes.reduce((s, x) => s + x.saldo, 0);
   const nombre = (k: string) => nombreCuenta(k, inv);
   const cuentasTransferibles = [...LIQUIDAS, ...activas.map((i) => i.id)];
 
@@ -134,7 +140,16 @@ export function FinanzasPage() {
       return;
     }
     if (capTipo === 'credito') {
-      j2.recibirCredito({ fecha: capFecha, entidad: capQuien.trim(), monto: m, cuenta: capCuenta, nota: capNota.trim() });
+      const cuotas = parseInt(capCuotas, 10);
+      j2.recibirCredito({
+        fecha: capFecha,
+        entidad: capQuien.trim(),
+        monto: m,
+        cuenta: capCuenta,
+        cuotas: cuotas > 0 ? cuotas : undefined,
+        nota: capNota.trim(),
+      });
+      setCapCuotas('');
     } else {
       j2.movCapital({ fecha: capFecha, tipo: capTipo, socio: capQuien.trim(), monto: m, cuenta: capCuenta, nota: capNota.trim() });
     }
@@ -151,26 +166,54 @@ export function FinanzasPage() {
 
   function abrirCuota(cr: J2Credito) {
     setCuota(cr);
-    setCuCapital('');
+    setCuTotal('');
     setCuInteres('');
     setCuFecha(todayISO());
   }
 
   function pagarCuota() {
     if (!cuota) return;
-    const capital = Number(cuCapital) || 0;
+    const total = Number(cuTotal) || 0;
     const interes = Number(cuInteres) || 0;
-    if (capital < 0 || interes < 0 || capital + interes <= 0) {
-      toast('Ingresá cuánto de la cuota es capital y cuánto interés', { tono: 'error' });
+    if (total <= 0) { toast('Ingresá el total de la cuota', { tono: 'error' }); return; }
+    if (interes < 0 || interes > total) { toast('El interés tiene que estar entre 0 y el total de la cuota', { tono: 'error' }); return; }
+    if (total - interes > cuota.saldo) {
+      toast(`El capital (${money(total - interes)}) supera lo que se debe (${money(cuota.saldo)}). Revisá los montos o ajustá la deuda.`, { tono: 'error' });
       return;
     }
-    if (capital > cuota.saldo) {
-      toast(`El capital no puede superar lo que se debe (${money(cuota.saldo)})`, { tono: 'error' });
-      return;
-    }
-    j2.pagarCuotaCredito({ creditoId: cuota.id, capital, interes, cuenta: cuCuenta, fecha: cuFecha });
-    toast(`Cuota pagada · ${money(capital + interes)}`, { tono: 'exito' });
+    j2.pagarCuotaCredito({ creditoId: cuota.id, total, interes, cuenta: cuCuenta, fecha: cuFecha });
+    toast(`Cuota pagada · ${money(total)}`, { tono: 'exito' });
     setCuota(null);
+  }
+
+  function abrirAjuste(tipo: 'credito' | 'inversion', id: string, nombreItem: string, actual: number) {
+    setAjuste({ tipo, id, nombre: nombreItem, actual });
+    setAjSaldo(String(actual));
+    setAjMotivo('');
+  }
+
+  function guardarAjuste() {
+    if (!ajuste) return;
+    const n = Number(ajSaldo);
+    if (!Number.isFinite(n) || n < 0) { toast('Ingresá un saldo válido', { tono: 'error' }); return; }
+    if (!ajMotivo.trim()) { toast('Contá el motivo del ajuste', { tono: 'error' }); return; }
+    if (n === ajuste.actual) { setAjuste(null); return; }
+    if (ajuste.tipo === 'credito') j2.ajustarCredito(ajuste.id, n, ajMotivo.trim());
+    else j2.corregirInversion(ajuste.id, n, ajMotivo.trim());
+    toast(`Saldo de ${ajuste.nombre} ajustado a ${money(n)}`, { tono: 'exito' });
+    setAjuste(null);
+  }
+
+  function pedirAnularCredito(cr: J2Credito) {
+    if (cr.pagos.some((p) => !p.anulado)) {
+      toast('Este crédito tiene cuotas pagas. Anulá primero las cuotas, o usá "Ajustar deuda" si sólo cambió el saldo.', { tono: 'error' });
+      return;
+    }
+    setAnular({
+      titulo: 'Anular crédito',
+      mensaje: <>Se anula el crédito de <strong>{cr.entidad}</strong> por <strong>{money(cr.monto)}</strong> y esa plata sale de {nombre(cr.cuenta)}.</>,
+      hacer: (motivo) => j2.anularCredito(cr.id, motivo),
+    });
   }
 
   function agregarInversion() {
@@ -250,7 +293,9 @@ export function FinanzasPage() {
           <div className="card-label">Deuda por créditos</div>
           <div className="card-valor">{money(deudaCreditos)}</div>
           <div className="card-sub">
-            {inv.creditos.filter((x) => x.saldo > 0).length || 'Sin'} crédito{inv.creditos.filter((x) => x.saldo > 0).length === 1 ? '' : 's'} pendiente{inv.creditos.filter((x) => x.saldo > 0).length === 1 ? '' : 's'}
+            {creditosVigentes.length === 0
+              ? 'Sin créditos pendientes'
+              : `${creditosVigentes.length} crédito${creditosVigentes.length === 1 ? '' : 's'} pendiente${creditosVigentes.length === 1 ? '' : 's'}`}
           </div>
         </div>
       </div>
@@ -311,9 +356,15 @@ export function FinanzasPage() {
             <label htmlFor="fin-cap-fecha">Fecha</label>
             <input id="fin-cap-fecha" type="date" value={capFecha} onChange={(e) => setCapFecha(e.target.value)} />
           </div>
+          {capTipo === 'credito' && (
+            <div className="form-group">
+              <label htmlFor="fin-cap-cuotas">Cantidad de cuotas</label>
+              <input id="fin-cap-cuotas" type="number" inputMode="numeric" min="1" value={capCuotas} onChange={(e) => setCapCuotas(e.target.value)} placeholder="Ej: 36" />
+            </div>
+          )}
           <div className="form-group">
             <label htmlFor="fin-cap-nota">Nota</label>
-            <input id="fin-cap-nota" value={capNota} onChange={(e) => setCapNota(e.target.value)} placeholder={capTipo === 'credito' ? 'Ej: 12 cuotas, tasa 45%' : ''} />
+            <input id="fin-cap-nota" value={capNota} onChange={(e) => setCapNota(e.target.value)} placeholder={capTipo === 'credito' ? 'Ej: tasa fija, para comprar herramientas' : ''} />
           </div>
         </div>
         <p className="form-ayuda" style={{ marginBottom: 12 }}>{AYUDA_CAPITAL[capTipo]}</p>
@@ -324,27 +375,88 @@ export function FinanzasPage() {
         <div className="tabla-wrap" style={{ marginBottom: 20 }}>
           <div className="tabla-scroll">
             <table className="responsive">
-              <thead><tr><th>Crédito</th><th>Fecha</th><th>Monto</th><th>Falta pagar</th><th>Entró a</th><th>Acción</th></tr></thead>
+              <thead><tr><th>Crédito</th><th>Fecha</th><th>Monto</th><th>Cuotas</th><th>Falta pagar</th><th>Acción</th></tr></thead>
               <tbody>
-                {credList.map((cr) => (
-                  <tr key={cr.id}>
-                    <td data-label="Crédito"><strong>{cr.entidad}</strong>{cr.nota && <div style={{ fontSize: 12, color: 'var(--texto-2)' }}>{cr.nota}</div>}</td>
-                    <td data-label="Fecha" style={{ fontFamily: 'var(--fuente-mono)', fontSize: 12 }}>{cr.fecha}</td>
-                    <td data-label="Monto" style={{ fontFamily: 'var(--fuente-mono)' }}>{money(cr.monto)}</td>
-                    <td data-label="Falta pagar" style={{ fontFamily: 'var(--fuente-mono)', fontWeight: 600, color: cr.saldo > 0 ? 'var(--rojo)' : 'var(--verde-vivo)' }}>
-                      {cr.saldo > 0 ? money(cr.saldo) : 'Cancelado'}
-                    </td>
-                    <td data-label="Entró a">{nombre(cr.cuenta)}</td>
-                    <td data-label="Acción">
-                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                        {cr.saldo > 0 && <button type="button" className="btn sm" onClick={() => abrirCuota(cr)}>💳 Pagar cuota</button>}
-                        {cr.saldo === cr.monto && (
-                          <button type="button" className="btn secundario sm" onClick={() => setAnular({ tipo: 'credito', id: cr.id, texto: `el crédito de ${cr.entidad} por ${money(cr.monto)}` })}>🗑</button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {credList.map((cr) => {
+                  const pagosVigentes = cr.pagos.filter((p) => !p.anulado);
+                  const abierto = verPagos === cr.id;
+                  return (
+                    <Fragment key={cr.id}>
+                      <tr style={cr.anulado ? { color: 'var(--texto-3)' } : undefined}>
+                        <td data-label="Crédito">
+                          <strong>{cr.entidad}</strong>
+                          {cr.nota && <div style={{ fontSize: 12, color: 'var(--texto-2)' }}>{cr.nota}</div>}
+                          {cr.anulado && <div style={{ fontSize: 12 }}>Anulado el {cr.anulado.fecha}: {cr.anulado.motivo}</div>}
+                        </td>
+                        <td data-label="Fecha" style={{ fontFamily: 'var(--fuente-mono)', fontSize: 12 }}>{cr.fecha}</td>
+                        <td data-label="Monto" style={{ fontFamily: 'var(--fuente-mono)', textDecoration: cr.anulado ? 'line-through' : undefined }}>{money(cr.monto)}</td>
+                        <td data-label="Cuotas">{cr.cuotas ? `${pagosVigentes.length} de ${cr.cuotas}` : `${pagosVigentes.length} pagas`}</td>
+                        <td data-label="Falta pagar" style={{ fontFamily: 'var(--fuente-mono)', fontWeight: 600, color: cr.anulado ? undefined : cr.saldo > 0 ? 'var(--rojo)' : 'var(--verde-vivo)' }}>
+                          {cr.anulado ? 'Anulado' : cr.saldo > 0 ? money(cr.saldo) : 'Cancelado'}
+                        </td>
+                        <td data-label="Acción">
+                          {!cr.anulado && (
+                            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                              {cr.saldo > 0 && <button type="button" className="btn sm" onClick={() => abrirCuota(cr)}>Pagar cuota</button>}
+                              {(cr.pagos.length > 0 || cr.ajustes.length > 0) && (
+                                <button type="button" className="btn secundario sm" onClick={() => setVerPagos(abierto ? null : cr.id)}>
+                                  {abierto ? 'Ocultar' : 'Historial'}
+                                </button>
+                              )}
+                              <button type="button" className="btn secundario sm" onClick={() => abrirAjuste('credito', cr.id, cr.entidad, cr.saldo)}>Ajustar deuda</button>
+                              <button type="button" className="btn fantasma sm" style={{ color: 'var(--rojo)' }} onClick={() => pedirAnularCredito(cr)}>Anular</button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                      {abierto && (
+                        <tr>
+                          <td colSpan={6} style={{ background: 'var(--superficie-2)' }}>
+                            <table style={{ width: '100%', fontSize: 13 }}>
+                              <thead><tr><th>Fecha</th><th>Cuota</th><th>Capital</th><th>Interés</th><th>Estado</th><th /></tr></thead>
+                              <tbody>
+                                {cr.pagos.map((p) => (
+                                  <tr key={p.id} style={p.anulado ? { color: 'var(--texto-3)' } : undefined}>
+                                    <td style={{ fontFamily: 'var(--fuente-mono)' }}>{p.fecha}</td>
+                                    <td style={{ fontFamily: 'var(--fuente-mono)', textDecoration: p.anulado ? 'line-through' : undefined }}>{money(p.capital + p.interes)}</td>
+                                    <td style={{ fontFamily: 'var(--fuente-mono)' }}>{money(p.capital)}</td>
+                                    <td style={{ fontFamily: 'var(--fuente-mono)' }}>{money(p.interes)}</td>
+                                    <td>{p.anulado ? `Anulada: ${p.anulado.motivo}` : 'Pagada'}</td>
+                                    <td>
+                                      {!p.anulado && (
+                                        <button
+                                          type="button"
+                                          className="btn fantasma sm"
+                                          style={{ color: 'var(--rojo)' }}
+                                          onClick={() =>
+                                            setAnular({
+                                              titulo: 'Anular cuota',
+                                              mensaje: <>Se anula la cuota del {p.fecha} por <strong>{money(p.capital + p.interes)}</strong>: vuelve la plata a {nombre(p.cuenta)}, la deuda sube {money(p.capital)} y el interés se anula en Egresos.</>,
+                                              hacer: (motivo) => j2.anularCuotaCredito(cr.id, p.id, motivo),
+                                            })
+                                          }
+                                        >
+                                          Anular
+                                        </button>
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))}
+                                {cr.ajustes.map((aj) => (
+                                  <tr key={aj.id}>
+                                    <td style={{ fontFamily: 'var(--fuente-mono)' }}>{aj.fecha}</td>
+                                    <td colSpan={3}>Ajuste de deuda {aj.diferencia > 0 ? '+' : '−'}{money(Math.abs(aj.diferencia))}</td>
+                                    <td colSpan={2}>{aj.motivo}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -358,15 +470,42 @@ export function FinanzasPage() {
               <thead><tr><th>Fecha</th><th>Movimiento</th><th>Socio</th><th>Cuenta</th><th>Monto</th><th /></tr></thead>
               <tbody>
                 {capList.map((m) => (
-                  <tr key={m.id}>
+                  <tr key={m.id} style={m.anulado ? { color: 'var(--texto-3)' } : undefined}>
                     <td data-label="Fecha" style={{ fontFamily: 'var(--fuente-mono)', fontSize: 12 }}>{m.fecha}</td>
                     <td data-label="Movimiento">
-                      <span className={`badge ${m.tipo === 'aporte' ? 'ok' : 'pendiente'}`}>{m.tipo === 'aporte' ? 'Aporte' : 'Retiro'}</span>
+                      {m.anulado ? (
+                        <span className="badge urgente">Anulado</span>
+                      ) : (
+                        <span className={`badge ${m.tipo === 'aporte' ? 'ok' : 'pendiente'}`}>{m.tipo === 'aporte' ? 'Aporte' : 'Retiro'}</span>
+                      )}
                     </td>
-                    <td data-label="Socio">{m.socio}{m.nota && <div style={{ fontSize: 12, color: 'var(--texto-2)' }}>{m.nota}</div>}</td>
+                    <td data-label="Socio">
+                      {m.socio}
+                      {m.nota && <div style={{ fontSize: 12, color: 'var(--texto-2)' }}>{m.nota}</div>}
+                      {m.anulado && <div style={{ fontSize: 12 }}>Anulado el {m.anulado.fecha}: {m.anulado.motivo}</div>}
+                    </td>
                     <td data-label="Cuenta">{nombre(m.cuenta)}</td>
-                    <td data-label="Monto" style={{ fontFamily: 'var(--fuente-mono)', fontWeight: 600 }}>{m.tipo === 'aporte' ? '+' : '−'}{money(m.monto)}</td>
-                    <td><button type="button" className="btn secundario sm" onClick={() => setAnular({ tipo: 'capital', id: m.id, texto: `el ${m.tipo} de ${m.socio} por ${money(m.monto)}` })}>🗑</button></td>
+                    <td data-label="Monto" style={{ fontFamily: 'var(--fuente-mono)', fontWeight: 600, textDecoration: m.anulado ? 'line-through' : undefined }}>
+                      {m.tipo === 'aporte' ? '+' : '−'}{money(m.monto)}
+                    </td>
+                    <td>
+                      {!m.anulado && (
+                        <button
+                          type="button"
+                          className="btn fantasma sm"
+                          style={{ color: 'var(--rojo)' }}
+                          onClick={() =>
+                            setAnular({
+                              titulo: `Anular ${m.tipo}`,
+                              mensaje: <>Se anula el {m.tipo} de <strong>{m.socio}</strong> por <strong>{money(m.monto)}</strong> y {nombre(m.cuenta)} vuelve al saldo anterior.</>,
+                              hacer: (motivo) => j2.anularCapital(m.id, motivo),
+                            })
+                          }
+                        >
+                          Anular
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -387,6 +526,7 @@ export function FinanzasPage() {
               <button type="button" className="btn sm" onClick={() => prepararTransferencia('banco', i.id)}>Invertir</button>
               <button type="button" className="btn secundario sm" onClick={() => prepararTransferencia(i.id, 'banco')}>Rescatar</button>
               <button type="button" className="btn secundario sm" onClick={() => { setRendInv(i); setRendMonto(''); setRendFecha(todayISO()); }}>Rendimiento</button>
+              <button type="button" className="btn fantasma sm" onClick={() => abrirAjuste('inversion', i.id, i.nombre, i.saldo)}>Corregir</button>
               <button type="button" className="btn fantasma sm" onClick={() => archivar(i)}>Archivar</button>
             </div>
           </div>
@@ -501,12 +641,13 @@ export function FinanzasPage() {
           <form onSubmit={(e) => { e.preventDefault(); pagarCuota(); }} style={{ display: 'grid', gap: 'var(--sp-4)' }}>
             <div className="form-grid">
               <div className="form-group">
-                <label htmlFor="fin-cu-capital">Capital</label>
-                <input id="fin-cu-capital" type="number" inputMode="numeric" min="0" value={cuCapital} onChange={(e) => setCuCapital(e.target.value)} autoFocus />
+                <label htmlFor="fin-cu-total">Total de la cuota</label>
+                <input id="fin-cu-total" type="number" inputMode="numeric" min="0" value={cuTotal} onChange={(e) => setCuTotal(e.target.value)} autoFocus />
               </div>
               <div className="form-group">
-                <label htmlFor="fin-cu-interes">Interés</label>
+                <label htmlFor="fin-cu-interes">De eso, interés</label>
                 <input id="fin-cu-interes" type="number" inputMode="numeric" min="0" value={cuInteres} onChange={(e) => setCuInteres(e.target.value)} />
+                <p className="form-ayuda">Figura en el resumen del banco. Incluí IVA y gastos.</p>
               </div>
               <div className="form-group">
                 <label htmlFor="fin-cu-cuenta">Sale de</label>
@@ -520,7 +661,8 @@ export function FinanzasPage() {
               </div>
             </div>
             <p className="form-ayuda" style={{ margin: 0 }}>
-              El capital baja la deuda. El interés se carga como egreso bancario, porque es un costo del negocio. Total de la cuota: {money((Number(cuCapital) || 0) + (Number(cuInteres) || 0))}.
+              Capital que baja la deuda: <strong>{money(Math.max(0, (Number(cuTotal) || 0) - (Number(cuInteres) || 0)))}</strong>. El interés se carga como egreso bancario, porque es un costo del negocio.
+              {cuota.cuotas ? ` Esta es la cuota ${cuota.pagos.filter((p) => !p.anulado).length + 1} de ${cuota.cuotas}.` : ''}
             </p>
             <ModalAcciones onCancelar={() => setCuota(null)} textoConfirmar="Pagar cuota" />
           </form>
@@ -583,16 +725,38 @@ export function FinanzasPage() {
         </Modal>
       )}
 
+      {ajuste && (
+        <Modal
+          titulo={ajuste.tipo === 'credito' ? `Ajustar deuda — ${ajuste.nombre}` : `Corregir saldo — ${ajuste.nombre}`}
+          descripcion={
+            ajuste.tipo === 'credito'
+              ? 'Para cuando el banco informa otro saldo (refinanciación, cargos, redondeos). No mueve la caja.'
+              : 'Para cuando el saldo no coincide con lo que muestra la app de la inversión. Queda asentado en Movimientos.'
+          }
+          onCerrar={() => setAjuste(null)}
+          ancho="chico"
+        >
+          <form onSubmit={(e) => { e.preventDefault(); guardarAjuste(); }} style={{ display: 'grid', gap: 'var(--sp-4)' }}>
+            <div className="form-group">
+              <label htmlFor="fin-aj-saldo">{ajuste.tipo === 'credito' ? 'Lo que se debe hoy' : 'Saldo real'}</label>
+              <input id="fin-aj-saldo" type="number" min="0" value={ajSaldo} onChange={(e) => setAjSaldo(e.target.value)} autoFocus />
+              <p className="form-ayuda">Hoy figura {money(ajuste.actual)}.</p>
+            </div>
+            <div className="form-group">
+              <label htmlFor="fin-aj-motivo">Motivo</label>
+              <input id="fin-aj-motivo" value={ajMotivo} onChange={(e) => setAjMotivo(e.target.value)} placeholder="Ej: según resumen de octubre" required />
+            </div>
+            <ModalAcciones onCancelar={() => setAjuste(null)} textoConfirmar="Guardar ajuste" />
+          </form>
+        </Modal>
+      )}
+
       {anular && (
-        <ModalConfirmar
-          titulo="Anular movimiento"
-          peligro
-          textoConfirmar="Anular"
-          mensaje={<>Se anula {anular.texto} y la cuenta vuelve al saldo anterior.</>}
-          onConfirmar={() => {
-            if (anular.tipo === 'capital') j2.anularCapital(anular.id);
-            else j2.anularCredito(anular.id);
-            setAnular(null);
+        <ModalAnular
+          titulo={anular.titulo}
+          mensaje={anular.mensaje}
+          onConfirmar={(motivo) => {
+            anular.hacer(motivo);
             toast('Movimiento anulado', { tono: 'exito' });
           }}
           onCerrar={() => setAnular(null)}

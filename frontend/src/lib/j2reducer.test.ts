@@ -64,22 +64,24 @@ describe('egresos', () => {
     expect(datos.movlog[0].monto).toBe(-15_000);
   });
 
-  it('al borrarlo devuelve exactamente lo que había descontado', () => {
+  it('al anularlo devuelve la plata y lo deja visible como anulado, con el motivo', () => {
     const paso1 = correr([egreso(15_000)]);
     const id = paso1.datos.egresos[0].id;
-    const { datos } = correr([{ tipo: 'removeEgreso', id }], paso1.datos);
+    const { datos } = correr([{ tipo: 'anularEgreso', id, motivo: 'Cargado dos veces' }], paso1.datos);
 
     expect(datos.cuentas.efectivo).toBe(100_000);
-    expect(datos.egresos).toHaveLength(0);
+    expect(datos.egresos).toHaveLength(1);
+    expect(datos.egresos[0].anulado?.motivo).toBe('Cargado dos veces');
+    expect(datos.movlog[0].tipo).toBe('egreso_anulado');
   });
 
-  it('borrar dos veces el mismo egreso no devuelve la plata dos veces', () => {
+  it('anular dos veces el mismo egreso no devuelve la plata dos veces', () => {
     const paso1 = correr([egreso(15_000)]);
     const id = paso1.datos.egresos[0].id;
     const { datos } = correr(
       [
-        { tipo: 'removeEgreso', id },
-        { tipo: 'removeEgreso', id },
+        { tipo: 'anularEgreso', id, motivo: '' },
+        { tipo: 'anularEgreso', id, motivo: '' },
       ],
       paso1.datos
     );
@@ -92,7 +94,7 @@ describe('egresos', () => {
     expect(paso1.datos.cuentas.efectivo).toBe(-50_000);
 
     const id = paso1.datos.egresos[0].id;
-    const { datos } = correr([{ tipo: 'removeEgreso', id }], paso1.datos);
+    const { datos } = correr([{ tipo: 'anularEgreso', id, motivo: 'error' }], paso1.datos);
     expect(datos.cuentas.efectivo).toBe(100_000);
   });
 
@@ -134,8 +136,9 @@ describe('ingresos', () => {
       },
     ]);
     const id = paso1.datos.ingresos[0].id;
-    const { datos } = correr([{ tipo: 'removeIngreso', id }], paso1.datos);
+    const { datos } = correr([{ tipo: 'anularIngreso', id, motivo: 'Era un crédito, no un cobro' }], paso1.datos);
     expect(datos.cuentas.efectivo).toBe(100_000);
+    expect(datos.ingresos[0].anulado?.motivo).toBe('Era un crédito, no un cobro');
   });
 });
 
@@ -301,22 +304,30 @@ describe('capital del socio', () => {
     expect(datos.egresos).toHaveLength(0);
   });
 
-  it('anular devuelve la caja al saldo anterior', () => {
+  it('anular devuelve la caja al saldo anterior y deja el registro como anulado', () => {
     const paso1 = correr([
       { tipo: 'movCapital', payload: { fecha: '2026-10-09', tipo: 'aporte', socio: 'Carlos', monto: 200_000, cuenta: 'banco' } },
     ]);
     const id = paso1.datos.inversiones.capital[0].id;
-    const { datos } = correr([{ tipo: 'anularCapital', id }], paso1.datos);
+    const { datos } = correr([{ tipo: 'anularCapital', id, motivo: 'Era un crédito' }], paso1.datos);
     expect(datos.cuentas.banco).toBe(0);
-    expect(datos.inversiones.capital).toHaveLength(0);
+    expect(datos.inversiones.capital[0].anulado?.motivo).toBe('Era un crédito');
   });
 });
 
 describe('créditos', () => {
   const recibir: J2Accion = {
     tipo: 'recibirCredito',
-    payload: { fecha: '2026-10-09', entidad: 'Banco Nación', monto: 500_000, cuenta: 'banco' },
+    payload: { fecha: '2026-10-09', entidad: 'Banco Nación', monto: 500_000, cuenta: 'banco', cuotas: 36 },
   };
+  const cuota = (creditoId: string, total: number, interes: number): J2Accion => ({
+    tipo: 'pagarCuotaCredito',
+    creditoId,
+    total,
+    interes,
+    cuenta: 'banco',
+    fecha: '2026-11-09',
+  });
 
   it('la plata del crédito entra a caja y queda como deuda, no como ingreso', () => {
     const { datos } = correr([recibir]);
@@ -328,26 +339,69 @@ describe('créditos', () => {
   it('la cuota baja la deuda por el capital y manda sólo el interés a egresos', () => {
     const paso1 = correr([recibir]);
     const creditoId = paso1.datos.inversiones.creditos[0].id;
-    const { datos } = correr(
-      [{ tipo: 'pagarCuotaCredito', creditoId, capital: 40_000, interes: 15_000, cuenta: 'banco', fecha: '2026-11-09' }],
-      paso1.datos
-    );
+    const { datos } = correr([cuota(creditoId, 55_000, 15_000)], paso1.datos);
     expect(datos.cuentas.banco).toBe(445_000);
     expect(datos.inversiones.creditos[0].saldo).toBe(460_000);
+    expect(datos.inversiones.creditos[0].pagos).toHaveLength(1);
     expect(datos.egresos).toHaveLength(1);
     expect(datos.egresos[0].monto).toBe(15_000);
     expect(totalesDelLog(datos.movlog).banco).toBe(datos.cuentas.banco);
   });
 
-  it('no deja anular un crédito que ya tiene cuotas pagas', () => {
+  it('anular una cuota devuelve capital, interés y deuda a como estaban', () => {
     const paso1 = correr([recibir]);
     const creditoId = paso1.datos.inversiones.creditos[0].id;
-    const paso2 = correr(
-      [{ tipo: 'pagarCuotaCredito', creditoId, capital: 40_000, interes: 0, cuenta: 'banco', fecha: '2026-11-09' }],
-      paso1.datos
-    );
-    const { datos } = correr([{ tipo: 'anularCredito', id: creditoId }], paso2.datos);
-    expect(datos.inversiones.creditos).toHaveLength(1);
+    const paso2 = correr([cuota(creditoId, 55_000, 15_000)], paso1.datos);
+    const pagoId = paso2.datos.inversiones.creditos[0].pagos[0].id;
+    const { datos } = correr([{ tipo: 'anularCuotaCredito', creditoId, pagoId, motivo: 'Monto equivocado' }], paso2.datos);
+    expect(datos.cuentas.banco).toBe(500_000);
+    expect(datos.inversiones.creditos[0].saldo).toBe(500_000);
+    expect(datos.egresos[0].anulado).toBeDefined();
+    expect(totalesDelLog(datos.movlog).banco).toBe(datos.cuentas.banco);
+  });
+
+  it('el interés de una cuota no se puede anular suelto desde egresos', () => {
+    const paso1 = correr([recibir]);
+    const creditoId = paso1.datos.inversiones.creditos[0].id;
+    const paso2 = correr([cuota(creditoId, 55_000, 15_000)], paso1.datos);
+    const id = paso2.datos.egresos[0].id;
+    const { datos } = correr([{ tipo: 'anularEgreso', id, motivo: 'x' }], paso2.datos);
+    expect(datos.egresos[0].anulado).toBeUndefined();
+    expect(datos.cuentas.banco).toBe(445_000);
+  });
+
+  it('ajustar la deuda corrige el saldo sin mover la caja', () => {
+    const paso1 = correr([recibir]);
+    const creditoId = paso1.datos.inversiones.creditos[0].id;
+    const { datos } = correr([{ tipo: 'ajustarCredito', creditoId, nuevoSaldo: 480_000, motivo: 'Según resumen del banco' }], paso1.datos);
+    expect(datos.inversiones.creditos[0].saldo).toBe(480_000);
+    expect(datos.inversiones.creditos[0].ajustes).toHaveLength(1);
+    expect(datos.cuentas.banco).toBe(500_000);
+  });
+
+  it('no deja anular un crédito con cuotas vigentes', () => {
+    const paso1 = correr([recibir]);
+    const creditoId = paso1.datos.inversiones.creditos[0].id;
+    const paso2 = correr([cuota(creditoId, 40_000, 0)], paso1.datos);
+    const { datos } = correr([{ tipo: 'anularCredito', id: creditoId, motivo: 'x' }], paso2.datos);
+    expect(datos.inversiones.creditos[0].anulado).toBeUndefined();
+  });
+
+  it('un crédito sin cuotas se anula y saca la plata de la cuenta', () => {
+    const paso1 = correr([recibir]);
+    const creditoId = paso1.datos.inversiones.creditos[0].id;
+    const { datos } = correr([{ tipo: 'anularCredito', id: creditoId, motivo: 'Cargado dos veces' }], paso1.datos);
+    expect(datos.cuentas.banco).toBe(0);
+    expect(datos.inversiones.creditos[0].anulado?.motivo).toBe('Cargado dos veces');
+    expect(datos.inversiones.creditos[0].saldo).toBe(0);
+  });
+});
+
+describe('compra de activos', () => {
+  it('sale de caja pero no es un egreso', () => {
+    const { datos } = correr([{ tipo: 'compraActivo', nombre: 'Desmalezadora', monto: 300_000, cuenta: 'efectivo', fecha: '2026-10-09' }]);
+    expect(datos.cuentas.efectivo).toBe(-200_000);
+    expect(datos.egresos).toHaveLength(0);
   });
 });
 
@@ -363,6 +417,11 @@ describe('liquidación de sueldo', () => {
     expect(datos.cuentas.efectivo).toBe(45_000);
     expect(datos.egresos[0].monto).toBe(40_000);
     expect(datos.empleados[0].adelanto).toBe(0);
+
+    // Anular la liquidación devuelve la plata y vuelve a dejar el adelanto pendiente.
+    const anulada = correr([{ tipo: 'anularEgreso', id: datos.egresos[0].id, motivo: 'Bruto mal cargado' }], datos);
+    expect(anulada.datos.cuentas.efectivo).toBe(85_000);
+    expect(anulada.datos.empleados[0].adelanto).toBe(20_000);
   });
 });
 
