@@ -21,7 +21,22 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - name: Tipos
-        run: npm run typecheck
+        # Cada error sale como anotación con archivo y línea, visible desde la API pública.
+        run: |
+          npx tsc --noEmit -p tsconfig.app.json --pretty false > tsc.log || true
+          cat tsc.log
+          n=0
+          while IFS= read -r l; do
+            if [[ "$l" =~ ^(.+)\(([0-9]+),([0-9]+)\):\ error\ (TS[0-9]+):\ (.*)$ ]]; then
+              n=$((n+1))
+              if   [ $n -le 10 ]; then t=error
+              elif [ $n -le 20 ]; then t=warning
+              else t=notice; fi
+              echo "::$t file=frontend/${BASH_REMATCH[1]},line=${BASH_REMATCH[2]}::${BASH_REMATCH[4]} ${BASH_REMATCH[5]}"
+            fi
+          done < tsc.log
+          echo "Errores de tipos: $n"
+          [ $n -eq 0 ]
       - name: Tests
         run: npm test
       - name: Build
