@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '@/lib/api';
 import { csvEscape, downloadCsv, NOMBRES_CUENTA } from '@/lib/j2local';
+import { nombreCuenta } from '@/lib/j2reducer';
 import { money } from '@/lib/format';
 import { useJ2Local } from '@/context/J2LocalContext';
 import { useToast } from '@/context/ToastContext';
@@ -140,9 +141,9 @@ export function MovimientosPage() {
       concepto: (m: J2MovLog) => m.concepto,
       detalle: (m: J2MovLog) => m.detalle,
       monto: (m: J2MovLog) => m.monto,
-      cuenta: (m: J2MovLog) => NOMBRES_CUENTA[m.cuenta] || m.cuenta,
+      cuenta: (m: J2MovLog) => nombreCuenta(m.cuenta, j2.inversiones),
     }),
-    []
+    [j2.inversiones]
   );
 
   const om = useOrden<J2MovLog, ColMov>(movFiltrados, valoresMov, { campo: 'fecha', direccion: 'desc' });
@@ -278,7 +279,7 @@ export function MovimientosPage() {
     // Movimientos locales (movlog)
     const mov = csvRows([
       ['Fecha', 'Tipo', 'Concepto', 'Detalle', 'Monto', 'Cuenta'],
-      ...j2.movlog.map((m) => [m.fecha, m.tipo, m.concepto, m.detalle, m.monto, NOMBRES_CUENTA[m.cuenta] || m.cuenta]),
+      ...j2.movlog.map((m) => [m.fecha, m.tipo, m.concepto, m.detalle, m.monto, nombreCuenta(m.cuenta, j2.inversiones)]),
     ]);
     downloadCsv(`jardineria_movimientos_${fecha}.csv`, mov);
 
@@ -383,7 +384,7 @@ export function MovimientosPage() {
             valor: fMovCuenta,
             opciones: [
               { valor: 'todas', label: 'Todas' },
-              ...cuentasMov.map((c) => ({ valor: c, label: NOMBRES_CUENTA[c] || c })),
+              ...cuentasMov.map((c) => ({ valor: c, label: nombreCuenta(c, j2.inversiones) })),
             ],
             onCambio: setFMovCuenta,
           },
@@ -443,7 +444,7 @@ export function MovimientosPage() {
                     <td data-label="Monto" style={{ fontFamily: 'DM Mono,monospace', fontWeight: 600, color: m.monto >= 0 ? '#2e7d32' : 'var(--rojo)' }}>
                       {m.monto >= 0 ? '+' : ''}{money(m.monto)}
                     </td>
-                    <td data-label="Cuenta" style={{ fontSize: 12 }}>{NOMBRES_CUENTA[m.cuenta] || m.cuenta || '—'}</td>
+                    <td data-label="Cuenta" style={{ fontSize: 12 }}>{nombreCuenta(m.cuenta, j2.inversiones) || '—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -460,7 +461,7 @@ export function MovimientosPage() {
             `movimientos_${fecha}.csv`,
             csvRows([
               ['Fecha', 'Tipo', 'Concepto', 'Detalle', 'Monto', 'Cuenta'],
-              ...om.filas.map((m) => [m.fecha, m.tipo, m.concepto, m.detalle, m.monto, NOMBRES_CUENTA[m.cuenta] || m.cuenta]),
+              ...om.filas.map((m) => [m.fecha, m.tipo, m.concepto, m.detalle, m.monto, nombreCuenta(m.cuenta, j2.inversiones)]),
             ]),
             om.filas.length,
             'movimientos'

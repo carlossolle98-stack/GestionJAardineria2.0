@@ -33,8 +33,10 @@ export function ResumenPage() {
     .filter(Boolean)
     .join(' · ');
   const inv = j2.inversiones;
-  const totalUSD = (inv.usd?.cantidad || 0) * (inv.usd?.precio || 0);
-  const totalInv = (inv.cocos || 0) + (inv.servente || 0) + totalUSD;
+  const totalUSD = inv.usd.cantidad * inv.usd.precio;
+  const invActivas = inv.items.filter((i) => i.activa || i.saldo !== 0);
+  const totalInv = invActivas.reduce((s, i) => s + i.saldo, 0) + totalUSD;
+  const deudaCreditos = inv.creditos.reduce((s, x) => s + x.saldo, 0);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['resumen'],
@@ -144,7 +146,7 @@ export function ResumenPage() {
     deudaPendientes.length > 0
       ? deudaPendientes.map((d) => `${d.nombreCliente.split(' ')[0]} ${money(d.monto)}`).join(' · ')
       : 'Sin deudas pendientes';
-  const patrimonioTotal = cajaLiquidaTotal + totalInv + totalDeudaPendiente;
+  const patrimonioTotal = cajaLiquidaTotal + totalInv + totalDeudaPendiente - deudaCreditos;
   const meses = s.mesesHistoricos;
 
   const MESES_NUM: Record<string, string> = {
@@ -243,7 +245,7 @@ export function ResumenPage() {
           <div className="card-label">Inversiones</div>
           <div className="card-valor">{money(totalInv)}</div>
           <div className="card-sub">
-            COCOS {money(inv.cocos || 0)} · Servente {money(inv.servente || 0)} · USD {money(totalUSD)}
+            {[...invActivas.map((i) => `${i.nombre} ${money(i.saldo)}`), `USD ${money(totalUSD)}`].join(' · ')}
           </div>
         </div>
         <div className="card azul">
@@ -260,6 +262,7 @@ export function ResumenPage() {
           <div className="card-valor">{money(patrimonioTotal)}</div>
           <div className="card-sub">
             Caja {money(cajaLiquidaTotal)} · Inv. {money(totalInv)} · C×C {money(totalDeudaPendiente)}
+            {deudaCreditos > 0 && ` · Créditos −${money(deudaCreditos)}`}
           </div>
         </div>
       </div>

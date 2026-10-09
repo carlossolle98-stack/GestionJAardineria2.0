@@ -23,7 +23,7 @@ export function InventarioPage() {
   const qc = useQueryClient();
   const { toast } = useToast();
 
-  const { data = [], isLoading } = useQuery({
+  const { data = [], isLoading, error: errorCarga } = useQuery({
     queryKey: ['inventario'],
     queryFn: () => getJson<ItemInventario[]>('/api/inventario'),
   });
@@ -180,6 +180,10 @@ export function InventarioPage() {
           + Nuevo ítem
         </button>
       </div>
+
+      {errorCarga && (
+        <div className="alerta urgente" role="alert">No se pudo cargar el inventario: {errorCarga.message}</div>
+      )}
 
       {bajoStock.length > 0 && (
         <div className="alerta urgente">

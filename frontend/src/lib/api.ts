@@ -41,16 +41,25 @@ async function armarError(res: Response) {
     code = j.code;
     datos = j;
   } catch {
-    /* respuesta sin cuerpo JSON */
+    // Sin cuerpo JSON: un 404 así es una ruta que el servidor publicado todavía no tiene.
+    if (res.status === 404) {
+      mensaje = 'El servidor todavía no tiene esta función publicada. Hay que actualizar el backend.';
+    }
   }
   return new ApiError(mensaje, res.status, code, datos);
 }
 
+const TIEMPO_MAXIMO_MS = 20_000;
+
 async function pedir<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
+  // Sin tope, un pedido colgado dejaba el botón en "Guardando…" sin ningún aviso.
+  const control = new AbortController();
+  const tope = setTimeout(() => control.abort(), TIEMPO_MAXIMO_MS);
   try {
     res = await fetch(`${base()}${path}`, {
       ...init,
+      signal: init?.signal ?? control.signal,
       // Imprescindible: la sesión viaja en una cookie httpOnly.
       credentials: 'include',
       headers: {
@@ -59,7 +68,12 @@ async function pedir<T>(path: string, init?: RequestInit): Promise<T> {
       },
     });
   } catch {
+    if (control.signal.aborted) {
+      throw new ApiError('El servidor no respondió a tiempo. Probá de nuevo en un rato.', 0, 'SIN_RESPUESTA');
+    }
     throw new ApiError('No se pudo conectar con el servidor', 0, 'SIN_RED');
+  } finally {
+    clearTimeout(tope);
   }
 
   if (res.status === 401) {

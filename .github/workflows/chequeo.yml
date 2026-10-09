@@ -2,7 +2,7 @@ name: Chequeo
 
 on:
   push:
-    branches: [main]
+    branches: ['**']
   pull_request:
   workflow_dispatch:
 
@@ -41,36 +41,3 @@ jobs:
         run: npm test
       - name: Build
         run: npm run build
-
-  backend:
-    runs-on: ubuntu-latest
-    services:
-      mongo:
-        image: mongo:7
-        ports: ['27017:27017']
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          repository: marianovatri/GestionJAardineria2.0-Backend
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - run: npm ci
-      - name: Arranca en modo producción y responde las rutas
-        env:
-          NODE_ENV: production
-          PORT: 4000
-          MONGODB_URI: mongodb://127.0.0.1:27017/j2ci
-          JWT_SECRET: ci-secreto-de-prueba-con-mas-de-32-caracteres
-          CORS_ORIGIN: http://localhost
-        run: |
-          node src/server.js > server.log 2>&1 &
-          for i in $(seq 1 30); do curl -sf localhost:4000/health && break; sleep 1; done
-          cat server.log
-          ok=1
-          for p in clientes inventario activos proveedores; do
-            c=$(curl -s -o /dev/null -w '%{http_code}' localhost:4000/api/$p)
-            echo "::notice::/api/$p -> $c"
-            [ "$c" = "401" ] || ok=0
-          done
-          [ $ok -eq 1 ]

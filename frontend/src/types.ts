@@ -116,10 +116,35 @@ export type J2ListaEspera = {
 
 export type J2Cuentas = { mp: number; banco: number; efectivo: number };
 
+export type J2Inversion = { id: string; nombre: string; saldo: number; activa: boolean };
+
+/** Plata prestada por un banco o financiera: entra a caja pero es deuda, no ingreso. */
+export type J2Credito = {
+  id: string;
+  fecha: string;
+  entidad: string;
+  monto: number;
+  saldo: number;
+  cuenta: string;
+  nota?: string;
+};
+
+/** Aporte o retiro de un socio: mueve caja pero no es ingreso ni gasto del negocio. */
+export type J2MovCapital = {
+  id: string;
+  fecha: string;
+  tipo: 'aporte' | 'retiro';
+  socio: string;
+  monto: number;
+  cuenta: string;
+  nota?: string;
+};
+
 export type J2Inversiones = {
-  cocos: number;
-  servente: number;
+  items: J2Inversion[];
   usd: { cantidad: number; precio: number };
+  creditos: J2Credito[];
+  capital: J2MovCapital[];
 };
 
 export type J2Ingreso = {

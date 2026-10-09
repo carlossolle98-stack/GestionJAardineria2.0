@@ -55,7 +55,7 @@ export function ActivosPage() {
   const qc = useQueryClient();
   const { toast } = useToast();
 
-  const { data = [], isLoading } = useQuery({
+  const { data = [], isLoading, error: errorCarga } = useQuery({
     queryKey: ['activos'],
     queryFn: () => getJson<Activo[]>('/api/activos'),
   });
@@ -171,6 +171,7 @@ export function ActivosPage() {
   const pctDepTotal = totalCompra > 0 ? Math.round(((totalCompra - totalLibros) / totalCompra) * 100) : 0;
 
   function abrirEdicion(a: Activo) {
+    editMut.reset();
     setEditA(a);
     setENombre(a.nombre);
     setECat(a.categoria);
@@ -189,10 +190,14 @@ export function ActivosPage() {
         <div className="section-title">
           Activos fijos <small>Herramientas, vehículos y equipos</small>
         </div>
-        <button type="button" className="btn" onClick={() => setShowNew(true)}>
+        <button type="button" className="btn" onClick={() => { addMut.reset(); setShowNew(true); }}>
           + Nuevo activo
         </button>
       </div>
+
+      {errorCarga && (
+        <div className="alerta urgente" role="alert">No se pudieron cargar los activos: {errorCarga.message}</div>
+      )}
 
       {/* Cards resumen */}
       {data.length > 0 && (
@@ -265,7 +270,7 @@ export function ActivosPage() {
           titulo="Todavía no registraste activos"
           texto="Cargá las herramientas, vehículos y equipos para llevar el control de su valor y depreciación."
           accion={
-            <button type="button" className="btn" onClick={() => setShowNew(true)}>
+            <button type="button" className="btn" onClick={() => { addMut.reset(); setShowNew(true); }}>
               + Nuevo activo
             </button>
           }
@@ -389,6 +394,9 @@ export function ActivosPage() {
               <label htmlFor="act-notas">Notas</label>
               <input id="act-notas" value={nNotas} onChange={(e) => setNNotas(e.target.value)} placeholder="Ej: comprado en Ferreria López, modelo 2023" />
             </div>
+            {addMut.error && (
+              <div className="alerta urgente" role="alert">No se pudo guardar: {addMut.error.message}</div>
+            )}
             <ModalAcciones onCancelar={() => setShowNew(false)} textoConfirmar="Registrar activo" enviando={addMut.isPending} />
           </form>
         </Modal>
@@ -438,6 +446,9 @@ export function ActivosPage() {
               <label htmlFor="eact-notas">Notas</label>
               <input id="eact-notas" value={eNotas} onChange={(e) => setENotas(e.target.value)} />
             </div>
+            {editMut.error && (
+              <div className="alerta urgente" role="alert">No se pudo guardar: {editMut.error.message}</div>
+            )}
             <ModalAcciones onCancelar={() => setEditA(null)} textoConfirmar="Guardar cambios" enviando={editMut.isPending} />
           </form>
         </Modal>

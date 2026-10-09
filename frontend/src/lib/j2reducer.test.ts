@@ -1,9 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { j2Reducer, totalesDelLog, type J2Accion, type J2Datos, type J2Estado } from './j2reducer';
+import {
+  j2Reducer,
+  normalizarInversiones,
+  totalesDelLog,
+  type J2Accion,
+  type J2Datos,
+  type J2Estado,
+} from './j2reducer';
 
 const VACIO: J2Datos = {
   cuentas: { mp: 0, banco: 0, efectivo: 100_000 },
-  inversiones: { cocos: 0, servente: 0, usd: { cantidad: 0, precio: 0 } },
+  inversiones: {
+    items: [{ id: 'inv_fci', nombre: 'Fondo MP', saldo: 0, activa: true }],
+    usd: { cantidad: 0, precio: 0 },
+    creditos: [],
+    capital: [],
+  },
   egresos: [],
   ingresos: [],
   transferencias: [],
@@ -237,6 +249,120 @@ describe('dólares', () => {
     );
     expect(datos.cuentas.efectivo).toBe(100_000);
     expect(datos.inversiones.usd.cantidad).toBe(0);
+  });
+});
+
+describe('inversiones', () => {
+  it('invertir es una transferencia: sale de caja y entra a la inversión', () => {
+    const { datos } = correr([
+      { tipo: 'transferencia', payload: { de: 'efectivo', para: 'inv_fci', monto: 30_000, fecha: '2026-10-09', nota: '' } },
+    ]);
+    expect(datos.cuentas.efectivo).toBe(70_000);
+    expect(datos.inversiones.items[0].saldo).toBe(30_000);
+  });
+
+  it('el rendimiento suma a la inversión sin tocar la caja', () => {
+    const { datos } = correr([{ tipo: 'rendimientoInversion', id: 'inv_fci', monto: 1_200, fecha: '2026-10-09' }]);
+    expect(datos.inversiones.items[0].saldo).toBe(1_200);
+    expect(datos.cuentas.efectivo).toBe(100_000);
+  });
+
+  it('no deja archivar una inversión con plata adentro', () => {
+    const paso1 = correr([{ tipo: 'rendimientoInversion', id: 'inv_fci', monto: 500, fecha: '2026-10-09' }]);
+    const { datos } = correr([{ tipo: 'toggleInversion', id: 'inv_fci' }], paso1.datos);
+    expect(datos.inversiones.items[0].activa).toBe(true);
+  });
+
+  it('convierte el formato viejo (cocos/servente) sin perder saldos', () => {
+    const n = normalizarInversiones({ cocos: 250_000, servente: 0, usd: { cantidad: 10, precio: 1_400 } });
+    expect(n.items.map((i) => [i.id, i.saldo])).toEqual([['cocos', 250_000], ['servente', 0]]);
+    expect(n.usd.cantidad).toBe(10);
+    expect(n.creditos).toEqual([]);
+  });
+});
+
+describe('capital del socio', () => {
+  it('el aporte entra a caja pero no cuenta como ingreso', () => {
+    const { datos } = correr([
+      { tipo: 'movCapital', payload: { fecha: '2026-10-09', tipo: 'aporte', socio: 'Carlos', monto: 200_000, cuenta: 'banco' } },
+    ]);
+    expect(datos.cuentas.banco).toBe(200_000);
+    expect(datos.ingresos).toHaveLength(0);
+    expect(datos.inversiones.capital).toHaveLength(1);
+  });
+
+  it('el retiro puede salir de una inversión y no cuenta como gasto', () => {
+    const paso1 = correr([{ tipo: 'rendimientoInversion', id: 'inv_fci', monto: 50_000, fecha: '2026-10-09' }]);
+    const { datos } = correr(
+      [{ tipo: 'movCapital', payload: { fecha: '2026-10-09', tipo: 'retiro', socio: 'Carlos', monto: 50_000, cuenta: 'inv_fci' } }],
+      paso1.datos
+    );
+    expect(datos.inversiones.items[0].saldo).toBe(0);
+    expect(datos.egresos).toHaveLength(0);
+  });
+
+  it('anular devuelve la caja al saldo anterior', () => {
+    const paso1 = correr([
+      { tipo: 'movCapital', payload: { fecha: '2026-10-09', tipo: 'aporte', socio: 'Carlos', monto: 200_000, cuenta: 'banco' } },
+    ]);
+    const id = paso1.datos.inversiones.capital[0].id;
+    const { datos } = correr([{ tipo: 'anularCapital', id }], paso1.datos);
+    expect(datos.cuentas.banco).toBe(0);
+    expect(datos.inversiones.capital).toHaveLength(0);
+  });
+});
+
+describe('créditos', () => {
+  const recibir: J2Accion = {
+    tipo: 'recibirCredito',
+    payload: { fecha: '2026-10-09', entidad: 'Banco Nación', monto: 500_000, cuenta: 'banco' },
+  };
+
+  it('la plata del crédito entra a caja y queda como deuda, no como ingreso', () => {
+    const { datos } = correr([recibir]);
+    expect(datos.cuentas.banco).toBe(500_000);
+    expect(datos.inversiones.creditos[0].saldo).toBe(500_000);
+    expect(datos.ingresos).toHaveLength(0);
+  });
+
+  it('la cuota baja la deuda por el capital y manda sólo el interés a egresos', () => {
+    const paso1 = correr([recibir]);
+    const creditoId = paso1.datos.inversiones.creditos[0].id;
+    const { datos } = correr(
+      [{ tipo: 'pagarCuotaCredito', creditoId, capital: 40_000, interes: 15_000, cuenta: 'banco', fecha: '2026-11-09' }],
+      paso1.datos
+    );
+    expect(datos.cuentas.banco).toBe(445_000);
+    expect(datos.inversiones.creditos[0].saldo).toBe(460_000);
+    expect(datos.egresos).toHaveLength(1);
+    expect(datos.egresos[0].monto).toBe(15_000);
+    expect(totalesDelLog(datos.movlog).banco).toBe(datos.cuentas.banco);
+  });
+
+  it('no deja anular un crédito que ya tiene cuotas pagas', () => {
+    const paso1 = correr([recibir]);
+    const creditoId = paso1.datos.inversiones.creditos[0].id;
+    const paso2 = correr(
+      [{ tipo: 'pagarCuotaCredito', creditoId, capital: 40_000, interes: 0, cuenta: 'banco', fecha: '2026-11-09' }],
+      paso1.datos
+    );
+    const { datos } = correr([{ tipo: 'anularCredito', id: creditoId }], paso2.datos);
+    expect(datos.inversiones.creditos).toHaveLength(1);
+  });
+});
+
+describe('liquidación de sueldo', () => {
+  it('egresa bruto menos adelanto; la mutual no se descuenta dos veces', () => {
+    const conAdelanto = correr([{ tipo: 'registrarAdelanto', empleadoId: 'emp_1', monto: 20_000, cuenta: 'efectivo' }]);
+    const conMutual = correr([{ tipo: 'registrarMutual', empleado: 'Carlos', monto: 5_000, cuenta: 'efectivo' }], conAdelanto.datos);
+    const { datos } = correr(
+      [{ tipo: 'liquidarSueldo', empleadoId: 'emp_1', bruto: 60_000, mutual: 5_000, adelanto: 20_000, cuenta: 'efectivo', fecha: '2026-10-09' }],
+      conMutual.datos
+    );
+    // 100.000 − 20.000 adelanto + 5.000 mutual − 40.000 liquidación = 45.000 (salió en total bruto − mutual)
+    expect(datos.cuentas.efectivo).toBe(45_000);
+    expect(datos.egresos[0].monto).toBe(40_000);
+    expect(datos.empleados[0].adelanto).toBe(0);
   });
 });
 

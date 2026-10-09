@@ -15,11 +15,20 @@ import {
   j2Reducer,
   medioACuenta,
   nombreCuenta,
+  normalizarInversiones,
   totalesDelLog,
   type J2Accion,
   type J2Datos,
 } from '@/lib/j2reducer';
-import type { J2Cuentas, J2DeudaCliente, J2EgresoTipo, J2Ingreso, J2ListaEspera } from '@/types';
+import type {
+  J2Credito,
+  J2Cuentas,
+  J2DeudaCliente,
+  J2EgresoTipo,
+  J2Ingreso,
+  J2ListaEspera,
+  J2MovCapital,
+} from '@/types';
 import {
   CUENTAS_DEFAULT,
   EMPLEADOS_DEFAULT,
@@ -84,13 +93,26 @@ type J2Ctx = J2Datos & {
   comprarUsd: (cantidad: number, precio: number, cuenta: keyof J2Cuentas, motivo: string) => void;
   venderUsd: (cantidad: number, precio: number, cuenta: keyof J2Cuentas, motivo: string) => void;
   actualizarPrecioUsd: (precio: number) => void;
-  movInversion: (cual: 'cocos' | 'servente', tipo: 'entrada' | 'salida', monto: number) => void;
+  addInversion: (nombre: string) => void;
+  toggleInversion: (id: string) => void;
+  rendimientoInversion: (id: string, monto: number, fecha: string) => void;
+  movCapital: (p: Omit<J2MovCapital, 'id'>) => void;
+  anularCapital: (id: string) => void;
+  recibirCredito: (p: Omit<J2Credito, 'id' | 'saldo'>) => void;
+  anularCredito: (id: string) => void;
+  pagarCuotaCredito: (p: {
+    creditoId: string;
+    capital: number;
+    interes: number;
+    cuenta: keyof J2Cuentas;
+    fecha: string;
+  }) => void;
   ingresarPorMedio: (medioEtiqueta: string, monto: number) => void;
   addEmpleado: (nombre: string) => void;
   toggleEmpleado: (id: string) => void;
   removeEmpleado: (id: string) => void;
   registrarMutual: (empNombre: string, monto: number, cuenta: keyof J2Cuentas) => void;
-  registrarAguinaldo: (empId: string, monto: number) => void;
+  registrarAguinaldo: (empId: string, monto: number, destino: string) => void;
   ajustarInteresesAguinaldo: (empId: string, intereses: number) => void;
   registrarAdelanto: (empId: string, monto: number, cuenta: keyof J2Cuentas) => void;
   liquidarSueldo: (p: {
@@ -126,10 +148,11 @@ const RETARDO_GUARDADO = 800;
 
 export function J2LocalProvider({ children }: { children: ReactNode }) {
   const { usuario } = useAuth();
-  const [estado, dispatch] = useReducer(j2Reducer, {
+  const [estado, dispatch] = useReducer(j2Reducer, null, () => {
     // La caché local sólo acelera el primer pintado; el servidor manda.
-    datos: { ...DATOS_INICIALES, ...leerCache() },
-    pasado: [],
+    const datos = { ...DATOS_INICIALES, ...leerCache() };
+    datos.inversiones = normalizarInversiones(datos.inversiones);
+    return { datos, pasado: [] };
   });
   const { datos } = estado;
 
@@ -310,8 +333,22 @@ export function J2LocalProvider({ children }: { children: ReactNode }) {
       venderUsd: (cantidad: number, precio: number, cuenta: keyof J2Cuentas, motivo: string) =>
         envia({ tipo: 'usd', operacion: 'venta', cantidad, precio, cuenta, motivo }),
       actualizarPrecioUsd: (precio: number) => envia({ tipo: 'precioUsd', precio }),
-      movInversion: (cual: 'cocos' | 'servente', tipo: 'entrada' | 'salida', monto: number) =>
-        envia({ tipo: 'movInversion', cual, operacion: tipo, monto }),
+      addInversion: (nombre: string) => envia({ tipo: 'addInversion', nombre }),
+      toggleInversion: (id: string) => envia({ tipo: 'toggleInversion', id }),
+      rendimientoInversion: (id: string, monto: number, fecha: string) =>
+        envia({ tipo: 'rendimientoInversion', id, monto, fecha }),
+      movCapital: (p: Omit<J2MovCapital, 'id'>) => envia({ tipo: 'movCapital', payload: p }),
+      anularCapital: (id: string) => envia({ tipo: 'anularCapital', id }),
+      recibirCredito: (p: Omit<J2Credito, 'id' | 'saldo'>) =>
+        envia({ tipo: 'recibirCredito', payload: p }),
+      anularCredito: (id: string) => envia({ tipo: 'anularCredito', id }),
+      pagarCuotaCredito: (p: {
+        creditoId: string;
+        capital: number;
+        interes: number;
+        cuenta: keyof J2Cuentas;
+        fecha: string;
+      }) => envia({ tipo: 'pagarCuotaCredito', ...p }),
       ingresarPorMedio: (medioEtiqueta: string, monto: number) =>
         envia({
           tipo: 'ingresarPorMedio',
@@ -324,8 +361,8 @@ export function J2LocalProvider({ children }: { children: ReactNode }) {
       removeEmpleado: (id: string) => envia({ tipo: 'removeEmpleado', id }),
       registrarMutual: (empNombre: string, monto: number, cuenta: keyof J2Cuentas) =>
         envia({ tipo: 'registrarMutual', empleado: empNombre, monto, cuenta }),
-      registrarAguinaldo: (empId: string, monto: number) =>
-        envia({ tipo: 'registrarAguinaldo', empleadoId: empId, monto }),
+      registrarAguinaldo: (empId: string, monto: number, destino: string) =>
+        envia({ tipo: 'registrarAguinaldo', empleadoId: empId, monto, destino }),
       ajustarInteresesAguinaldo: (empId: string, intereses: number) =>
         envia({ tipo: 'interesesAguinaldo', empleadoId: empId, intereses }),
       registrarAdelanto: (empId: string, monto: number, cuenta: keyof J2Cuentas) =>

@@ -10,34 +10,34 @@ type Tab = { to: string; label: string; icono: string; end?: boolean; permiso: P
 /** La navegación se agrupa por intención, no en una fila plana de doce tabs. */
 const GRUPOS: { titulo: string; tabs: Tab[] }[] = [
   {
+    titulo: 'Dinero',
+    tabs: [
+      { to: '/cargar', label: 'Ingresos', icono: '➕', permiso: 'cargar' },
+      { to: '/egresos', label: 'Egresos', icono: '💸', permiso: 'egresos' },
+      { to: '/cobros', label: 'Cobros', icono: '💰', permiso: 'cobros' },
+      { to: '/finanzas', label: 'Finanzas', icono: '🏦', permiso: 'finanzas' },
+      { to: '/movimientos', label: 'Movimientos', icono: '📥', permiso: 'movimientos' },
+      { to: '/', label: 'Resumen', icono: '📊', end: true, permiso: 'resumen' },
+      { to: '/graficos', label: 'Gráficos', icono: '📈', permiso: 'resumen' },
+    ],
+  },
+  {
     titulo: 'Operación',
     tabs: [
       { to: '/agenda', label: 'Agenda', icono: '📅', permiso: 'agenda' },
-      { to: '/clientes', label: 'Clientes', icono: '👥', permiso: 'clientes' },
-      { to: '/prospectos', label: 'Prospectos', icono: '🌱', permiso: 'prospectos' },
       { to: '/espera', label: 'En espera', icono: '⏳', permiso: 'espera' },
-      { to: '/cargar', label: 'Ingresos', icono: '➕', permiso: 'cargar' },
+      { to: '/prospectos', label: 'Prospectos', icono: '🌱', permiso: 'prospectos' },
+      { to: '/clientes', label: 'Clientes', icono: '👥', permiso: 'clientes' },
+      { to: '/proveedores', label: 'Proveedores', icono: '🏪', permiso: 'egresos' },
       { to: '/whatsapp', label: 'WhatsApp', icono: '💬', permiso: 'whatsapp' },
     ],
   },
   {
-    titulo: 'Dinero',
+    titulo: 'Recursos',
     tabs: [
-      { to: '/', label: 'Resumen', icono: '📊', end: true, permiso: 'resumen' },
-      { to: '/graficos', label: 'Gráficos', icono: '📈', permiso: 'resumen' },
-      { to: '/cobros', label: 'Cobros', icono: '💰', permiso: 'cobros' },
-      { to: '/egresos', label: 'Egresos', icono: '💸', permiso: 'egresos' },
-      { to: '/movimientos', label: 'Movimientos', icono: '📥', permiso: 'movimientos' },
-      { to: '/finanzas', label: 'Finanzas', icono: '🏦', permiso: 'finanzas' },
       { to: '/empleados', label: 'Empleados', icono: '👷', permiso: 'empleados' },
-    ],
-  },
-  {
-    titulo: 'Stock',
-    tabs: [
-      { to: '/inventario', label: 'Inventario', icono: '📦', permiso: 'inventario' },
-      { to: '/proveedores', label: 'Proveedores', icono: '🏪', permiso: 'egresos' },
       { to: '/activos', label: 'Activos', icono: '🔧', permiso: 'finanzas' },
+      { to: '/inventario', label: 'Inventario', icono: '📦', permiso: 'inventario' },
     ],
   },
   {

@@ -19,7 +19,7 @@ const TITULOS: Record<Operacion, { titulo: string; descripcion: string; confirma
   },
   aguinaldo: {
     titulo: 'Registrar descuento de aguinaldo',
-    descripcion: 'Se acumula en la cuenta de COCOS hasta que se paga.',
+    descripcion: 'Se guarda en la inversión que elijas hasta que se paga.',
     confirmar: 'Registrar aguinaldo',
   },
   intereses: {
@@ -82,6 +82,8 @@ function FichaEmpleado({ emp }: { emp: J2Empleado }) {
   const [operacion, setOperacion] = useState<Operacion | null>(null);
   const [monto, setMonto] = useState('');
   const [cuenta, setCuenta] = useState<'mp' | 'banco' | 'efectivo'>('efectivo');
+  const inversionesActivas = j2.inversiones.items.filter((i) => i.activa);
+  const [destino, setDestino] = useState(inversionesActivas[0]?.id ?? '');
 
   // Estado de liquidación
   const [lBruto, setLBruto] = useState('');
@@ -133,10 +135,16 @@ function FichaEmpleado({ emp }: { emp: J2Empleado }) {
         j2.registrarMutual(emp.nombre, m, cuenta);
         toast(`Mutual de ${emp.nombre} registrada · ${money(m)} a caja`, { tono: 'exito' });
         break;
-      case 'aguinaldo':
-        j2.registrarAguinaldo(emp.id, m);
-        toast(`Aguinaldo de ${emp.nombre} · ${money(m)}`, { tono: 'exito' });
+      case 'aguinaldo': {
+        const dest = inversionesActivas.find((i) => i.id === destino) ?? inversionesActivas[0];
+        if (!dest) {
+          toast('Primero creá una inversión en Finanzas para guardar el aguinaldo', { tono: 'error' });
+          return;
+        }
+        j2.registrarAguinaldo(emp.id, m, dest.id);
+        toast(`Aguinaldo de ${emp.nombre} · ${money(m)} a ${dest.nombre}`, { tono: 'exito' });
         break;
+      }
       case 'adelanto':
         j2.registrarAdelanto(emp.id, m, cuenta);
         toast(`Adelanto entregado a ${emp.nombre} · ${money(m)}`, { tono: 'exito' });
@@ -287,7 +295,7 @@ function FichaEmpleado({ emp }: { emp: J2Empleado }) {
         </div>
 
         <div className="card azul" style={{ padding: 'var(--sp-4)' }}>
-          <div className="card-label">🏦 Aguinaldo en COCOS</div>
+          <div className="card-label">🏦 Aguinaldo acumulado</div>
           <div className="card-valor" style={{ fontSize: 20 }}>
             {money(emp.aguinaldo || 0)}
           </div>
@@ -333,6 +341,25 @@ function FichaEmpleado({ emp }: { emp: J2Empleado }) {
                 <p className="form-ayuda">Saldo actual: {money(emp.aguinaldo || 0)}</p>
               )}
             </div>
+
+            {operacion === 'aguinaldo' && (
+              <div className="form-group">
+                <label htmlFor={`emp-destino-${emp.id}`}>Se guarda en</label>
+                {inversionesActivas.length === 0 ? (
+                  <p className="form-ayuda">No hay inversiones activas. Creá una en Finanzas → Inversiones.</p>
+                ) : (
+                  <select
+                    id={`emp-destino-${emp.id}`}
+                    value={inversionesActivas.some((i) => i.id === destino) ? destino : inversionesActivas[0].id}
+                    onChange={(e) => setDestino(e.target.value)}
+                  >
+                    {inversionesActivas.map((i) => (
+                      <option key={i.id} value={i.id}>{i.nombre}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
 
             {(operacion === 'mutual' || operacion === 'adelanto') && (
               <div className="form-group">

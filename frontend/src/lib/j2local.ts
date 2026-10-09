@@ -12,9 +12,10 @@ export const EMPLEADOS_DEFAULT: J2Empleado[] = [
  */
 export const CUENTAS_DEFAULT: J2Cuentas = { mp: 0, banco: 0, efectivo: 0 };
 export const INVERSIONES_DEFAULT: J2Inversiones = {
-  cocos: 0,
-  servente: 0,
+  items: [],
   usd: { cantidad: 0, precio: 0 },
+  creditos: [],
+  capital: [],
 };
 
 export const NOMBRES_CUENTA: Record<string, string> = {
