@@ -188,13 +188,11 @@ export function ResumenPage() {
       j2.resetLocalData();
 
       // 2. Actualizar tabla histórica: marcar mes anterior como cerrado y agregar el nuevo
-      const historialCerrado = (s.mesesHistoricos ?? []).map((m: { estado: string }) =>
+      const historialCerrado = (s.mesesHistoricos ?? []).map((m) =>
         m.estado === 'En curso' ? { ...m, estado: 'Cerrado' } : m
       );
       const nuevoMesEntry = { mes: mesActual, anio: anioActual, ingresos: 0, egresos: 0, estado: 'En curso' };
-      const yaExiste = historialCerrado.some(
-        (m: { mes: string; anio: number }) => m.mes === mesActual && m.anio === anioActual
-      );
+      const yaExiste = historialCerrado.some((m) => m.mes === mesActual && m.anio === anioActual);
       await sendJson('/api/settings', 'PUT', {
         ...s,
         mesesHistoricos: yaExiste ? historialCerrado : [...historialCerrado, nuevoMesEntry],
