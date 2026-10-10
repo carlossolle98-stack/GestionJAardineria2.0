@@ -34,16 +34,27 @@ export function Modal({
   cerrarAlTocarFondo?: boolean;
 }) {
   const caja = useRef<HTMLDivElement>(null);
+  const contenido = useRef<HTMLDivElement>(null);
   const focoPrevio = useRef<HTMLElement | null>(null);
+  // Las pantallas pasan `onCerrar` como función nueva en cada render. Si el efecto
+  // dependiera de ella, se re-ejecutaba con cada tecla y mandaba el foco a la cruz.
+  const cerrarRef = useRef(onCerrar);
+  cerrarRef.current = onCerrar;
 
   useEffect(() => {
     focoPrevio.current = document.activeElement as HTMLElement;
-    caja.current?.querySelector<HTMLElement>(FOCUSABLES)?.focus();
+    const yaEnfocado = caja.current?.contains(document.activeElement);
+    if (!yaEnfocado) {
+      const primerCampo =
+        contenido.current?.querySelector<HTMLElement>(FOCUSABLES) ??
+        caja.current?.querySelector<HTMLElement>(FOCUSABLES);
+      primerCampo?.focus();
+    }
 
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') {
         e.stopPropagation();
-        onCerrar();
+        cerrarRef.current();
         return;
       }
       if (e.key !== 'Tab' || !caja.current) return;
@@ -71,7 +82,7 @@ export function Modal({
       document.body.style.overflow = overflowPrevio;
       focoPrevio.current?.focus();
     };
-  }, [onCerrar]);
+  }, []);
 
   return (
     <div
@@ -97,7 +108,9 @@ export function Modal({
             ✕
           </button>
         </div>
-        {children}
+        <div ref={contenido} style={{ display: 'contents' }}>
+          {children}
+        </div>
       </div>
     </div>
   );
