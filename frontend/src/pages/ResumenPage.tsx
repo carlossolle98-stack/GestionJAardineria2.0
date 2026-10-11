@@ -38,6 +38,9 @@ export function ResumenPage() {
   const invActivas = inv.items.filter((i) => i.activa || i.saldo !== 0);
   const totalInv = invActivas.reduce((s, i) => s + i.saldo, 0) + totalUSD;
   const deudaCreditos = inv.creditos.filter((x) => !x.anulado).reduce((s, x) => s + x.saldo, 0);
+  const deudaAguinaldos = j2.empleados
+    .filter((e) => e.modalidad === 'sinDescuentos')
+    .reduce((s, e) => s + Math.max(0, e.aguinaldoDevengado || 0), 0);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['resumen'],
@@ -157,7 +160,8 @@ export function ResumenPage() {
       ? deudaPendientes.map((d) => `${d.nombreCliente.split(' ')[0]} ${money(d.monto)}`).join(' · ')
       : 'Sin deudas pendientes';
   const totalActivos = cajaLiquidaTotal + totalInv + totalDeudaPendiente + totalBienes;
-  const patrimonioTotal = totalActivos - deudaCreditos;
+  const totalDeudas = deudaCreditos + deudaAguinaldos;
+  const patrimonioTotal = totalActivos - totalDeudas;
   const meses = s.mesesHistoricos;
 
   const MESES_NUM: Record<string, string> = {
@@ -272,7 +276,7 @@ export function ResumenPage() {
           <div className="card-label">Patrimonio neto</div>
           <div className="card-valor">{money(patrimonioTotal)}</div>
           <div className="card-sub">
-            Tiene {money(totalActivos)} · Debe {money(deudaCreditos)}
+            Tiene {money(Math.round(totalActivos))} · Debe {money(totalDeudas)}
           </div>
         </div>
       </div>
@@ -296,6 +300,9 @@ export function ResumenPage() {
               </tr>
               <tr style={{ fontWeight: 700 }}><td>Total activos</td><td style={{ textAlign: 'right', fontFamily: 'var(--fuente-mono)' }}>{money(Math.round(totalActivos))}</td></tr>
               <tr><td>Menos: deuda por créditos</td><td style={{ textAlign: 'right', fontFamily: 'var(--fuente-mono)', color: 'var(--rojo)' }}>−{money(deudaCreditos)}</td></tr>
+              {deudaAguinaldos > 0 && (
+                <tr><td>Menos: aguinaldos a pagar</td><td style={{ textAlign: 'right', fontFamily: 'var(--fuente-mono)', color: 'var(--rojo)' }}>−{money(deudaAguinaldos)}</td></tr>
+              )}
               <tr style={{ fontWeight: 700 }}><td>Patrimonio neto</td><td style={{ textAlign: 'right', fontFamily: 'var(--fuente-mono)' }}>{money(Math.round(patrimonioTotal))}</td></tr>
             </tbody>
           </table>

@@ -405,23 +405,128 @@ describe('compra de activos', () => {
   });
 });
 
-describe('liquidación de sueldo', () => {
-  it('egresa bruto menos adelanto; la mutual no se descuenta dos veces', () => {
-    const conAdelanto = correr([{ tipo: 'registrarAdelanto', empleadoId: 'emp_1', monto: 20_000, cuenta: 'efectivo' }]);
-    const conMutual = correr([{ tipo: 'registrarMutual', empleado: 'Carlos', monto: 5_000, cuenta: 'efectivo' }], conAdelanto.datos);
+describe('egresos desde dos cuentas', () => {
+  it('descuenta de cada cuenta lo suyo y queda un solo registro', () => {
+    const inicial: J2Datos = { ...VACIO, cuentas: { mp: 0, banco: 50_000, efectivo: 100_000 } };
     const { datos } = correr(
-      [{ tipo: 'liquidarSueldo', empleadoId: 'emp_1', bruto: 60_000, mutual: 5_000, adelanto: 20_000, cuenta: 'efectivo', fecha: '2026-10-09' }],
-      conMutual.datos
+      [{
+        tipo: 'addEgreso',
+        payload: {
+          fecha: '2026-10-10', tipo: 'varios', categoria: 'Nafta', concepto: '', monto: 80_000, cuenta: 'banco',
+          partes: [{ cuenta: 'banco', monto: 50_000 }, { cuenta: 'efectivo', monto: 30_000 }],
+        },
+      }],
+      inicial
     );
-    // 100.000 − 20.000 adelanto + 5.000 mutual − 40.000 liquidación = 45.000 (salió en total bruto − mutual)
-    expect(datos.cuentas.efectivo).toBe(45_000);
-    expect(datos.egresos[0].monto).toBe(40_000);
-    expect(datos.empleados[0].adelanto).toBe(0);
+    expect(datos.egresos).toHaveLength(1);
+    expect(datos.cuentas.banco).toBe(0);
+    expect(datos.cuentas.efectivo).toBe(70_000);
 
-    // Anular la liquidación devuelve la plata y vuelve a dejar el adelanto pendiente.
-    const anulada = correr([{ tipo: 'anularEgreso', id: datos.egresos[0].id, motivo: 'Bruto mal cargado' }], datos);
-    expect(anulada.datos.cuentas.efectivo).toBe(85_000);
-    expect(anulada.datos.empleados[0].adelanto).toBe(20_000);
+    const anulado = correr([{ tipo: 'anularEgreso', id: datos.egresos[0].id, motivo: 'error' }], datos);
+    expect(anulado.datos.cuentas.banco).toBe(50_000);
+    expect(anulado.datos.cuentas.efectivo).toBe(100_000);
+  });
+});
+
+describe('pago de sueldos', () => {
+  const conEmpleados = (emps: J2Datos['empleados']): J2Datos => ({
+    ...VACIO,
+    cuentas: { mp: 0, banco: 1_000_000, efectivo: 100_000 },
+    empleados: emps,
+  });
+  const carlos = { id: 'c', nombre: 'Carlos', activo: true, aguinaldo: 0, modalidad: 'dependencia' as const, mutualPct: 3, aguinaldoPct: 10, mutualCuenta: 'banco' as const };
+  const aylen = { id: 'a', nombre: 'Aylén', activo: true, aguinaldo: 0, modalidad: 'dependencia' as const, mutualPct: 3, aguinaldoPct: 0, mutualCuenta: 'banco' as const };
+  const nuevo = { id: 'n', nombre: 'Nuevo', activo: true, aguinaldo: 0, modalidad: 'sinDescuentos' as const, mutualPct: 0, aguinaldoPct: 8.33, aguinaldoDevengado: 0 };
+
+  it('Aylén: figura el sueldo completo, sale el 97% y el 3% queda como descuento por mutual', () => {
+    const { datos } = correr(
+      [{ tipo: 'pagarSueldo', empleadoId: 'a', bruto: 250_000, fecha: '2026-10-10', pagos: [{ cuenta: 'banco', monto: 242_500 }] }],
+      conEmpleados([aylen])
+    );
+    expect(datos.egresos[0].monto).toBe(250_000);
+    expect(datos.cuentas.banco).toBe(1_000_000 - 242_500);
+    expect(datos.ingresos).toHaveLength(1);
+    expect(datos.ingresos[0].monto).toBe(7_500);
+    expect(totalesDelLog(datos.movlog).banco).toBe(-242_500);
+  });
+
+  it('Carlos: el 10% de aguinaldo sale con el sueldo y queda anotado como acumulado suyo', () => {
+    const { datos } = correr(
+      [{
+        tipo: 'pagarSueldo', empleadoId: 'c', bruto: 300_000, fecha: '2026-10-10',
+        pagos: [{ cuenta: 'banco', monto: 200_000 }, { cuenta: 'efectivo', monto: 91_000 }],
+      }],
+      conEmpleados([carlos])
+    );
+    expect(datos.cuentas.banco).toBe(800_000);
+    expect(datos.cuentas.efectivo).toBe(9_000);
+    expect(datos.egresos[0].monto).toBe(300_000);
+    expect(datos.ingresos[0].monto).toBe(9_000);
+    expect(datos.empleados[0].aguinaldo).toBe(30_000);
+  });
+
+  it('el adelanto se descuenta de lo que se transfiere', () => {
+    const paso1 = correr(
+      [{ tipo: 'registrarAdelanto', empleadoId: 'a', monto: 50_000, cuenta: 'efectivo' }],
+      conEmpleados([aylen])
+    );
+    const { datos } = correr(
+      [{ tipo: 'pagarSueldo', empleadoId: 'a', bruto: 250_000, fecha: '2026-10-10', pagos: [{ cuenta: 'banco', monto: 192_500 }] }],
+      paso1.datos
+    );
+    expect(datos.cuentas.banco).toBe(1_000_000 - 192_500);
+    expect(datos.empleados[0].adelanto).toBe(0);
+    expect(datos.egresos[0].monto).toBe(250_000);
+  });
+
+  it('sin descuentos: cobra limpio y se acumula el aguinaldo que se le debe', () => {
+    const { datos } = correr(
+      [{ tipo: 'pagarSueldo', empleadoId: 'n', bruto: 200_000, fecha: '2026-10-10', pagos: [{ cuenta: 'efectivo', monto: 200_000 }] }],
+      conEmpleados([nuevo])
+    );
+    expect(datos.cuentas.efectivo).toBe(-100_000);
+    expect(datos.ingresos).toHaveLength(0);
+    expect(datos.empleados[0].aguinaldoDevengado).toBe(16_660);
+
+    const pagado = correr(
+      [{ tipo: 'pagarAguinaldo', empleadoId: 'n', monto: 10_000, fecha: '2027-01-05', pagos: [{ cuenta: 'banco', monto: 10_000 }] }],
+      datos
+    );
+    expect(pagado.datos.empleados[0].aguinaldoDevengado).toBe(6_660);
+    expect(pagado.datos.cuentas.banco).toBe(990_000);
+  });
+
+  it('anular un sueldo revierte la plata, el descuento por mutual, el aguinaldo y el adelanto', () => {
+    const paso1 = correr(
+      [{ tipo: 'registrarAdelanto', empleadoId: 'c', monto: 20_000, cuenta: 'efectivo' }],
+      conEmpleados([carlos])
+    );
+    const paso2 = correr(
+      [{ tipo: 'pagarSueldo', empleadoId: 'c', bruto: 300_000, fecha: '2026-10-10', pagos: [{ cuenta: 'banco', monto: 271_000 }] }],
+      paso1.datos
+    );
+    const { datos } = correr([{ tipo: 'anularEgreso', id: paso2.datos.egresos[0].id, motivo: 'Monto equivocado' }], paso2.datos);
+    expect(datos.cuentas.banco).toBe(1_000_000);
+    expect(datos.ingresos[0].anulado).toBeDefined();
+    expect(datos.empleados[0].aguinaldo).toBe(0);
+    expect(datos.empleados[0].adelanto).toBe(20_000);
+    expect(totalesDelLog(datos.movlog).banco).toBe(0);
+  });
+
+  it('el descuento por mutual no se puede anular suelto', () => {
+    const paso = correr(
+      [{ tipo: 'pagarSueldo', empleadoId: 'a', bruto: 250_000, fecha: '2026-10-10', pagos: [{ cuenta: 'banco', monto: 242_500 }] }],
+      conEmpleados([aylen])
+    );
+    const { datos } = correr([{ tipo: 'anularIngreso', id: paso.datos.ingresos[0].id, motivo: 'x' }], paso.datos);
+    expect(datos.ingresos[0].anulado).toBeUndefined();
+  });
+
+  it('sin configurar no registra nada', () => {
+    const sinConfig = { id: 'x', nombre: 'X', activo: true, aguinaldo: 0 };
+    const estado = { datos: conEmpleados([sinConfig]), pasado: [] };
+    const despues = j2Reducer(estado, { tipo: 'pagarSueldo', empleadoId: 'x', bruto: 100_000, fecha: '2026-10-10', pagos: [{ cuenta: 'banco', monto: 100_000 }] });
+    expect(despues).toBe(estado);
   });
 });
 

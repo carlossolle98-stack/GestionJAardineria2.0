@@ -1,7 +1,9 @@
 import { useMemo, useRef, useState } from 'react';
 import { todayISO } from '@/lib/format';
 import { LABEL_EGRESO, NOMBRES_CUENTA, csvEscape, downloadCsv, mesClaveRef } from '@/lib/j2local';
-import type { J2Egreso, J2EgresoTipo } from '@/types';
+import type { J2Egreso, J2EgresoTipo, J2Empleado } from '@/types';
+import { CamposReparto, ModalConfigurarEmpleado, ModalPagarSueldo, useReparto } from '@/components/Sueldos';
+import { salidasDe } from '@/lib/j2reducer';
 import { useJ2Local } from '@/context/J2LocalContext';
 import { useToast } from '@/context/ToastContext';
 import { useOrden, Th, BarraFiltros, coincideAlguno } from '@/components/Tabla';
@@ -23,6 +25,10 @@ const COLUMNAS_EGRESO = [
   { valor: 'monto', label: 'Monto' },
   { valor: 'cuenta', label: 'Cuenta' },
 ];
+
+function cuentasDe(e: J2Egreso) {
+  return salidasDe(e).map((s) => NOMBRES_CUENTA[s.cuenta] || s.cuenta).join(' + ');
+}
 
 /** Pasa "2026-09" a "Septiembre 2026" para el filtro de mes. */
 function nombreMes(clave: string) {
@@ -50,7 +56,9 @@ export function EgresosPage() {
   const [concepto, setConcepto] = useState('');
   const [monto, setMonto] = useState('');
   const [fecha, setFecha] = useState(todayISO());
-  const [cuenta, setCuenta] = useState<'mp' | 'banco' | 'efectivo'>('mp');
+  const reparto = useReparto('mp');
+  const [sueldoDe, setSueldoDe] = useState<J2Empleado | null>(null);
+  const [configDe, setConfigDe] = useState<J2Empleado | null>(null);
 
   // Filtros del historial
   const [busqueda, setBusqueda] = useState('');
@@ -138,6 +146,19 @@ export function EgresosPage() {
   }
 
   function registrar() {
+    // El sueldo de un empleado se carga en su propia ventana, que calcula mutual y aguinaldo.
+    if (tipo === 'sueldo') {
+      const nombreEmp = empleadoRef.current?.value || empleado;
+      const emp = j2.empleados.find((e) => e.nombre === nombreEmp);
+      if (!emp) {
+        toast('Seleccioná un empleado', { tono: 'error' });
+        return;
+      }
+      setAbierto(false);
+      if (emp.modalidad) setSueldoDe(emp);
+      else setConfigDe(emp);
+      return;
+    }
     const m = parseInt(monto, 10);
     if (!m || m <= 0) {
       toast('⚠ Ingresá un monto válido', { tono: 'error' });
@@ -147,31 +168,22 @@ export function EgresosPage() {
       toast('⚠ Elegí una fecha', { tono: 'error' });
       return;
     }
-    // Leer el empleado directo del DOM para evitar problemas de estado
-    const empleadoVal = tipo === 'sueldo'
-      ? (empleadoRef.current?.value || empleado)
-      : '';
-    if (tipo === 'sueldo' && !empleadoVal) {
-      toast('⚠ Seleccioná un empleado', { tono: 'error' });
+    const errReparto = tipo === 'inventario' ? null : reparto.error(m);
+    if (errReparto) {
+      toast(errReparto, { tono: 'error' });
       return;
     }
-    const cat =
-      tipo === 'fijo' ? categoria
-      : tipo === 'sueldo' ? empleadoVal
-      : LABEL_EGRESO[tipo] || 'Varios';
-    try {
-      j2.addEgreso({
-        fecha,
-        tipo,
-        categoria: cat,
-        concepto: concepto.trim() || cat,
-        monto: m,
-        cuenta: tipo === 'inventario' ? 'efectivo' : cuenta,
-      });
-    } catch {
-      toast('No se pudo registrar el egreso', { tono: 'error' });
-      return;
-    }
+    const cat = tipo === 'fijo' ? categoria : LABEL_EGRESO[tipo] || 'Varios';
+    const pagos = reparto.pagos(m);
+    j2.addEgreso({
+      fecha,
+      tipo,
+      categoria: cat,
+      concepto: concepto.trim() || cat,
+      monto: m,
+      cuenta: tipo === 'inventario' ? 'efectivo' : pagos[0].cuenta,
+      partes: tipo !== 'inventario' && reparto.dos ? pagos : undefined,
+    });
     setConcepto('');
     setMonto('');
     setAbierto(false);
@@ -354,7 +366,7 @@ export function EgresosPage() {
                     <td data-label="Monto" style={{ fontFamily: 'DM Mono,monospace', fontWeight: 600, color: 'var(--rojo)' }}>
                       -${e.monto.toLocaleString('es-AR')}
                     </td>
-                    <td data-label="Cuenta">{NOMBRES_CUENTA[e.cuenta]}</td>
+                    <td data-label="Cuenta">{cuentasDe(e)}</td>
                     <td data-label="Acción">
                       <button
                         type="button"
@@ -418,10 +430,11 @@ export function EgresosPage() {
           mensaje={
             <>
               Se anula el egreso de <strong>{anularE.categoria}</strong> por{' '}
-              <strong>${anularE.monto.toLocaleString('es-AR')}</strong> y la plata vuelve a{' '}
-              {NOMBRES_CUENTA[anularE.cuenta]}.
-              {anularE.origen?.tipo === 'liquidacion' && anularE.origen.adelanto > 0 &&
+              <strong>${anularE.monto.toLocaleString('es-AR')}</strong> y la plata vuelve a {cuentasDe(anularE)}.
+              {(anularE.origen?.tipo === 'liquidacion' || anularE.origen?.tipo === 'sueldo') && anularE.origen.adelanto > 0 &&
                 ` El adelanto de $${anularE.origen.adelanto.toLocaleString('es-AR')} vuelve a quedar pendiente.`}
+              {anularE.origen?.tipo === 'sueldo' && anularE.origen.mutual > 0 &&
+                ` También se anula el descuento por mutual de $${anularE.origen.mutual.toLocaleString('es-AR')}.`}
             </>
           }
           onConfirmar={(motivo) => {
@@ -494,33 +507,41 @@ export function EgresosPage() {
                   </select>
                 </div>
               )}
-              <div className="form-group">
-                <label htmlFor="egresos-concepto-detalle-2">Concepto / Detalle</label>
-                <input id="egresos-concepto-detalle-2" value={concepto} onChange={(e) => setConcepto(e.target.value)} />
-              </div>
-              <div className="form-group">
-                <label htmlFor="egresos-monto-3">Monto</label>
-                <input id="egresos-monto-3" type="number" value={monto} onChange={(e) => setMonto(e.target.value)} />
-              </div>
-              <div className="form-group">
-                <label htmlFor="egresos-fecha-4">Fecha</label>
-                <input id="egresos-fecha-4" type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
-              </div>
-              {tipo !== 'inventario' && (
-                <div className="form-group">
-                  <label htmlFor="egresos-cuenta-de-pago-5">Cuenta de pago</label>
-                  <select id="egresos-cuenta-de-pago-5" value={cuenta} onChange={(e) => setCuenta(e.target.value as 'mp' | 'banco' | 'efectivo')}>
-                    <option value="mp">Mercado Pago</option>
-                    <option value="banco">Banco</option>
-                    <option value="efectivo">Efectivo</option>
-                  </select>
-                </div>
+              {tipo !== 'sueldo' && (
+                <>
+                  <div className="form-group">
+                    <label htmlFor="egresos-concepto-detalle-2">Concepto / Detalle</label>
+                    <input id="egresos-concepto-detalle-2" value={concepto} onChange={(e) => setConcepto(e.target.value)} />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="egresos-monto-3">Monto</label>
+                    <input id="egresos-monto-3" type="number" value={monto} onChange={(e) => setMonto(e.target.value)} />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="egresos-fecha-4">Fecha</label>
+                    <input id="egresos-fecha-4" type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
+                  </div>
+                </>
               )}
             </div>
-            <ModalAcciones onCancelar={() => setAbierto(false)} textoConfirmar="Registrar egreso" />
+            {tipo === 'sueldo' ? (
+              <p className="form-ayuda" style={{ marginBottom: 'var(--sp-3)' }}>
+                Al continuar se abre el pago de sueldo: calcula solo la mutual, el aguinaldo y el adelanto según cómo se le paga a esa persona.
+              </p>
+            ) : (
+              tipo !== 'inventario' && (
+                <div style={{ marginBottom: 'var(--sp-3)' }}>
+                  <CamposReparto r={reparto} total={parseInt(monto, 10) || 0} idBase="egresos-pago" etiqueta="Cuenta de pago" />
+                </div>
+              )
+            )}
+            <ModalAcciones onCancelar={() => setAbierto(false)} textoConfirmar={tipo === 'sueldo' ? 'Continuar' : 'Registrar egreso'} />
           </form>
         </Modal>
       )}
+
+      {sueldoDe && <ModalPagarSueldo emp={sueldoDe} onCerrar={() => setSueldoDe(null)} />}
+      {configDe && <ModalConfigurarEmpleado emp={configDe} onCerrar={() => setConfigDe(null)} />}
     </>
   );
 }

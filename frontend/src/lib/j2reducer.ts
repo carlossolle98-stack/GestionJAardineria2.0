@@ -27,8 +27,10 @@ import type {
   J2Ingreso,
   J2Inversiones,
   J2ListaEspera,
+  J2Modalidad,
   J2MovCapital,
   J2MovLog,
+  J2Pago,
   J2Transferencia,
 } from '@/types';
 
@@ -164,9 +166,51 @@ function anulacion(motivo: string): J2Anulacion {
   return { fecha: hoyLocal(), motivo: motivo.trim() || 'Sin motivo' };
 }
 
+/** Desglose de un pago de sueldo según la configuración del empleado. */
+export function calcularSueldo(emp: J2Empleado, bruto: number) {
+  const dep = emp.modalidad === 'dependencia';
+  const mutual = dep ? Math.round((bruto * (emp.mutualPct || 0)) / 100) : 0;
+  const aguinaldo = dep ? Math.round((bruto * (emp.aguinaldoPct || 0)) / 100) : 0;
+  const devengado = dep ? 0 : Math.round((bruto * (emp.aguinaldoPct || 0)) / 100);
+  const adelanto = Math.max(0, Math.min(emp.adelanto || 0, bruto - mutual));
+  return { mutual, aguinaldo, devengado, adelanto, aTransferir: bruto - mutual - adelanto };
+}
+
+/** Lo que efectivamente salió de cada cuenta por un egreso. */
+export function salidasDe(e: J2Egreso): J2Pago[] {
+  return e.partes?.length ? e.partes : [{ cuenta: e.cuenta, monto: e.monto }];
+}
+
+/** Junta pagos a la misma cuenta y descarta los vacíos. */
+function agrupar(pagos: J2Pago[]): J2Pago[] {
+  const m = new Map<J2Pago['cuenta'], number>();
+  for (const p of pagos) if (p.monto) m.set(p.cuenta, (m.get(p.cuenta) || 0) + p.monto);
+  return [...m.entries()].filter(([, v]) => v !== 0).map(([cuenta, monto]) => ({ cuenta, monto }));
+}
+
+const ETIQUETA_MEDIO: Record<keyof J2Cuentas, string> = { mp: 'Mercado Pago', banco: 'Banco', efectivo: 'Efectivo' };
+
+function cambiarEmpleado(d: J2Datos, id: string, f: (e: J2Empleado) => J2Empleado): J2Datos {
+  return { ...d, empleados: d.empleados.map((e) => (e.id === id ? f(e) : e)) };
+}
+
+function contraIngreso(d: J2Datos, id: string, an: J2Anulacion): J2Datos {
+  const row = d.ingresos.find((x) => x.id === id);
+  if (!row || row.anulado) return d;
+  const marcado = { ...d, ingresos: d.ingresos.map((x) => (x.id === id ? { ...x, anulado: an } : x)) };
+  return aplicar(marcado, {
+    tipo: 'ingreso_anulado',
+    concepto: `Anulación — ${row.cliente || 'Cobro'}`,
+    detalle: an.motivo,
+    monto: -row.monto,
+    cuenta: medioACuenta(row.medio),
+    fecha: an.fecha,
+  });
+}
+
 /**
- * Contraasiento de un egreso: lo marca anulado, devuelve la plata a la cuenta
- * y deshace lo que el egreso había hecho (por ejemplo, el adelanto que saldó).
+ * Contraasiento de un egreso: lo marca anulado, devuelve la plata a cada cuenta
+ * y deshace lo que el egreso había hecho (adelanto saldado, mutual, aguinaldo).
  */
 function contraEgreso(d: J2Datos, id: string, an: J2Anulacion): J2Datos {
   const row = d.egresos.find((x) => x.id === id);
@@ -177,22 +221,35 @@ function contraEgreso(d: J2Datos, id: string, an: J2Anulacion): J2Datos {
   };
   const o = row.origen;
   if (o?.tipo === 'liquidacion' && o.adelanto > 0) {
-    paso = {
-      ...paso,
-      empleados: paso.empleados.map((e) =>
-        e.id === o.empleadoId ? { ...e, adelanto: (e.adelanto || 0) + o.adelanto } : e
-      ),
-    };
+    paso = cambiarEmpleado(paso, o.empleadoId, (e) => ({ ...e, adelanto: (e.adelanto || 0) + o.adelanto }));
   }
-  return aplicar(paso, {
-    tipo: 'egreso_anulado',
-    concepto: `Anulación — ${row.categoria}`,
-    detalle: an.motivo,
-    monto: row.monto,
-    cuenta: row.cuenta,
-    fecha: an.fecha,
-    afectaSaldo: row.tipo !== 'inventario',
-  });
+  if (o?.tipo === 'sueldo') {
+    paso = cambiarEmpleado(paso, o.empleadoId, (e) => ({
+      ...e,
+      adelanto: (e.adelanto || 0) + o.adelanto,
+      aguinaldo: (e.aguinaldo || 0) - o.aguinaldo,
+      aguinaldoDevengado: (e.aguinaldoDevengado || 0) - o.devengado,
+    }));
+    if (o.ingresoMutualId) paso = contraIngreso(paso, o.ingresoMutualId, an);
+  }
+  if (o?.tipo === 'aguinaldo') {
+    paso = cambiarEmpleado(paso, o.empleadoId, (e) => ({
+      ...e,
+      aguinaldoDevengado: (e.aguinaldoDevengado || 0) + o.descontado,
+    }));
+  }
+  for (const s of salidasDe(row)) {
+    paso = aplicar(paso, {
+      tipo: 'egreso_anulado',
+      concepto: `Anulación — ${row.categoria}`,
+      detalle: an.motivo,
+      monto: s.monto,
+      cuenta: s.cuenta,
+      fecha: an.fecha,
+      afectaSaldo: row.tipo !== 'inventario',
+    });
+  }
+  return paso;
 }
 
 /* ------------------------------------------------------------------ *
@@ -215,9 +272,22 @@ export type J2Accion =
         concepto: string;
         monto: number;
         cuenta: keyof J2Cuentas;
+        /** Si se pagó desde más de una cuenta. Deben sumar `monto`. */
+        partes?: J2Pago[];
       };
     }
   | { tipo: 'anularEgreso'; id: string; motivo: string }
+  | {
+      tipo: 'configurarEmpleado';
+      id: string;
+      modalidad: J2Modalidad;
+      mutualPct: number;
+      aguinaldoPct: number;
+      mutualCuenta: keyof J2Cuentas;
+      aguinaldoDevengado?: number;
+    }
+  | { tipo: 'pagarSueldo'; empleadoId: string; bruto: number; fecha: string; pagos: J2Pago[] }
+  | { tipo: 'pagarAguinaldo'; empleadoId: string; monto: number; fecha: string; pagos: J2Pago[] }
   | { tipo: 'addIngreso'; payload: Omit<J2Ingreso, 'id'> }
   | { tipo: 'anularIngreso'; id: string; motivo: string }
   | { tipo: 'setCuentaSaldo'; cuenta: keyof J2Cuentas; monto: number; motivo: string }
@@ -258,19 +328,8 @@ export type J2Accion =
   | { tipo: 'addEmpleado'; nombre: string }
   | { tipo: 'toggleEmpleado'; id: string }
   | { tipo: 'removeEmpleado'; id: string }
-  | { tipo: 'registrarMutual'; empleado: string; monto: number; cuenta: keyof J2Cuentas }
-  | { tipo: 'registrarAguinaldo'; empleadoId: string; monto: number; destino: string }
   | { tipo: 'interesesAguinaldo'; empleadoId: string; intereses: number }
   | { tipo: 'registrarAdelanto'; empleadoId: string; monto: number; cuenta: keyof J2Cuentas }
-  | {
-      tipo: 'liquidarSueldo';
-      empleadoId: string;
-      bruto: number;
-      mutual: number;
-      adelanto: number;
-      cuenta: keyof J2Cuentas;
-      fecha: string;
-    }
   | { tipo: 'addDeudaCliente'; payload: Omit<J2DeudaCliente, 'id' | 'estado'> }
   | { tipo: 'pagarDeudaCliente'; id: string; cuenta: keyof J2Cuentas }
   | { tipo: 'removeDeudaCliente'; id: string }
@@ -333,22 +392,28 @@ function transicion(d: J2Datos, a: J2Accion): J2Datos {
 
     /* — Egresos — */
     case 'addEgreso': {
+      const { partes: partesPedidas, ...resto } = a.payload;
+      const partes = partesPedidas ? agrupar(partesPedidas) : [];
       const row: J2Egreso = {
         id: nuevoId('eg'),
-        ...a.payload,
-        concepto: a.payload.concepto || a.payload.categoria,
+        ...resto,
+        concepto: resto.concepto || resto.categoria,
+        ...(partes.length > 1 ? { partes, cuenta: partes[0].cuenta } : {}),
       };
-      const conEgreso = { ...d, egresos: [...d.egresos, row] };
-      return aplicar(conEgreso, {
-        tipo: 'egreso',
-        concepto: row.categoria,
-        detalle: row.concepto,
-        monto: -row.monto,
-        cuenta: row.cuenta,
-        fecha: row.fecha,
-        // Una diferencia de inventario es un ajuste contable, no sale plata.
-        afectaSaldo: row.tipo !== 'inventario',
-      });
+      let paso: J2Datos = { ...d, egresos: [...d.egresos, row] };
+      for (const s of salidasDe(row)) {
+        paso = aplicar(paso, {
+          tipo: 'egreso',
+          concepto: row.categoria,
+          detalle: row.concepto,
+          monto: -s.monto,
+          cuenta: s.cuenta,
+          fecha: row.fecha,
+          // Una diferencia de inventario es un ajuste contable, no sale plata.
+          afectaSaldo: row.tipo !== 'inventario',
+        });
+      }
+      return paso;
     }
 
     case 'anularEgreso': {
@@ -356,6 +421,115 @@ function transicion(d: J2Datos, a: J2Accion): J2Datos {
       // Los intereses de un crédito se anulan junto con su cuota, desde Finanzas.
       if (!row || row.anulado || row.origen?.tipo === 'credito') return d;
       return contraEgreso(d, a.id, anulacion(a.motivo));
+    }
+
+    /* — Sueldos — */
+    case 'configurarEmpleado':
+      return cambiarEmpleado(d, a.id, (e) => ({
+        ...e,
+        modalidad: a.modalidad,
+        mutualPct: a.modalidad === 'dependencia' ? a.mutualPct : 0,
+        aguinaldoPct: a.aguinaldoPct,
+        mutualCuenta: a.mutualCuenta,
+        aguinaldoDevengado: a.aguinaldoDevengado ?? e.aguinaldoDevengado ?? 0,
+      }));
+
+    case 'pagarSueldo': {
+      const emp = d.empleados.find((e) => e.id === a.empleadoId);
+      if (!emp?.modalidad || a.bruto <= 0) return d;
+      const { mutual, aguinaldo, devengado, adelanto, aTransferir: esperado } = calcularSueldo(emp, a.bruto);
+      const mutualCuenta = emp.mutualCuenta || 'banco';
+
+      // Si lo cargado en las cuentas no cierra con lo que había que transferir,
+      // la diferencia va a la primera cuenta para que el libro nunca quede descuadrado.
+      const pagos = agrupar(a.pagos);
+      const dif = esperado - pagos.reduce((s, p) => s + p.monto, 0);
+      const transferido = agrupar([...pagos, { cuenta: pagos[0]?.cuenta ?? mutualCuenta, monto: dif }]);
+
+      // La mutual se "paga" y vuelve como descuento: el sueldo figura completo
+      // y el 3% entra como ingreso del negocio, igual que en la planilla.
+      const partes = agrupar([...transferido, { cuenta: mutualCuenta, monto: mutual }]);
+      const egresoId = nuevoId('eg');
+      const ingresoMutualId = mutual > 0 ? nuevoId('ing') : undefined;
+      const row: J2Egreso = {
+        id: egresoId,
+        fecha: a.fecha,
+        tipo: 'sueldo',
+        categoria: emp.nombre,
+        concepto: `Sueldo — ${emp.nombre}`,
+        monto: a.bruto,
+        cuenta: partes[0]?.cuenta ?? mutualCuenta,
+        partes,
+        origen: { tipo: 'sueldo', empleadoId: emp.id, mutual, aguinaldo, devengado, adelanto, ingresoMutualId },
+      };
+
+      let paso: J2Datos = cambiarEmpleado({ ...d, egresos: [...d.egresos, row] }, emp.id, (e) => ({
+        ...e,
+        adelanto: (e.adelanto || 0) - adelanto,
+        aguinaldo: (e.aguinaldo || 0) + aguinaldo,
+        aguinaldoDevengado: (e.aguinaldoDevengado || 0) + devengado,
+      }));
+      for (const s of partes) {
+        paso = aplicar(paso, {
+          tipo: 'egreso',
+          concepto: emp.nombre,
+          detalle: `Sueldo${adelanto ? ` (adelanto descontado ${adelanto})` : ''}`,
+          monto: -s.monto,
+          cuenta: s.cuenta,
+          fecha: a.fecha,
+        });
+      }
+      if (ingresoMutualId) {
+        const ing: J2Ingreso = {
+          id: ingresoMutualId,
+          fecha: a.fecha,
+          cliente: 'Descuento por mutual',
+          concepto: `${emp.mutualPct}% de ${emp.nombre}`,
+          monto: mutual,
+          medio: ETIQUETA_MEDIO[mutualCuenta],
+          egresoId,
+        };
+        paso = aplicar(
+          { ...paso, ingresos: [...paso.ingresos, ing] },
+          { tipo: 'ingreso', concepto: ing.cliente, detalle: ing.concepto, monto: mutual, cuenta: mutualCuenta, fecha: a.fecha }
+        );
+      }
+      return paso;
+    }
+
+    case 'pagarAguinaldo': {
+      const emp = d.empleados.find((e) => e.id === a.empleadoId);
+      if (!emp || a.monto <= 0) return d;
+      const pagos = agrupar(a.pagos);
+      const dif = a.monto - pagos.reduce((s, p) => s + p.monto, 0);
+      const partes = agrupar([...pagos, { cuenta: pagos[0]?.cuenta ?? 'efectivo', monto: dif }]);
+      const descontado = Math.min(a.monto, Math.max(0, emp.aguinaldoDevengado || 0));
+      const row: J2Egreso = {
+        id: nuevoId('eg'),
+        fecha: a.fecha,
+        tipo: 'sueldo',
+        categoria: emp.nombre,
+        concepto: `Aguinaldo — ${emp.nombre}`,
+        monto: a.monto,
+        cuenta: partes[0].cuenta,
+        partes,
+        origen: { tipo: 'aguinaldo', empleadoId: emp.id, descontado },
+      };
+      let paso: J2Datos = cambiarEmpleado({ ...d, egresos: [...d.egresos, row] }, emp.id, (e) => ({
+        ...e,
+        aguinaldoDevengado: (e.aguinaldoDevengado || 0) - descontado,
+      }));
+      for (const s of partes) {
+        paso = aplicar(paso, {
+          tipo: 'egreso',
+          concepto: emp.nombre,
+          detalle: 'Aguinaldo',
+          monto: -s.monto,
+          cuenta: s.cuenta,
+          fecha: a.fecha,
+        });
+      }
+      return paso;
     }
 
     /* — Ingresos — */
@@ -375,20 +549,9 @@ function transicion(d: J2Datos, a: J2Accion): J2Datos {
 
     case 'anularIngreso': {
       const row = d.ingresos.find((x) => x.id === a.id);
-      if (!row || row.anulado) return d;
-      const an = anulacion(a.motivo);
-      const marcado = {
-        ...d,
-        ingresos: d.ingresos.map((x) => (x.id === a.id ? { ...x, anulado: an } : x)),
-      };
-      return aplicar(marcado, {
-        tipo: 'ingreso_anulado',
-        concepto: `Anulación — ${row.cliente || 'Cobro'}`,
-        detalle: an.motivo,
-        monto: -row.monto,
-        cuenta: medioACuenta(row.medio),
-        fecha: an.fecha,
-      });
+      // El descuento por mutual se anula junto con el sueldo que lo generó.
+      if (!row || row.anulado || row.egresoId) return d;
+      return contraIngreso(d, a.id, anulacion(a.motivo));
     }
 
     /* — Corrección manual de saldo — */
@@ -762,31 +925,6 @@ function transicion(d: J2Datos, a: J2Accion): J2Datos {
       return { ...d, empleados: d.empleados.filter((e) => e.id !== a.id) };
     }
 
-    case 'registrarMutual':
-      return aplicar(d, {
-        tipo: 'mutual',
-        concepto: `Mutual — ${a.empleado}`,
-        detalle: 'Descuento mutual retenido',
-        monto: a.monto,
-        cuenta: a.cuenta,
-      });
-
-    case 'registrarAguinaldo': {
-      const conAguinaldo: J2Datos = {
-        ...d,
-        empleados: d.empleados.map((e) =>
-          e.id === a.empleadoId ? { ...e, aguinaldo: (e.aguinaldo || 0) + a.monto } : e
-        ),
-      };
-      const emp = d.empleados.find((e) => e.id === a.empleadoId);
-      return aplicar(conAguinaldo, {
-        tipo: 'aguinaldo',
-        concepto: `Aguinaldo retenido — ${emp?.nombre ?? a.empleadoId}`,
-        monto: a.monto,
-        cuenta: a.destino,
-      });
-    }
-
     case 'registrarAdelanto': {
       const emp = d.empleados.find((e) => e.id === a.empleadoId);
       const conAdelanto: J2Datos = {
@@ -801,41 +939,6 @@ function transicion(d: J2Datos, a: J2Accion): J2Datos {
         detalle: 'Adelanto de sueldo entregado',
         monto: -a.monto,
         cuenta: a.cuenta,
-      });
-    }
-
-    case 'liquidarSueldo': {
-      const emp = d.empleados.find((e) => e.id === a.empleadoId);
-      const nombre = emp?.nombre ?? a.empleadoId;
-      const adelantoDescontado = Math.min(a.adelanto, a.bruto);
-      // La mutual no se resta acá: registrarMutual ya la sumó a la caja como retención.
-      const egresoMonto = a.bruto - adelantoDescontado;
-      const egresoRow: J2Egreso = {
-        id: nuevoId('eg'),
-        fecha: a.fecha,
-        tipo: 'sueldo',
-        categoria: nombre,
-        concepto: `Liquidación — ${nombre}`,
-        monto: egresoMonto,
-        cuenta: a.cuenta,
-        origen: { tipo: 'liquidacion', empleadoId: a.empleadoId, adelanto: adelantoDescontado },
-      };
-      const conLiquidacion: J2Datos = {
-        ...d,
-        egresos: [...d.egresos, egresoRow],
-        empleados: d.empleados.map((e) =>
-          e.id === a.empleadoId
-            ? { ...e, adelanto: Math.max(0, (e.adelanto || 0) - adelantoDescontado) }
-            : e
-        ),
-      };
-      return aplicar(conLiquidacion, {
-        tipo: 'egreso',
-        concepto: nombre,
-        detalle: `Liquidación (bruto ${a.bruto} − adelanto ${adelantoDescontado}; mutual ${a.mutual} retenida aparte)`,
-        monto: -egresoMonto,
-        cuenta: a.cuenta,
-        fecha: a.fecha,
       });
     }
 

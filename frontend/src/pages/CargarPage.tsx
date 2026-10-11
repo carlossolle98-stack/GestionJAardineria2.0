@@ -358,7 +358,18 @@ export function CargarPage() {
                       <td data-label="Medio">{i.medio}</td>
                       <td data-label="Monto" style={{ color: 'var(--verde-vivo)', fontWeight: 600, fontFamily: 'var(--fuente-mono)' }}>+{money(i.monto)}</td>
                       <td data-label="Acción">
-                        <button type="button" className="btn secundario sm" style={{ color: 'var(--rojo)' }} onClick={() => setAnularI(i)}>
+                        <button
+                          type="button"
+                          className="btn secundario sm"
+                          style={{ color: 'var(--rojo)' }}
+                          onClick={() => {
+                            if (i.egresoId) {
+                              toast('Este descuento se generó con un pago de sueldo. Anulá ese sueldo en Egresos y se anula junto.', { tono: 'error' });
+                              return;
+                            }
+                            setAnularI(i);
+                          }}
+                        >
                           Anular
                         </button>
                       </td>

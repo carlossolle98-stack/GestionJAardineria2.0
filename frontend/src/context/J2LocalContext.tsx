@@ -28,7 +28,9 @@ import type {
   J2EgresoTipo,
   J2Ingreso,
   J2ListaEspera,
+  J2Modalidad,
   J2MovCapital,
+  J2Pago,
 } from '@/types';
 import {
   CUENTAS_DEFAULT,
@@ -81,8 +83,19 @@ type J2Ctx = J2Datos & {
     concepto: string;
     monto: number;
     cuenta: keyof J2Cuentas;
+    partes?: J2Pago[];
   }) => void;
   anularEgreso: (id: string, motivo: string) => void;
+  configurarEmpleado: (p: {
+    id: string;
+    modalidad: J2Modalidad;
+    mutualPct: number;
+    aguinaldoPct: number;
+    mutualCuenta: keyof J2Cuentas;
+    aguinaldoDevengado?: number;
+  }) => void;
+  pagarSueldo: (p: { empleadoId: string; bruto: number; fecha: string; pagos: J2Pago[] }) => void;
+  pagarAguinaldo: (p: { empleadoId: string; monto: number; fecha: string; pagos: J2Pago[] }) => void;
   addIngreso: (p: Omit<J2Ingreso, 'id'>) => void;
   anularIngreso: (id: string, motivo: string) => void;
   setCuentaSaldo: (k: keyof J2Cuentas, monto: number, motivo: string) => void;
@@ -119,18 +132,8 @@ type J2Ctx = J2Datos & {
   addEmpleado: (nombre: string) => void;
   toggleEmpleado: (id: string) => void;
   removeEmpleado: (id: string) => void;
-  registrarMutual: (empNombre: string, monto: number, cuenta: keyof J2Cuentas) => void;
-  registrarAguinaldo: (empId: string, monto: number, destino: string) => void;
   ajustarInteresesAguinaldo: (empId: string, intereses: number) => void;
   registrarAdelanto: (empId: string, monto: number, cuenta: keyof J2Cuentas) => void;
-  liquidarSueldo: (p: {
-    empleadoId: string;
-    bruto: number;
-    mutual: number;
-    adelanto: number;
-    cuenta: keyof J2Cuentas;
-    fecha: string;
-  }) => void;
   moverListaEspera: (id: string, direccion: 'arriba' | 'abajo') => void;
   addDeudaCliente: (p: Omit<J2DeudaCliente, 'id' | 'estado'>) => void;
   pagarDeudaCliente: (id: string, cuenta: keyof J2Cuentas) => void;
@@ -322,8 +325,21 @@ export function J2LocalProvider({ children }: { children: ReactNode }) {
         concepto: string;
         monto: number;
         cuenta: keyof J2Cuentas;
+        partes?: J2Pago[];
       }) => envia({ tipo: 'addEgreso', payload: p }),
       anularEgreso: (id: string, motivo: string) => envia({ tipo: 'anularEgreso', id, motivo }),
+      configurarEmpleado: (p: {
+        id: string;
+        modalidad: J2Modalidad;
+        mutualPct: number;
+        aguinaldoPct: number;
+        mutualCuenta: keyof J2Cuentas;
+        aguinaldoDevengado?: number;
+      }) => envia({ tipo: 'configurarEmpleado', ...p }),
+      pagarSueldo: (p: { empleadoId: string; bruto: number; fecha: string; pagos: J2Pago[] }) =>
+        envia({ tipo: 'pagarSueldo', ...p }),
+      pagarAguinaldo: (p: { empleadoId: string; monto: number; fecha: string; pagos: J2Pago[] }) =>
+        envia({ tipo: 'pagarAguinaldo', ...p }),
       addIngreso: (p: Omit<J2Ingreso, 'id'>) => envia({ tipo: 'addIngreso', payload: p }),
       anularIngreso: (id: string, motivo: string) => envia({ tipo: 'anularIngreso', id, motivo }),
       setCuentaSaldo: (k: keyof J2Cuentas, monto: number, motivo: string) =>
@@ -374,22 +390,10 @@ export function J2LocalProvider({ children }: { children: ReactNode }) {
       addEmpleado: (nombre: string) => envia({ tipo: 'addEmpleado', nombre }),
       toggleEmpleado: (id: string) => envia({ tipo: 'toggleEmpleado', id }),
       removeEmpleado: (id: string) => envia({ tipo: 'removeEmpleado', id }),
-      registrarMutual: (empNombre: string, monto: number, cuenta: keyof J2Cuentas) =>
-        envia({ tipo: 'registrarMutual', empleado: empNombre, monto, cuenta }),
-      registrarAguinaldo: (empId: string, monto: number, destino: string) =>
-        envia({ tipo: 'registrarAguinaldo', empleadoId: empId, monto, destino }),
       ajustarInteresesAguinaldo: (empId: string, intereses: number) =>
         envia({ tipo: 'interesesAguinaldo', empleadoId: empId, intereses }),
       registrarAdelanto: (empId: string, monto: number, cuenta: keyof J2Cuentas) =>
         envia({ tipo: 'registrarAdelanto', empleadoId: empId, monto, cuenta }),
-      liquidarSueldo: (p: {
-        empleadoId: string;
-        bruto: number;
-        mutual: number;
-        adelanto: number;
-        cuenta: keyof J2Cuentas;
-        fecha: string;
-      }) => envia({ tipo: 'liquidarSueldo', ...p }),
       moverListaEspera: (id: string, direccion: 'arriba' | 'abajo') =>
         envia({ tipo: 'moverListaEspera', id, direccion }),
       addDeudaCliente: (p: Omit<J2DeudaCliente, 'id' | 'estado'>) =>

@@ -74,7 +74,30 @@ export type ResumenPayload = {
 
 export type J2EgresoTipo = 'fijo' | 'varios' | 'sueldo' | 'mercaderia' | 'inventario' | 'bancario';
 
-export type J2Empleado = { id: string; nombre: string; activo: boolean; aguinaldo: number; adelanto?: number };
+/**
+ * dependencia: se le retiene mutual (queda al negocio) y se le separa aguinaldo
+ * que se le transfiere aparte. sinDescuentos: cobra limpio y el negocio va
+ * acumulando el aguinaldo que le debe pagar en julio y enero.
+ */
+export type J2Modalidad = 'dependencia' | 'sinDescuentos';
+
+export type J2Empleado = {
+  id: string;
+  nombre: string;
+  activo: boolean;
+  /** dependencia: aguinaldo que ya se le transfirió a su cuenta aparte (informativo). */
+  aguinaldo: number;
+  adelanto?: number;
+  modalidad?: J2Modalidad;
+  mutualPct?: number;
+  aguinaldoPct?: number;
+  /** Cuenta donde queda el descuento por mutual (la plata que no se le transfiere). */
+  mutualCuenta?: 'mp' | 'banco' | 'efectivo';
+  /** sinDescuentos: aguinaldo acumulado que el negocio le debe. */
+  aguinaldoDevengado?: number;
+};
+
+export type J2Pago = { cuenta: 'mp' | 'banco' | 'efectivo'; monto: number };
 
 export type J2MovLog = {
   id: string;
@@ -99,9 +122,24 @@ export type J2Egreso = {
   cuenta: 'mp' | 'banco' | 'efectivo';
   anulado?: J2Anulacion;
   /** De dónde salió el egreso, para que al anularlo se revierta todo lo que hizo. */
+  /**
+   * Lo que salió de cada cuenta cuando no fue una sola, o cuando no coincide con
+   * el monto (un sueldo con adelanto ya entregado). Si falta, salió `monto` de `cuenta`.
+   */
+  partes?: J2Pago[];
   origen?:
     | { tipo: 'liquidacion'; empleadoId: string; adelanto: number }
-    | { tipo: 'credito'; creditoId: string; pagoId: string };
+    | { tipo: 'credito'; creditoId: string; pagoId: string }
+    | {
+        tipo: 'sueldo';
+        empleadoId: string;
+        mutual: number;
+        aguinaldo: number;
+        devengado: number;
+        adelanto: number;
+        ingresoMutualId?: string;
+      }
+    | { tipo: 'aguinaldo'; empleadoId: string; descontado: number };
 };
 
 export type J2Transferencia = {
@@ -180,6 +218,8 @@ export type J2Ingreso = {
   monto: number;
   medio: string;
   anulado?: J2Anulacion;
+  /** El descuento por mutual nace de un pago de sueldo y se anula junto con él. */
+  egresoId?: string;
 };
 
 export type Activo = {
