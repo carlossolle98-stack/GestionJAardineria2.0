@@ -398,6 +398,38 @@ describe('créditos', () => {
   });
 });
 
+describe('deudas que ya venían', () => {
+  const previa: J2Accion = {
+    tipo: 'recibirCredito',
+    payload: { fecha: '2026-10-18', entidad: 'Mercado Pago (aspiradora)', monto: 288_000, cuenta: 'credito', cuotas: 4, previo: true },
+  };
+
+  it('suman a lo que se debe sin agregar plata a la caja', () => {
+    const { datos } = correr([previa]);
+    expect(datos.inversiones.creditos[0].saldo).toBe(288_000);
+    expect(datos.cuentas).toEqual(VACIO.cuentas);
+    expect(totalesDelLog(datos.movlog).efectivo ?? 0).toBe(0);
+  });
+
+  it('las cuotas sí salen de la caja y bajan la deuda', () => {
+    const paso = correr([previa]);
+    const creditoId = paso.datos.inversiones.creditos[0].id;
+    const { datos } = correr(
+      [{ tipo: 'pagarCuotaCredito', creditoId, total: 72_000, interes: 0, cuenta: 'efectivo', fecha: '2026-11-05' }],
+      paso.datos
+    );
+    expect(datos.cuentas.efectivo).toBe(28_000);
+    expect(datos.inversiones.creditos[0].saldo).toBe(216_000);
+  });
+
+  it('anularla tampoco mueve la caja', () => {
+    const paso = correr([previa]);
+    const { datos } = correr([{ tipo: 'anularCredito', id: paso.datos.inversiones.creditos[0].id, motivo: 'mal cargada' }], paso.datos);
+    expect(datos.cuentas).toEqual(VACIO.cuentas);
+    expect(datos.inversiones.creditos[0].anulado).toBeDefined();
+  });
+});
+
 describe('compra de activos', () => {
   it('sale de caja pero no es un egreso', () => {
     const { datos } = correr([{ tipo: 'compraActivo', nombre: 'Desmalezadora', monto: 300_000, cuenta: 'efectivo', fecha: '2026-10-09' }]);

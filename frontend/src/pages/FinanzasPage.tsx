@@ -56,6 +56,8 @@ export function FinanzasPage() {
   const [capQuien, setCapQuien] = useState(usuario?.nombre ?? '');
   const [capNota, setCapNota] = useState('');
   const [capCuotas, setCapCuotas] = useState('');
+  const [capPrevio, setCapPrevio] = useState(false);
+  const previo = capTipo === 'credito' && capPrevio;
 
   const [cuota, setCuota] = useState<J2Credito | null>(null);
   const [cuTotal, setCuTotal] = useState('');
@@ -145,15 +147,22 @@ export function FinanzasPage() {
         fecha: capFecha,
         entidad: capQuien.trim(),
         monto: m,
-        cuenta: capCuenta,
+        cuenta: capPrevio ? 'credito' : capCuenta,
         cuotas: cuotas > 0 ? cuotas : undefined,
         nota: capNota.trim(),
+        previo: capPrevio || undefined,
       });
       setCapCuotas('');
     } else {
       j2.movCapital({ fecha: capFecha, tipo: capTipo, socio: capQuien.trim(), monto: m, cuenta: capCuenta, nota: capNota.trim() });
     }
-    toast(`${TITULO_CAPITAL[capTipo]} registrado · ${money(m)}`, { tono: 'exito' });
+    toast(
+      capTipo === 'credito' && capPrevio
+        ? `Deuda registrada · ${money(m)} (la caja no cambia)`
+        : `${TITULO_CAPITAL[capTipo]} registrado · ${money(m)}`,
+      { tono: 'exito' }
+    );
+    setCapPrevio(false);
     setCapMonto('');
     setCapNota('');
   }
@@ -211,7 +220,9 @@ export function FinanzasPage() {
     }
     setAnular({
       titulo: 'Anular crédito',
-      mensaje: <>Se anula el crédito de <strong>{cr.entidad}</strong> por <strong>{money(cr.monto)}</strong> y esa plata sale de {nombre(cr.cuenta)}.</>,
+      mensaje: cr.previo
+        ? <>Se anula la deuda con <strong>{cr.entidad}</strong> por <strong>{money(cr.monto)}</strong>. La caja no cambia.</>
+        : <>Se anula el crédito de <strong>{cr.entidad}</strong> por <strong>{money(cr.monto)}</strong> y esa plata sale de {nombre(cr.cuenta)}.</>,
       hacer: (motivo) => j2.anularCredito(cr.id, motivo),
     });
   }
@@ -343,22 +354,25 @@ export function FinanzasPage() {
             />
           </div>
           <div className="form-group">
-            <label htmlFor="fin-cap-monto">Monto</label>
+            <label htmlFor="fin-cap-monto">{previo ? 'Lo que falta pagar hoy' : 'Monto'}</label>
             <input id="fin-cap-monto" type="number" inputMode="numeric" min="0" value={capMonto} onChange={(e) => setCapMonto(e.target.value)} />
+            {previo && <p className="form-ayuda">Sumá las cuotas que te quedan. Ej: 4 cuotas de $72.000 = 288.000.</p>}
           </div>
-          <div className="form-group">
-            <label htmlFor="fin-cap-cuenta">{capTipo === 'retiro' ? 'Sale de' : 'Entra a'}</label>
-            <select id="fin-cap-cuenta" value={capCuenta} onChange={(e) => setCapCuenta(e.target.value)}>
-              {opcionesCuentas(capTipo === 'retiro')}
-            </select>
-          </div>
+          {!previo && (
+            <div className="form-group">
+              <label htmlFor="fin-cap-cuenta">{capTipo === 'retiro' ? 'Sale de' : 'Entra a'}</label>
+              <select id="fin-cap-cuenta" value={capCuenta} onChange={(e) => setCapCuenta(e.target.value)}>
+                {opcionesCuentas(capTipo === 'retiro')}
+              </select>
+            </div>
+          )}
           <div className="form-group">
             <label htmlFor="fin-cap-fecha">Fecha</label>
             <input id="fin-cap-fecha" type="date" value={capFecha} onChange={(e) => setCapFecha(e.target.value)} />
           </div>
           {capTipo === 'credito' && (
             <div className="form-group">
-              <label htmlFor="fin-cap-cuotas">Cantidad de cuotas</label>
+              <label htmlFor="fin-cap-cuotas">{previo ? 'Cuotas que faltan' : 'Cantidad de cuotas'}</label>
               <input id="fin-cap-cuotas" type="number" inputMode="numeric" min="1" value={capCuotas} onChange={(e) => setCapCuotas(e.target.value)} placeholder="Ej: 36" />
             </div>
           )}
@@ -367,7 +381,17 @@ export function FinanzasPage() {
             <input id="fin-cap-nota" value={capNota} onChange={(e) => setCapNota(e.target.value)} placeholder={capTipo === 'credito' ? 'Ej: tasa fija, para comprar herramientas' : ''} />
           </div>
         </div>
-        <p className="form-ayuda" style={{ marginBottom: 12 }}>{AYUDA_CAPITAL[capTipo]}</p>
+        {capTipo === 'credito' && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 'var(--txt-md)', marginBottom: 8 }}>
+            <input type="checkbox" checked={capPrevio} onChange={(e) => setCapPrevio(e.target.checked)} />
+            Es una deuda que ya venía pagando (no sumar plata a la caja)
+          </label>
+        )}
+        <p className="form-ayuda" style={{ marginBottom: 12 }}>
+          {previo
+            ? 'Se registra solo lo que falta pagar, para que figure en lo que debe la empresa. Desde ahora cada cuota se carga con "Pagar cuota", no como gasto fijo.'
+            : AYUDA_CAPITAL[capTipo]}
+        </p>
         <button type="button" className="btn" onClick={registrarCapital}>Registrar {TITULO_CAPITAL[capTipo].toLowerCase()}</button>
       </div>
 
@@ -647,7 +671,11 @@ export function FinanzasPage() {
               <div className="form-group">
                 <label htmlFor="fin-cu-interes">De eso, interés</label>
                 <input id="fin-cu-interes" type="number" inputMode="numeric" min="0" value={cuInteres} onChange={(e) => setCuInteres(e.target.value)} />
-                <p className="form-ayuda">Figura en el resumen del banco. Incluí IVA y gastos.</p>
+                <p className="form-ayuda">
+                  {cuota.previo
+                    ? 'Si cargaste la deuda como suma de las cuotas, dejalo en 0.'
+                    : 'Figura en el resumen del banco. Incluí IVA y gastos.'}
+                </p>
               </div>
               <div className="form-group">
                 <label htmlFor="fin-cu-cuenta">Sale de</label>

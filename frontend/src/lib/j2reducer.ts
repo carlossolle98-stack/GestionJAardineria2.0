@@ -757,13 +757,15 @@ function transicion(d: J2Datos, a: J2Accion): J2Datos {
         ...d,
         inversiones: { ...d.inversiones, creditos: [...d.inversiones.creditos, row] },
       };
+      // Una deuda previa no trae plata nueva: queda asentada sin tocar ninguna cuenta.
       return aplicar(conCredito, {
         tipo: 'credito',
-        concepto: `Crédito recibido — ${row.entidad}`,
+        concepto: `${row.previo ? 'Deuda previa' : 'Crédito recibido'} — ${row.entidad}`,
         detalle: row.nota,
         monto: row.monto,
-        cuenta: row.cuenta,
+        cuenta: row.previo ? 'credito' : row.cuenta,
         fecha: row.fecha,
+        afectaSaldo: !row.previo,
       });
     }
 
@@ -784,8 +786,9 @@ function transicion(d: J2Datos, a: J2Accion): J2Datos {
         concepto: `Anulación crédito — ${row.entidad}`,
         detalle: an.motivo,
         monto: -row.monto,
-        cuenta: row.cuenta,
+        cuenta: row.previo ? 'credito' : row.cuenta,
         fecha: an.fecha,
+        afectaSaldo: !row.previo,
       });
     }
 

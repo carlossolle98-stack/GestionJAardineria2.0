@@ -186,6 +186,8 @@ export type J2Credito = {
   cuenta: string;
   cuotas?: number;
   nota?: string;
+  /** Deuda que ya existía al cargarla: se registra lo que falta pagar, sin sumar plata a la caja. */
+  previo?: boolean;
   pagos: J2PagoCredito[];
   ajustes: J2AjusteCredito[];
   anulado?: J2Anulacion;
