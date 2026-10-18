@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { ModalImportarHistorial } from '@/components/ImportarHistorial';
 import { getJson } from '@/lib/api';
 import { money, todayISO } from '@/lib/format';
 import { diasDesde, mesClaveRef } from '@/lib/j2local';
@@ -10,6 +12,8 @@ import type { Activo, ResumenPayload, Turno } from '@/types';
 
 export function ResumenPage() {
   const { puede } = useAuth();
+  const [verTodo, setVerTodo] = useState(false);
+  const [importando, setImportando] = useState(false);
   const j2 = useJ2Local();
   const mc = mesClaveRef();
   const fijosMes   = j2.egresos.filter((e) => e.tipo === 'fijo'   && e.fecha.startsWith(mc));
@@ -150,18 +154,17 @@ export function ResumenPage() {
       const k = e.fecha.slice(0, 7);
       locales.set(k, { ingresos: locales.get(k)?.ingresos || 0, egresos: (locales.get(k)?.egresos || 0) + e.monto });
     }
+    // Un mes cerrado que vino de la planilla manda: lo cargado en la app para ese
+    // mes puede estar incompleto (se empezó a usar a mitad de camino).
     for (const [k, v] of locales) {
-      const previo = totales.get(k);
-      totales.set(k, {
-        ingresos: v.ingresos > 0 ? v.ingresos : previo?.ingresos || 0,
-        egresos: v.egresos > 0 ? v.egresos : previo?.egresos || 0,
-      });
+      if (k !== mc && totales.has(k)) continue;
+      totales.set(k, v);
     }
     if (!totales.has(mc)) totales.set(mc, { ingresos: 0, egresos: 0 });
     return [...totales.entries()]
       .filter(([k]) => k <= mc)
       .sort(([a], [b]) => b.localeCompare(a))
-      .slice(0, 12)
+      .slice(0, verTodo ? undefined : 12)
       .map(([clave, v]) => {
         const nombre = new Date(clave + '-02T12:00:00').toLocaleDateString('es-AR', { month: 'long' });
         return {
@@ -288,7 +291,17 @@ export function ResumenPage() {
       <div className="sep" />
 
       <div className="section-header">
-        <div className="section-title">📈 Últimos meses</div>
+        <div className="section-title">📈 {verTodo ? 'Historial de meses' : 'Últimos meses'}</div>
+        <div style={{ display: 'flex', gap: 'var(--sp-2)', flexWrap: 'wrap' }}>
+          <button type="button" className="btn secundario sm" onClick={() => setVerTodo((v) => !v)}>
+            {verTodo ? 'Ver últimos 12' : 'Ver todo el historial'}
+          </button>
+          {puede('ajustes') && (
+            <button type="button" className="btn secundario sm" onClick={() => setImportando(true)}>
+              Importar historial
+            </button>
+          )}
+        </div>
       </div>
       <div className="tabla-wrap">
         <div className="tabla-scroll">
@@ -348,7 +361,7 @@ export function ResumenPage() {
                     <span style={{ color: dif > 0 ? '#2e7d32' : 'var(--rojo)' }}>
                       {dif > 0 ? '+' : ''}{money(dif)}
                     </span>
-                    {' '}(el saldo supera al libro)
+                    {' '}({dif > 0 ? 'el saldo supera al libro' : 'el libro supera al saldo'})
                   </div>
                 );
               })}
@@ -357,6 +370,9 @@ export function ResumenPage() {
         </div>
       )}
 
+      {importando && (
+        <ModalImportarHistorial actuales={data?.settings?.mesesHistoricos ?? []} onCerrar={() => setImportando(false)} />
+      )}
     </>
   );
 }
