@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ModalImportarHistorial } from '@/components/ImportarHistorial';
+import { totalesMensuales } from '@/lib/historialMensual';
 import { getJson } from '@/lib/api';
 import { money, todayISO } from '@/lib/format';
 import { diasDesde, mesClaveRef } from '@/lib/j2local';
@@ -130,37 +131,9 @@ export function ResumenPage() {
   const mesNombre = new Date(mc + '-02').toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
   const mesLabel = mesNombre.charAt(0).toUpperCase() + mesNombre.slice(1);
 
-  /**
-   * Últimos 12 meses armados con los datos de la app. Para meses sin datos
-   * cargados acá (anteriores a la app) se usa el total guardado en el servidor.
-   * Ningún botón hace falta para pasar de mes: el actual está en curso y los demás cerrados.
-   */
+  /** Meses de la tabla: el actual en curso, los anteriores cerrados. Ningún botón hace falta para pasar de mes. */
   function armarMeses() {
-    const NUM: Record<string, string> = {
-      enero: '01', febrero: '02', marzo: '03', abril: '04', mayo: '05', junio: '06',
-      julio: '07', agosto: '08', septiembre: '09', octubre: '10', noviembre: '11', diciembre: '12',
-    };
-    const totales = new Map<string, { ingresos: number; egresos: number }>();
-    for (const m of data?.settings?.mesesHistoricos ?? []) {
-      const num = NUM[m.mes.toLowerCase()];
-      if (num) totales.set(`${m.anio}-${num}`, { ingresos: m.ingresos || 0, egresos: m.egresos || 0 });
-    }
-    const locales = new Map<string, { ingresos: number; egresos: number }>();
-    for (const i of j2.ingresos) {
-      const k = i.fecha.slice(0, 7);
-      locales.set(k, { ingresos: (locales.get(k)?.ingresos || 0) + i.monto, egresos: locales.get(k)?.egresos || 0 });
-    }
-    for (const e of j2.egresos) {
-      const k = e.fecha.slice(0, 7);
-      locales.set(k, { ingresos: locales.get(k)?.ingresos || 0, egresos: (locales.get(k)?.egresos || 0) + e.monto });
-    }
-    // Un mes cerrado que vino de la planilla manda: lo cargado en la app para ese
-    // mes puede estar incompleto (se empezó a usar a mitad de camino).
-    for (const [k, v] of locales) {
-      if (k !== mc && totales.has(k)) continue;
-      totales.set(k, v);
-    }
-    if (!totales.has(mc)) totales.set(mc, { ingresos: 0, egresos: 0 });
+    const totales = totalesMensuales(data?.settings?.mesesHistoricos ?? [], j2.ingresos, j2.egresos, mc);
     return [...totales.entries()]
       .filter(([k]) => k <= mc)
       .sort(([a], [b]) => b.localeCompare(a))

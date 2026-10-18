@@ -1,5 +1,10 @@
 import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { getJson } from '@/lib/api';
 import { money } from '@/lib/format';
+import { mesClaveRef } from '@/lib/j2local';
+import { totalesMensuales } from '@/lib/historialMensual';
+import type { ResumenPayload } from '@/types';
 import { useJ2Local } from '@/context/J2LocalContext';
 
 const MESES_ES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
@@ -40,6 +45,18 @@ function labelMes(ym: string) {
   return `${MESES_ES[Number(m) - 1]} ${y.slice(2)}`;
 }
 
+/** Con muchos meses, mostrar la etiqueta cada tantos para que no se pisen. */
+function cadaCuanto(n: number) {
+  return Math.max(1, Math.ceil(n / 12));
+}
+
+function abreviar(v: number) {
+  const a = Math.abs(v);
+  if (a >= 1_000_000) return `$${(v / 1_000_000).toFixed(1).replace('.', ',')}M`;
+  if (a >= 1000) return `$${Math.round(v / 1000)}k`;
+  return `$${v}`;
+}
+
 /** Escala un valor a píxeles dentro de una altura máxima. */
 function escala(val: number, max: number, altura: number) {
   if (max === 0) return 0;
@@ -71,8 +88,9 @@ function BarGroupChart({
 
   const max = Math.max(...seriesA, ...seriesB, 1);
   const groupW = innerW / meses.length;
-  const barW = Math.max(6, Math.min(28, groupW * 0.38));
-  const gap = Math.max(2, barW * 0.2);
+  const barW = Math.max(2, Math.min(28, groupW * 0.38));
+  const gap = Math.max(1, barW * 0.2);
+  const paso = cadaCuanto(meses.length);
 
   // Y-axis ticks
   const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(f * max));
@@ -92,7 +110,7 @@ function BarGroupChart({
             <g key={t}>
               <line x1={padL - 4} y1={y} x2={padL + innerW} y2={y} stroke="var(--borde-color, #e0e0e0)" strokeWidth={0.8} />
               <text x={padL - 8} y={y + 4} textAnchor="end" fontSize={10} fill="var(--texto-2, #888)">
-                {t >= 1000 ? `$${(t / 1000).toFixed(0)}k` : `$${t}`}
+                {abreviar(t)}
               </text>
             </g>
           );
@@ -124,9 +142,11 @@ function BarGroupChart({
               />
 
               {/* X label */}
-              <text x={cx} y={H - padB + 14} textAnchor="middle" fontSize={10} fill="var(--texto-2, #888)">
-                {labelMes(mes)}
-              </text>
+              {(i % paso === 0 || isHov) && (
+                <text x={cx} y={H - padB + 14} textAnchor="middle" fontSize={10} fill="var(--texto-2, #888)">
+                  {labelMes(mes)}
+                </text>
+              )}
 
               {/* Tooltip on hover */}
               {isHov && (
@@ -246,7 +266,8 @@ function ResultadoLine({ meses, resultados }: { meses: string[]; resultados: num
         {/* Points + labels */}
         {points.map((p, i) => (
           <g key={i} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}>
-            <circle cx={p.x} cy={p.y} r={5} fill={resultados[i] >= 0 ? COLOR_RES_POS : COLOR_RES_NEG} />
+            <circle cx={p.x} cy={p.y} r={meses.length > 12 ? 3 : 5} fill={resultados[i] >= 0 ? COLOR_RES_POS : COLOR_RES_NEG} />
+            <rect x={p.x - innerW / meses.length / 2} y={padT} width={innerW / meses.length} height={innerH} fill="transparent" />
             {hover === i && (
               <g>
                 <rect x={p.x - 44} y={p.y - 30} width={88} height={24} rx={4} fill="var(--superficie,#fff)" stroke="var(--borde-color,#ddd)" strokeWidth={1} />
@@ -255,7 +276,9 @@ function ResultadoLine({ meses, resultados }: { meses: string[]; resultados: num
                 </text>
               </g>
             )}
-            <text x={p.x} y={H - padB + 14} textAnchor="middle" fontSize={10} fill="var(--texto-2,#888)">{labelMes(meses[i])}</text>
+            {(i % cadaCuanto(meses.length) === 0 || hover === i) && (
+              <text x={p.x} y={H - padB + 14} textAnchor="middle" fontSize={10} fill="var(--texto-2,#888)">{labelMes(meses[i])}</text>
+            )}
           </g>
         ))}
 
@@ -270,19 +293,41 @@ function ResultadoLine({ meses, resultados }: { meses: string[]; resultados: num
 
 export function GraficosPage() {
   const j2 = useJ2Local();
-  const [rango, setRango] = useState(6);
+  const [eleccion, setEleccion] = useState(6);
+  const mc = mesClaveRef();
+
+  // Los mismos totales por mes que el Resumen: historial importado + lo cargado en la app.
+  const { data } = useQuery({
+    queryKey: ['resumen'],
+    queryFn: () => getJson<ResumenPayload>('/api/resumen'),
+  });
+  const totales = useMemo(
+    () => totalesMensuales(data?.settings?.mesesHistoricos ?? [], j2.ingresos, j2.egresos, mc),
+    [data, j2.ingresos, j2.egresos, mc]
+  );
+
+  // "Todo" (0) abarca desde el primer mes con datos.
+  const rango = useMemo(() => {
+    if (eleccion) return eleccion;
+    const primero = [...totales.keys()].sort()[0] ?? mc;
+    const [ay, am] = primero.split('-').map(Number);
+    const [by, bm] = mc.split('-').map(Number);
+    return Math.max(1, (by - ay) * 12 + (bm - am) + 1);
+  }, [eleccion, totales, mc]);
 
   const meses = useMemo(() => ultimosMeses(rango), [rango]);
 
-  const { ingPorMes, egrPorMes, resultados } = useMemo(() => {
-    const ing: number[] = meses.map((m) =>
-      j2.ingresos.filter((i) => i.fecha.startsWith(m)).reduce((s, i) => s + i.monto, 0)
-    );
-    const egr: number[] = meses.map((m) =>
-      j2.egresos.filter((e) => e.fecha.startsWith(m)).reduce((s, e) => s + e.monto, 0)
-    );
-    return { ingPorMes: ing, egrPorMes: egr, resultados: ing.map((v, i) => v - egr[i]) };
-  }, [meses, j2.ingresos, j2.egresos]);
+  const { ingPorMes, egrPorMes, resultados, conPlanilla } = useMemo(() => {
+    const ing = meses.map((m) => totales.get(m)?.ingresos ?? 0);
+    const egr = meses.map((m) => totales.get(m)?.egresos ?? 0);
+    const planilla = meses.filter((m) => totales.get(m)?.fuente === 'planilla');
+    return {
+      ingPorMes: ing,
+      egrPorMes: egr,
+      resultados: ing.map((v, i) => v - egr[i]),
+      conPlanilla: planilla.length ? planilla[planilla.length - 1] : null,
+    };
+  }, [meses, totales]);
 
   // Egresos por tipo del mes más reciente con datos
   const egresosPorTipo = useMemo(() => {
@@ -326,19 +371,26 @@ export function GraficosPage() {
         <div className="section-title">
           Gráficos <small>Análisis de ingresos y egresos</small>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          {[3, 6, 12].map((n) => (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {[3, 6, 12, 24, 0].map((n) => (
             <button
               key={n}
               type="button"
-              className={`btn ${rango === n ? '' : 'secundario'} sm`}
-              onClick={() => setRango(n)}
+              className={`btn ${eleccion === n ? '' : 'secundario'} sm`}
+              onClick={() => setEleccion(n)}
             >
-              {n} meses
+              {n ? `${n} meses` : 'Todo'}
             </button>
           ))}
         </div>
       </div>
+
+      {conPlanilla && (
+        <p className="form-ayuda" style={{ marginBottom: 'var(--sp-4)' }}>
+          Hasta {labelMes(conPlanilla)} se usan los totales del historial importado de la planilla; después, lo cargado en la app.
+          El detalle por tipo y por medio sale solo de lo cargado en la app.
+        </p>
+      )}
 
       {/* Cards resumen */}
       <div className="cards-grid" style={{ marginBottom: 'var(--sp-5)' }}>
@@ -383,7 +435,7 @@ export function GraficosPage() {
           Resultado neto por mes
         </h3>
         <ResultadoLine meses={meses} resultados={resultados} />
-        <div style={{ display: 'flex', gap: 24, marginTop: 'var(--sp-3)', flexWrap: 'wrap' }}>
+        <div style={{ display: meses.length > 12 ? 'none' : 'flex', gap: 24, marginTop: 'var(--sp-3)', flexWrap: 'wrap' }}>
           {resultados.map((r, i) => (
             <div key={meses[i]} style={{ fontSize: 12 }}>
               <span style={{ color: 'var(--texto-2)' }}>{labelMes(meses[i])}: </span>
