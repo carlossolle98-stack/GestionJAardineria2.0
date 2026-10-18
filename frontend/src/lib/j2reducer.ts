@@ -154,12 +154,42 @@ function aplicar(d: J2Datos, mov: Movimiento): J2Datos {
     cuenta,
   };
 
+  const movlog = [asiento, ...d.movlog];
   return {
     ...d,
     cuentas,
     inversiones,
-    movlog: [asiento, ...d.movlog].slice(0, TOPE_MOVLOG),
+    movlog: movlog.length > TOPE_MOVLOG ? resumirLibro(movlog) : movlog,
   };
+}
+
+/**
+ * Cuando el libro llega al tope, los asientos más viejos se resumen en un
+ * "saldo anterior" por cuenta. Recortarlos sin más hacía que la suma del libro
+ * dejara de explicar el saldo y aparecía un descuadre que no existía.
+ */
+export function resumirLibro(log: J2MovLog[]): J2MovLog[] {
+  const conservar = log.slice(0, TOPE_MOVLOG - 100);
+  const viejos = log.slice(TOPE_MOVLOG - 100);
+  const porCuenta = new Map<string, { monto: number; fecha: string; cantidad: number }>();
+  for (const m of viejos) {
+    const previo = porCuenta.get(m.cuenta);
+    porCuenta.set(m.cuenta, {
+      monto: (previo?.monto || 0) + m.monto,
+      fecha: previo && previo.fecha > m.fecha ? previo.fecha : m.fecha,
+      cantidad: (previo?.cantidad || 0) + 1,
+    });
+  }
+  const arrastre: J2MovLog[] = [...porCuenta.entries()].map(([cuenta, v]) => ({
+    id: nuevoId('ml'),
+    fecha: v.fecha,
+    tipo: 'saldo_anterior',
+    concepto: 'Saldo de movimientos anteriores',
+    detalle: `${v.cantidad} movimientos resumidos`,
+    monto: v.monto,
+    cuenta,
+  }));
+  return [...conservar, ...arrastre];
 }
 
 function anulacion(motivo: string): J2Anulacion {
@@ -333,8 +363,7 @@ export type J2Accion =
   | { tipo: 'addDeudaCliente'; payload: Omit<J2DeudaCliente, 'id' | 'estado'> }
   | { tipo: 'pagarDeudaCliente'; id: string; cuenta: keyof J2Cuentas }
   | { tipo: 'removeDeudaCliente'; id: string }
-  | { tipo: 'moverListaEspera'; id: string; direccion: 'arriba' | 'abajo' }
-  | { tipo: 'reiniciarPeriodo' };
+  | { tipo: 'moverListaEspera'; id: string; direccion: 'arriba' | 'abajo' };
 
 /** Acciones que no tiene sentido deshacer (carga inicial, el propio deshacer). */
 const SIN_UNDO = new Set(['hidratar', 'deshacer', 'precioUsd']);
@@ -1026,17 +1055,6 @@ function transicion(d: J2Datos, a: J2Accion): J2Datos {
       }
       return sinDeuda;
     }
-
-    case 'reiniciarPeriodo':
-      return {
-        ...d,
-        egresos: [],
-        ingresos: [],
-        transferencias: [],
-        deudasClientes: [],
-        listaEspera: [],
-        movlog: [],
-      };
 
     default:
       return d;

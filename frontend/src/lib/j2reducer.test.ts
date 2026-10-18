@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   j2Reducer,
   normalizarInversiones,
+  TOPE_MOVLOG,
   totalesDelLog,
   type J2Accion,
   type J2Datos,
@@ -402,6 +403,25 @@ describe('compra de activos', () => {
     const { datos } = correr([{ tipo: 'compraActivo', nombre: 'Desmalezadora', monto: 300_000, cuenta: 'efectivo', fecha: '2026-10-09' }]);
     expect(datos.cuentas.efectivo).toBe(-200_000);
     expect(datos.egresos).toHaveLength(0);
+  });
+});
+
+describe('libro de movimientos sin borrar el historial', () => {
+  it('al pasar el tope resume lo viejo y el libro sigue explicando cada saldo', () => {
+    const inicial: J2Datos = { ...VACIO, cuentas: { mp: 0, banco: 0, efectivo: 0 } };
+    const acciones: J2Accion[] = [];
+    for (let i = 0; i < 2_300; i++) {
+      acciones.push(i % 3 === 0
+        ? { tipo: 'addIngreso', payload: { fecha: '2026-10-01', cliente: 'X', concepto: '', monto: 1_000, medio: 'Mercado Pago' } }
+        : egreso(100, { cuenta: i % 2 ? 'banco' : 'efectivo' }));
+    }
+    const { datos } = correr(acciones, inicial);
+    expect(datos.movlog.length).toBeLessThanOrEqual(TOPE_MOVLOG);
+    const totales = totalesDelLog(datos.movlog);
+    expect(totales.mp).toBe(datos.cuentas.mp);
+    expect(totales.banco).toBe(datos.cuentas.banco);
+    expect(totales.efectivo).toBe(datos.cuentas.efectivo);
+    expect(datos.movlog.some((m) => m.tipo === 'saldo_anterior')).toBe(true);
   });
 });
 

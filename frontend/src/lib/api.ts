@@ -111,17 +111,3 @@ export function sendJsonKeepalive(path: string, body: unknown) {
     body: JSON.stringify(body),
   }).catch(() => {});
 }
-
-export async function postAdminSeed(
-  secret: string,
-  opts?: { force?: boolean }
-): Promise<{
-  ok: boolean;
-  force: boolean;
-  insertedClientes: number;
-  insertedProveedores: number;
-  settingsUpserted: boolean;
-  totals: { clientes: number; proveedores: number };
-}> {
-  return sendJson('/api/admin/seed', 'POST', { secret, force: opts?.force !== false });
-}

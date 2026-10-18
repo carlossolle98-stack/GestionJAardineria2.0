@@ -1,23 +1,15 @@
-import { useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { getJson, postAdminSeed, sendJson } from '@/lib/api';
-import { useToast } from '@/context/ToastContext';
+import { useQuery } from '@tanstack/react-query';
+import { getJson } from '@/lib/api';
 import { money, todayISO } from '@/lib/format';
 import { diasDesde, mesClaveRef } from '@/lib/j2local';
 import { useJ2Local } from '@/context/J2LocalContext';
 import { useAuth } from '@/context/AuthContext';
-import { Dialogo, ConfirmarDialogo } from '@/components/Modal';
+import { ErrorCarga } from '@/components/Estados';
 import { totalBienesDeUso } from '@/lib/activos';
 import type { Activo, ResumenPayload, Turno } from '@/types';
 
 export function ResumenPage() {
-  const qc = useQueryClient();
-  const { toast } = useToast();
-  const [seedBusy, setSeedBusy] = useState(false);
-  const [resetBusy, setResetBusy] = useState(false);
-  const [confirmando, setConfirmando] = useState<'periodo' | 'seed' | null>(null);
-  const [seedSecret, setSeedSecret] = useState('');
-  const { puede, esAdmin } = useAuth();
+  const { puede } = useAuth();
   const j2 = useJ2Local();
   const mc = mesClaveRef();
   const fijosMes   = j2.egresos.filter((e) => e.tipo === 'fijo'   && e.fecha.startsWith(mc));
@@ -42,7 +34,8 @@ export function ResumenPage() {
     .filter((e) => e.modalidad === 'sinDescuentos')
     .reduce((s, e) => s + Math.max(0, e.aguinaldoDevengado || 0), 0);
 
-  const { data, isLoading, error } = useQuery({
+  // Del servidor sólo sale el historial viejo de meses: si falla, el resto del resumen sigue funcionando.
+  const { data, error, refetch } = useQuery({
     queryKey: ['resumen'],
     queryFn: () => getJson<ResumenPayload>('/api/resumen'),
   });
@@ -111,46 +104,6 @@ export function ResumenPage() {
     }
   }
 
-  async function ejecutarSeedServidor() {
-    const secret = seedSecret.trim();
-    if (!secret) return;
-    setConfirmando(null);
-    setSeedSecret('');
-    setSeedBusy(true);
-    try {
-      const r = await postAdminSeed(secret, { force: true });
-      toast(`Seed OK · ${r.totals.clientes} clientes`);
-      await qc.invalidateQueries({ queryKey: ['resumen'] });
-      await qc.invalidateQueries({ queryKey: ['turnos-all'] });
-      await qc.invalidateQueries({ queryKey: ['clientes'] });
-    } catch (e) {
-      toast(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSeedBusy(false);
-    }
-  }
-
-  if (isLoading) return <p style={{ padding: 24 }}>Cargando…</p>;
-  if (error)
-    return (
-      <div style={{ padding: 24 }}>
-        <p style={{ color: 'var(--rojo)' }}>{String(error)}</p>
-        <button type="button" className="btn secundario" style={{ marginTop: 12 }} disabled={seedBusy} onClick={() => setConfirmando('seed')}>
-          {seedBusy ? '…' : 'Cargar datos iniciales (seed)'}
-        </button>
-      </div>
-    );
-  if (!data?.settings)
-    return (
-      <div style={{ padding: 24 }}>
-        <p>Sin configuración en el servidor.</p>
-        <button type="button" className="btn" style={{ marginTop: 12 }} disabled={seedBusy} onClick={() => setConfirmando('seed')}>
-          {seedBusy ? '…' : 'Cargar datos iniciales (seed)'}
-        </button>
-      </div>
-    );
-
-  const s = data.settings;
   const cajaLiquidaTotal = (j2.cuentas.mp || 0) + (j2.cuentas.banco || 0) + (j2.cuentas.efectivo || 0);
   const subCaja = `MP ${money(j2.cuentas.mp || 0)} · Banco ${money(j2.cuentas.banco || 0)} · Efectivo ${money(j2.cuentas.efectivo || 0)}`;
   const deudaPendientes = j2.deudasClientes.filter((d) => d.estado === 'pendiente');
@@ -162,20 +115,7 @@ export function ResumenPage() {
   const totalActivos = cajaLiquidaTotal + totalInv + totalDeudaPendiente + totalBienes;
   const totalDeudas = deudaCreditos + deudaAguinaldos;
   const patrimonioTotal = totalActivos - totalDeudas;
-  const meses = s.mesesHistoricos;
-
-  const MESES_NUM: Record<string, string> = {
-    enero: '01', febrero: '02', marzo: '03', abril: '04',
-    mayo: '05', junio: '06', julio: '07', agosto: '08',
-    septiembre: '09', octubre: '10', noviembre: '11', diciembre: '12',
-  };
-
-  function egresosLocalesDeMes(mesNombreEs: string, anio: number) {
-    const num = MESES_NUM[mesNombreEs.toLowerCase()];
-    if (!num) return null;
-    const clave = `${anio}-${num}`;
-    return j2.egresos.filter((e) => e.fecha.startsWith(clave)).reduce((s, e) => s + e.monto, 0);
-  }
+  const meses = armarMeses();
 
   // Ingresos y resultado del mes — 100% local
   const ingresosMesLocal = j2.ingresos
@@ -186,46 +126,62 @@ export function ResumenPage() {
   const mesNombre = new Date(mc + '-02').toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
   const mesLabel = mesNombre.charAt(0).toUpperCase() + mesNombre.slice(1);
 
-  function ingresosLocalesDeMes(mesNombreEs: string, anio: number) {
-    const num = MESES_NUM[mesNombreEs.toLowerCase()];
-    if (!num) return null;
-    const clave = `${anio}-${num}`;
-    return j2.ingresos.filter((i) => i.fecha.startsWith(clave)).reduce((s, i) => s + i.monto, 0);
-  }
-
-  async function iniciarNuevoPeriodo() {
-    const mesActualRaw = new Date(mc + '-02').toLocaleDateString('es-AR', { month: 'long' });
-    const mesActual = mesActualRaw.charAt(0).toUpperCase() + mesActualRaw.slice(1);
-    const anioActual = parseInt(mc.split('-')[0], 10);
-
-    setConfirmando(null);
-    setResetBusy(true);
-    try {
-      // 1. Limpiar arrays locales (conserva cuentas, empleados, inversiones)
-      j2.resetLocalData();
-
-      // 2. Actualizar tabla histórica: marcar mes anterior como cerrado y agregar el nuevo
-      const historialCerrado = (s.mesesHistoricos ?? []).map((m) =>
-        m.estado === 'En curso' ? { ...m, estado: 'Cerrado' } : m
-      );
-      const nuevoMesEntry = { mes: mesActual, anio: anioActual, ingresos: 0, egresos: 0, estado: 'En curso' };
-      const yaExiste = historialCerrado.some((m) => m.mes === mesActual && m.anio === anioActual);
-      await sendJson('/api/settings', 'PUT', {
-        ...s,
-        mesesHistoricos: yaExiste ? historialCerrado : [...historialCerrado, nuevoMesEntry],
-      });
-
-      await qc.invalidateQueries({ queryKey: ['resumen'] });
-      toast(`✓ Nuevo período iniciado — ${mesActual} ${anioActual}`);
-    } catch (e) {
-      toast(e instanceof Error ? e.message : String(e));
-    } finally {
-      setResetBusy(false);
+  /**
+   * Últimos 12 meses armados con los datos de la app. Para meses sin datos
+   * cargados acá (anteriores a la app) se usa el total guardado en el servidor.
+   * Ningún botón hace falta para pasar de mes: el actual está en curso y los demás cerrados.
+   */
+  function armarMeses() {
+    const NUM: Record<string, string> = {
+      enero: '01', febrero: '02', marzo: '03', abril: '04', mayo: '05', junio: '06',
+      julio: '07', agosto: '08', septiembre: '09', octubre: '10', noviembre: '11', diciembre: '12',
+    };
+    const totales = new Map<string, { ingresos: number; egresos: number }>();
+    for (const m of data?.settings?.mesesHistoricos ?? []) {
+      const num = NUM[m.mes.toLowerCase()];
+      if (num) totales.set(`${m.anio}-${num}`, { ingresos: m.ingresos || 0, egresos: m.egresos || 0 });
     }
+    const locales = new Map<string, { ingresos: number; egresos: number }>();
+    for (const i of j2.ingresos) {
+      const k = i.fecha.slice(0, 7);
+      locales.set(k, { ingresos: (locales.get(k)?.ingresos || 0) + i.monto, egresos: locales.get(k)?.egresos || 0 });
+    }
+    for (const e of j2.egresos) {
+      const k = e.fecha.slice(0, 7);
+      locales.set(k, { ingresos: locales.get(k)?.ingresos || 0, egresos: (locales.get(k)?.egresos || 0) + e.monto });
+    }
+    for (const [k, v] of locales) {
+      const previo = totales.get(k);
+      totales.set(k, {
+        ingresos: v.ingresos > 0 ? v.ingresos : previo?.ingresos || 0,
+        egresos: v.egresos > 0 ? v.egresos : previo?.egresos || 0,
+      });
+    }
+    if (!totales.has(mc)) totales.set(mc, { ingresos: 0, egresos: 0 });
+    return [...totales.entries()]
+      .filter(([k]) => k <= mc)
+      .sort(([a], [b]) => b.localeCompare(a))
+      .slice(0, 12)
+      .map(([clave, v]) => {
+        const nombre = new Date(clave + '-02T12:00:00').toLocaleDateString('es-AR', { month: 'long' });
+        return {
+          clave,
+          mes: nombre.charAt(0).toUpperCase() + nombre.slice(1),
+          anio: Number(clave.slice(0, 4)),
+          ...v,
+          enCurso: clave === mc,
+        };
+      });
   }
 
   return (
     <>
+      {error && (
+        <ErrorCarga
+          mensaje="No se pudo leer el historial de meses anteriores del servidor. Los números de este mes están completos."
+          onReintentar={() => void refetch()}
+        />
+      )}
       <div className="cards-grid">
         <div className="card">
           <div className="card-label">Caja Líquida</div>
@@ -348,43 +304,27 @@ export function ResumenPage() {
               </tr>
             </thead>
             <tbody>
-              {meses.length === 0 ? (
-                <tr>
-                  <td colSpan={6} style={{ textAlign: 'center', color: '#aaa', padding: 16 }}>
-                    Sin historial — empezá a cargar datos este mes
-                  </td>
-                </tr>
-              ) : (
-                meses.map((m, idx) => {
-                  const isLast = idx === meses.length - 1;
-                  const ingLocal = ingresosLocalesDeMes(m.mes, m.anio);
-                  const ing = ingLocal !== null && ingLocal > 0
-                    ? ingLocal
-                    : (isLast && m.estado?.toLowerCase().includes('curso') ? data.ingresosMes : m.ingresos);
-                  const egLocal = egresosLocalesDeMes(m.mes, m.anio);
-                  const eg = (egLocal !== null && egLocal > 0) ? egLocal : m.egresos;
-                  const res = ing - eg;
-                  const urgente = m.estado?.toLowerCase().includes('curso');
-                  return (
-                    <tr key={`${m.mes}-${m.anio}`} className={urgente ? 'prioridad-alta' : undefined}>
-                      <td><strong>{m.mes}</strong></td>
-                      <td>{m.anio}</td>
-                      <td style={ing === 0 && urgente ? { color: 'var(--rojo)' } : undefined}>
-                        {ing === 0 && urgente ? `${money(0)} (sin cargar)` : money(ing)}
-                      </td>
-                      <td>{money(eg)}</td>
-                      <td style={{ color: res >= 0 ? '#2e7d32' : 'var(--rojo)', fontWeight: 600 }}>
-                        {res >= 0 ? '+' : ''}{money(res)}
-                      </td>
-                      <td>
-                        <span className={`badge ${urgente ? 'urgente' : 'ok'}`}>
-                          {urgente ? '⚠ En curso' : '✓ Cerrado'}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
+              {meses.map((m) => {
+                const res = m.ingresos - m.egresos;
+                return (
+                  <tr key={m.clave} className={m.enCurso ? 'prioridad-alta' : undefined}>
+                    <td><strong>{m.mes}</strong></td>
+                    <td>{m.anio}</td>
+                    <td style={m.ingresos === 0 && m.enCurso ? { color: 'var(--rojo)' } : undefined}>
+                      {m.ingresos === 0 && m.enCurso ? `${money(0)} (sin cargar)` : money(m.ingresos)}
+                    </td>
+                    <td>{money(m.egresos)}</td>
+                    <td style={{ color: res >= 0 ? 'var(--verde-vivo)' : 'var(--rojo)', fontWeight: 600 }}>
+                      {res >= 0 ? '+' : ''}{money(res)}
+                    </td>
+                    <td>
+                      <span className={`badge ${m.enCurso ? 'pendiente' : 'ok'}`}>
+                        {m.enCurso ? 'En curso' : '✓ Cerrado'}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -417,100 +357,6 @@ export function ResumenPage() {
         </div>
       )}
 
-      <div
-        style={{
-          marginTop: 32,
-          paddingTop: 16,
-          borderTop: '1px solid rgba(26,46,26,0.1)',
-          display: 'flex',
-          gap: 12,
-          flexWrap: 'wrap',
-          alignItems: 'center',
-        }}
-      >
-        {esAdmin && (
-          <button
-            type="button"
-            className="btn secundario"
-            disabled={resetBusy}
-            onClick={() => setConfirmando('periodo')}
-          >
-            {resetBusy ? '…' : '🔄 Iniciar nuevo período'}
-          </button>
-        )}
-        {puede('ajustes') && (
-          <button
-            type="button"
-            className="btn fantasma sm"
-            disabled={seedBusy}
-            onClick={() => setConfirmando('seed')}
-          >
-            {seedBusy ? '…' : 'Reiniciar datos demo en el servidor'}
-          </button>
-        )}
-      </div>
-
-      {confirmando === 'periodo' && (
-        <ConfirmarDialogo
-          titulo="Iniciar nuevo período"
-          peligro
-          textoConfirmar="Iniciar período"
-          mensaje={
-            <>
-              <p style={{ marginBottom: 'var(--sp-3)' }}>
-                Se vacían ingresos, egresos, movimientos, deudas por cobrar, transferencias y la
-                lista de espera.
-              </p>
-              <p style={{ marginBottom: 'var(--sp-3)' }}>
-                Se conservan los saldos de cuentas ({money(cajaLiquidaTotal)}), empleados,
-                inversiones y todo lo que vive en el servidor: clientes, agenda y prospectos.
-              </p>
-              <p>
-                Antes de confirmar, conviene exportar los movimientos del período desde la pantalla
-                Movimientos.
-              </p>
-            </>
-          }
-          onConfirmar={() => void iniciarNuevoPeriodo()}
-          onCerrar={() => setConfirmando(null)}
-        />
-      )}
-
-      {confirmando === 'seed' && (
-        <Dialogo titulo="Reiniciar datos demo" onCerrar={() => setConfirmando(null)}>
-          <div className="alerta urgente">
-            <span aria-hidden="true">⚠️</span>
-            <span>
-              Se borran del servidor los clientes, proveedores y ajustes globales, y se vuelven a
-              cargar los datos de ejemplo. No se puede deshacer.
-            </span>
-          </div>
-          <div className="form-group">
-            <label htmlFor="seed-secret">ADMIN_SEED_SECRET</label>
-            <input
-              id="seed-secret"
-              type="password"
-              autoComplete="off"
-              value={seedSecret}
-              onChange={(e) => setSeedSecret(e.target.value)}
-            />
-            <p className="form-ayuda">Es la variable configurada en el backend.</p>
-          </div>
-          <div className="dialogo-acciones">
-            <button type="button" className="btn secundario" onClick={() => setConfirmando(null)}>
-              Cancelar
-            </button>
-            <button
-              type="button"
-              className="btn peligro"
-              disabled={!seedSecret.trim() || seedBusy}
-              onClick={() => void ejecutarSeedServidor()}
-            >
-              Reiniciar datos
-            </button>
-          </div>
-        </Dialogo>
-      )}
     </>
   );
 }

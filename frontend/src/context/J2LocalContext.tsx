@@ -138,7 +138,6 @@ type J2Ctx = J2Datos & {
   addDeudaCliente: (p: Omit<J2DeudaCliente, 'id' | 'estado'>) => void;
   pagarDeudaCliente: (id: string, cuenta: keyof J2Cuentas) => void;
   removeDeudaCliente: (id: string) => void;
-  resetLocalData: () => void;
 };
 
 const Ctx = createContext<J2Ctx | null>(null);
@@ -401,7 +400,6 @@ export function J2LocalProvider({ children }: { children: ReactNode }) {
       pagarDeudaCliente: (id: string, cuenta: keyof J2Cuentas) =>
         envia({ tipo: 'pagarDeudaCliente', id, cuenta }),
       removeDeudaCliente: (id: string) => envia({ tipo: 'removeDeudaCliente', id }),
-      resetLocalData: () => envia({ tipo: 'reiniciarPeriodo' }),
     }),
     [envia]
   );
