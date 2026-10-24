@@ -6,6 +6,8 @@
  */
 
 export type Permiso =
+  | 'tareas'
+  | 'tareas_admin'
   | 'agenda'
   | 'clientes'
   | 'prospectos'
@@ -46,6 +48,8 @@ export type PermisoMeta = {
 /** Ruta que le corresponde a cada permiso, para redirigir al entrar. */
 export const RUTA_POR_PERMISO: Record<Permiso, string> = {
   resumen: '/',
+  tareas: '/tareas',
+  tareas_admin: '/tareas',
   clientes: '/clientes',
   prospectos: '/prospectos',
   agenda: '/agenda',
@@ -65,6 +69,8 @@ export const RUTA_POR_PERMISO: Record<Permiso, string> = {
 /** Orden en que se busca la primera pantalla disponible para el usuario. */
 const PRIORIDAD: Permiso[] = [
   'resumen',
+  'tareas',
+  'tareas_admin',
   'agenda',
   'clientes',
   'cobros',

@@ -229,6 +229,31 @@ export type J2Ingreso = {
   egresoId?: string;
 };
 
+export type TipoTarea = 'operativa' | 'administrativa';
+export type RepetirTarea = { cada: '' | 'dia' | 'semana' | 'mes' | 'dias'; n: number };
+
+export type Tarea = {
+  _id: string;
+  titulo: string;
+  notas: string;
+  tipo: TipoTarea;
+  prioridad: 'normal' | 'urgente';
+  vence: string;
+  hora: string;
+  responsableId: string | null;
+  responsableNombre: string;
+  repetir: RepetirTarea;
+  checklist: { _id: string; texto: string; hecho: boolean; hechoPor: string }[];
+  vinculo: { tipo: string; id: string; nombre: string };
+  estado: 'pendiente' | 'hecha';
+  hechaEn: string | null;
+  hechaPor: string;
+  comentarios: { _id: string; autor: string; texto: string; fecha: string }[];
+  creadaPor: string;
+  origen: string;
+  createdAt: string;
+};
+
 export type Activo = {
   _id: string;
   nombre: string;
