@@ -222,14 +222,15 @@ export function TareasPage() {
         <input
           id="tarea-rapida"
           aria-label="Tarea rápida"
+          className="campo"
           value={rapida}
           onChange={(e) => setRapida(e.target.value)}
           placeholder="Escribí una tarea y apretá Enter…"
-          style={{ flex: 1, minWidth: 220 }}
+          style={{ flex: 1, minWidth: 220, width: 'auto' }}
         />
-        <input type="date" aria-label="Vence" value={rapidaVence} onChange={(e) => setRapidaVence(e.target.value)} style={{ width: 'auto' }} />
+        <input type="date" className="campo" aria-label="Vence" value={rapidaVence} onChange={(e) => setRapidaVence(e.target.value)} style={{ width: 'auto' }} />
         {tipos.length > 1 && (
-          <select aria-label="Tipo" value={rapidaTipo} onChange={(e) => setRapidaTipo(e.target.value as TipoTarea)} style={{ width: 'auto' }}>
+          <select className="campo" aria-label="Tipo" value={rapidaTipo} onChange={(e) => setRapidaTipo(e.target.value as TipoTarea)} style={{ width: 'auto' }}>
             <option value="operativa">Operativa</option>
             <option value="administrativa">Administrativa</option>
           </select>
@@ -266,13 +267,13 @@ export function TareasPage() {
         ))}
         <span style={{ flex: 1 }} />
         {tipos.length > 1 && (
-          <select aria-label="Filtrar por tipo" value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value as 'todas' | TipoTarea)} style={{ width: 'auto' }}>
+          <select className="campo" aria-label="Filtrar por tipo" value={filtroTipo} onChange={(e) => setFiltroTipo(e.target.value as 'todas' | TipoTarea)} style={{ width: 'auto' }}>
             <option value="todas">Todos los tipos</option>
             <option value="operativa">Operativas</option>
             <option value="administrativa">Administrativas</option>
           </select>
         )}
-        <select aria-label="Filtrar por responsable" value={filtroResp} onChange={(e) => setFiltroResp(e.target.value)} style={{ width: 'auto' }}>
+        <select className="campo" aria-label="Filtrar por responsable" value={filtroResp} onChange={(e) => setFiltroResp(e.target.value)} style={{ width: 'auto' }}>
           <option value="todos">Todos</option>
           <option value="mias">Mías</option>
           <option value="sin">Sin asignar</option>
@@ -360,7 +361,7 @@ export function TareasPage() {
                       onSubmit={(e) => { e.preventDefault(); if (comentario.trim()) comentar.mutate({ id: t._id, texto: comentario.trim() }); }}
                       style={{ display: 'flex', gap: 'var(--sp-2)' }}
                     >
-                      <input aria-label="Comentario" value={comentario} onChange={(e) => setComentario(e.target.value)} placeholder="Agregar un comentario o novedad…" style={{ flex: 1 }} />
+                      <input className="campo" aria-label="Comentario" value={comentario} onChange={(e) => setComentario(e.target.value)} placeholder="Agregar un comentario o novedad…" style={{ flex: 1, width: 'auto', minWidth: 0 }} />
                       <button type="submit" className="btn secundario sm" disabled={!comentario.trim()}>Comentar</button>
                     </form>
 

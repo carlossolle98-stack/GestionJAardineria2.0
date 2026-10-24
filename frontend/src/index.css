@@ -466,7 +466,8 @@ tbody td {
 }
 .form-group input,
 .form-group select,
-.form-group textarea {
+.form-group textarea,
+.campo {
   width: 100%;
   border: 1px solid var(--linea-fuerte);
   border-radius: var(--r-sm);
@@ -485,7 +486,8 @@ tbody td {
 }
 .form-group input:focus,
 .form-group select:focus,
-.form-group textarea:focus {
+.form-group textarea:focus,
+.campo:focus {
   outline: none;
   border-color: var(--verde-vivo);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--verde-vivo) 22%, transparent);
