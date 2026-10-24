@@ -31,9 +31,10 @@ export function ResumenPage() {
     .filter(Boolean)
     .join(' · ');
   const inv = j2.inversiones;
-  const totalUSD = inv.usd.cantidad * inv.usd.precio;
+  const monedasConSaldo = inv.monedas.filter((m) => m.cantidad > 0);
+  const totalMonedas = monedasConSaldo.reduce((s, m) => s + m.cantidad * m.precio, 0);
   const invActivas = inv.items.filter((i) => i.activa || i.saldo !== 0);
-  const totalInv = invActivas.reduce((s, i) => s + i.saldo, 0) + totalUSD;
+  const totalInv = invActivas.reduce((s, i) => s + i.saldo, 0) + totalMonedas;
   const deudaCreditos = inv.creditos.filter((x) => !x.anulado).reduce((s, x) => s + x.saldo, 0);
   const deudaAguinaldos = j2.empleados
     .filter((e) => e.modalidad === 'sinDescuentos')
@@ -192,7 +193,10 @@ export function ResumenPage() {
           <div className="card-label">Inversiones</div>
           <div className="card-valor">{money(totalInv)}</div>
           <div className="card-sub">
-            {[...invActivas.map((i) => `${i.nombre} ${money(i.saldo)}`), `USD ${money(totalUSD)}`].join(' · ')}
+            {[
+              ...invActivas.map((i) => `${i.nombre} ${money(i.saldo)}`),
+              ...monedasConSaldo.map((m) => `${m.cantidad} ${m.codigo} ${money(Math.round(m.cantidad * m.precio))}`),
+            ].join(' · ') || 'Sin inversiones'}
           </div>
         </div>
         <div className="card azul">

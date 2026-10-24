@@ -13,7 +13,7 @@ const VACIO: J2Datos = {
   cuentas: { mp: 0, banco: 0, efectivo: 100_000 },
   inversiones: {
     items: [{ id: 'inv_fci', nombre: 'Fondo MP', saldo: 0, activa: true }],
-    usd: { cantidad: 0, precio: 0 },
+    monedas: [],
     creditos: [],
     capital: [],
   },
@@ -234,25 +234,47 @@ describe('deudas de clientes', () => {
   });
 });
 
-describe('dólares', () => {
-  it('comprar descuenta pesos y suma dólares', () => {
-    const { datos } = correr([
-      { tipo: 'usd', operacion: 'compra', cantidad: 50, precio: 1_500, cuenta: 'efectivo', motivo: '' },
-    ]);
-    expect(datos.cuentas.efectivo).toBe(25_000);
-    expect(datos.inversiones.usd.cantidad).toBe(50);
+describe('monedas extranjeras', () => {
+  const comprar = (codigo: string, cantidad: number, precio: number): J2Accion => ({
+    tipo: 'moneda', codigo, nombre: codigo, operacion: 'compra', cantidad, precio, cuenta: 'efectivo', motivo: '',
   });
 
-  it('vender hace el camino inverso', () => {
-    const paso1 = correr([
-      { tipo: 'usd', operacion: 'compra', cantidad: 50, precio: 1_500, cuenta: 'efectivo', motivo: '' },
-    ]);
+  it('comprar descuenta pesos y suma la moneda elegida', () => {
+    const { datos } = correr([comprar('USD', 50, 1_500), comprar('EUR', 10, 1_600)]);
+    expect(datos.cuentas.efectivo).toBe(100_000 - 75_000 - 16_000);
+    expect(datos.inversiones.monedas.map((m) => [m.codigo, m.cantidad])).toEqual([['USD', 50], ['EUR', 10]]);
+  });
+
+  it('vender hace el camino inverso y no deja vender más de lo que hay', () => {
+    const paso1 = correr([comprar('USD', 50, 1_500)]);
+    const venta = (cantidad: number): J2Accion => ({
+      tipo: 'moneda', codigo: 'USD', nombre: 'Dólar', operacion: 'venta', cantidad, precio: 1_500, cuenta: 'efectivo', motivo: '',
+    });
+    const { datos } = correr([venta(80), venta(50)], paso1.datos);
+    expect(datos.cuentas.efectivo).toBe(100_000);
+    expect(datos.inversiones.monedas[0].cantidad).toBe(0);
+  });
+
+  it('pagar una suscripción en dólares es gasto en pesos y baja la tenencia, sin tocar las cuentas', () => {
+    const paso1 = correr([comprar('USD', 50, 1_500)]);
     const { datos } = correr(
-      [{ tipo: 'usd', operacion: 'venta', cantidad: 50, precio: 1_500, cuenta: 'efectivo', motivo: '' }],
+      [{ tipo: 'pagarConMoneda', codigo: 'USD', cantidad: 20, precio: 1_550, fecha: '2026-10-24', egresoTipo: 'fijo', categoria: 'Claude', concepto: 'Suscripción' }],
       paso1.datos
     );
-    expect(datos.cuentas.efectivo).toBe(100_000);
-    expect(datos.inversiones.usd.cantidad).toBe(0);
+    expect(datos.egresos[0].monto).toBe(31_000);
+    expect(datos.inversiones.monedas[0].cantidad).toBe(30);
+    expect(datos.cuentas.efectivo).toBe(25_000);
+    // En el libro, el efectivo sólo se movió por la compra de dólares.
+    expect(totalesDelLog(datos.movlog).efectivo).toBe(-75_000);
+
+    const anulado = correr([{ tipo: 'anularEgreso', id: datos.egresos[0].id, motivo: 'error' }], datos);
+    expect(anulado.datos.inversiones.monedas[0].cantidad).toBe(50);
+    expect(anulado.datos.cuentas.efectivo).toBe(25_000);
+  });
+
+  it('el campo viejo de dólares pasa a la lista de monedas', () => {
+    const n = normalizarInversiones({ items: [], usd: { cantidad: 10, precio: 1_400 } });
+    expect(n.monedas).toEqual([{ codigo: 'USD', nombre: 'Dólar', cantidad: 10, precio: 1_400 }]);
   });
 });
 
@@ -280,7 +302,7 @@ describe('inversiones', () => {
   it('convierte el formato viejo (cocos/servente) sin perder saldos', () => {
     const n = normalizarInversiones({ cocos: 250_000, servente: 0, usd: { cantidad: 10, precio: 1_400 } });
     expect(n.items.map((i) => [i.id, i.saldo])).toEqual([['cocos', 250_000], ['servente', 0]]);
-    expect(n.usd.cantidad).toBe(10);
+    expect(n.monedas[0].cantidad).toBe(10);
     expect(n.creditos).toEqual([]);
   });
 });

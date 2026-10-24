@@ -28,6 +28,7 @@ import type {
   J2Inversiones,
   J2ListaEspera,
   J2Modalidad,
+  J2Moneda,
   J2MovCapital,
   J2MovLog,
   J2Pago,
@@ -95,10 +96,17 @@ export function normalizarInversiones(raw: unknown): J2Inversiones {
       .filter(([k]) => typeof r[k] === 'number')
       .map(([id, nombre]) => ({ id, nombre, saldo: r[id] as number, activa: true }));
   }
-  const usd = r.usd as J2Inversiones['usd'] | undefined;
+  // Antes había un único campo "usd": pasa a ser la primera moneda de la lista.
+  let monedas = Array.isArray(r.monedas) ? (r.monedas as J2Moneda[]) : [];
+  if (!Array.isArray(r.monedas)) {
+    const usd = r.usd as { cantidad?: number; precio?: number } | undefined;
+    if (usd?.cantidad || usd?.precio) {
+      monedas = [{ codigo: 'USD', nombre: 'Dólar', cantidad: usd.cantidad || 0, precio: usd.precio || 0 }];
+    }
+  }
   return {
     items,
-    usd: { cantidad: usd?.cantidad || 0, precio: usd?.precio || 0 },
+    monedas,
     creditos: Array.isArray(r.creditos)
       ? (r.creditos as J2Credito[]).map((c) => ({ ...c, pagos: c.pagos ?? [], ajustes: c.ajustes ?? [] }))
       : [],
@@ -208,6 +216,7 @@ export function calcularSueldo(emp: J2Empleado, bruto: number) {
 
 /** Lo que efectivamente salió de cada cuenta por un egreso. */
 export function salidasDe(e: J2Egreso): J2Pago[] {
+  if (e.moneda) return [];
   return e.partes?.length ? e.partes : [{ cuenta: e.cuenta, monto: e.monto }];
 }
 
@@ -268,6 +277,29 @@ function contraEgreso(d: J2Datos, id: string, an: J2Anulacion): J2Datos {
       aguinaldoDevengado: (e.aguinaldoDevengado || 0) + o.descontado,
     }));
   }
+  const mon = row.moneda;
+  if (mon) {
+    paso = aplicar(
+      {
+        ...paso,
+        inversiones: {
+          ...paso.inversiones,
+          monedas: paso.inversiones.monedas.map((m) =>
+            m.codigo === mon.codigo ? { ...m, cantidad: m.cantidad + mon.cantidad } : m
+          ),
+        },
+      },
+      {
+        tipo: 'egreso_anulado',
+        concepto: `Anulación — ${row.categoria}`,
+        detalle: `${an.motivo} (vuelven ${mon.cantidad} ${mon.codigo})`,
+        monto: row.monto,
+        cuenta: mon.codigo,
+        fecha: an.fecha,
+        afectaSaldo: false,
+      }
+    );
+  }
   for (const s of salidasDe(row)) {
     paso = aplicar(paso, {
       tipo: 'egreso_anulado',
@@ -327,14 +359,26 @@ export type J2Accion =
     }
   | { tipo: 'removeTransferencia'; id: string }
   | {
-      tipo: 'usd';
+      tipo: 'moneda';
+      codigo: string;
+      nombre: string;
       operacion: 'compra' | 'venta';
       cantidad: number;
       precio: number;
       cuenta: keyof J2Cuentas;
       motivo: string;
     }
-  | { tipo: 'precioUsd'; precio: number }
+  | { tipo: 'precioMoneda'; codigo: string; precio: number }
+  | {
+      tipo: 'pagarConMoneda';
+      codigo: string;
+      cantidad: number;
+      precio: number;
+      fecha: string;
+      egresoTipo: J2EgresoTipo;
+      categoria: string;
+      concepto: string;
+    }
   | { tipo: 'addInversion'; nombre: string }
   | { tipo: 'toggleInversion'; id: string }
   | { tipo: 'rendimientoInversion'; id: string; monto: number; fecha: string }
@@ -366,7 +410,7 @@ export type J2Accion =
   | { tipo: 'moverListaEspera'; id: string; direccion: 'arriba' | 'abajo' };
 
 /** Acciones que no tiene sentido deshacer (carga inicial, el propio deshacer). */
-const SIN_UNDO = new Set(['hidratar', 'deshacer', 'precioUsd']);
+const SIN_UNDO = new Set(['hidratar', 'deshacer', 'precioMoneda']);
 
 export function j2Reducer(estado: J2Estado, accion: J2Accion): J2Estado {
   if (accion.tipo === 'deshacer') {
@@ -642,38 +686,78 @@ function transicion(d: J2Datos, a: J2Accion): J2Datos {
       });
     }
 
-    /* — Dólares — */
-    case 'usd': {
-      const total = Math.round(a.cantidad * a.precio);
+    /* — Monedas extranjeras — */
+    case 'moneda': {
+      const codigo = a.codigo.trim().toUpperCase();
+      if (!codigo || a.cantidad <= 0 || a.precio <= 0) return d;
       const compra = a.operacion === 'compra';
-      const usdActual = d.inversiones.usd?.cantidad || 0;
-      const conUsd: J2Datos = {
+      const actual = d.inversiones.monedas.find((m) => m.codigo === codigo);
+      if (!compra && (!actual || actual.cantidad < a.cantidad)) return d;
+      const total = Math.round(a.cantidad * a.precio);
+      const cantidad = (actual?.cantidad || 0) + (compra ? a.cantidad : -a.cantidad);
+      const fila: J2Moneda = { codigo, nombre: actual?.nombre || a.nombre || codigo, cantidad, precio: a.precio };
+      const conMoneda: J2Datos = {
         ...d,
         inversiones: {
           ...d.inversiones,
-          usd: {
-            cantidad: compra ? usdActual + a.cantidad : usdActual - a.cantidad,
-            precio: a.precio,
-          },
+          monedas: actual
+            ? d.inversiones.monedas.map((m) => (m.codigo === codigo ? fila : m))
+            : [...d.inversiones.monedas, fila],
         },
       };
-      return aplicar(conUsd, {
-        tipo: compra ? 'usd_compra' : 'usd_venta',
-        concepto: `${compra ? 'Compra' : 'Venta'} ${a.cantidad} USD a $${a.precio}`,
+      return aplicar(conMoneda, {
+        tipo: compra ? 'moneda_compra' : 'moneda_venta',
+        concepto: `${compra ? 'Compra' : 'Venta'} ${a.cantidad} ${codigo} a $${a.precio}`,
         detalle: a.motivo,
         monto: compra ? -total : total,
         cuenta: a.cuenta,
       });
     }
 
-    case 'precioUsd':
+    case 'precioMoneda':
       return {
         ...d,
         inversiones: {
           ...d.inversiones,
-          usd: { cantidad: d.inversiones.usd?.cantidad || 0, precio: a.precio },
+          monedas: d.inversiones.monedas.map((m) => (m.codigo === a.codigo ? { ...m, precio: a.precio } : m)),
         },
       };
+
+    case 'pagarConMoneda': {
+      const actual = d.inversiones.monedas.find((m) => m.codigo === a.codigo);
+      if (!actual || a.cantidad <= 0 || a.precio <= 0 || actual.cantidad < a.cantidad) return d;
+      const monto = Math.round(a.cantidad * a.precio);
+      const row: J2Egreso = {
+        id: nuevoId('eg'),
+        fecha: a.fecha,
+        tipo: a.egresoTipo,
+        categoria: a.categoria,
+        concepto: a.concepto || a.categoria,
+        monto,
+        cuenta: 'banco',
+        moneda: { codigo: a.codigo, cantidad: a.cantidad, precio: a.precio },
+      };
+      const conPago: J2Datos = {
+        ...d,
+        egresos: [...d.egresos, row],
+        inversiones: {
+          ...d.inversiones,
+          monedas: d.inversiones.monedas.map((m) =>
+            m.codigo === a.codigo ? { ...m, cantidad: m.cantidad - a.cantidad, precio: a.precio } : m
+          ),
+        },
+      };
+      // El gasto queda en pesos para el resultado; la plata sale de la tenencia en esa moneda.
+      return aplicar(conPago, {
+        tipo: 'egreso',
+        concepto: row.categoria,
+        detalle: `${a.cantidad} ${a.codigo} a $${a.precio}`,
+        monto: -monto,
+        cuenta: a.codigo,
+        fecha: a.fecha,
+        afectaSaldo: false,
+      });
+    }
 
     /* — Inversiones — */
     case 'addInversion': {

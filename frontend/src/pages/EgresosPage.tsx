@@ -4,6 +4,7 @@ import { LABEL_EGRESO, NOMBRES_CUENTA, csvEscape, downloadCsv, mesClaveRef } fro
 import type { J2Egreso, J2EgresoTipo, J2Empleado } from '@/types';
 import { CamposReparto, ModalConfigurarEmpleado, ModalPagarSueldo, useReparto } from '@/components/Sueldos';
 import { salidasDe } from '@/lib/j2reducer';
+import { formatoCantidad } from '@/lib/monedas';
 import { useJ2Local } from '@/context/J2LocalContext';
 import { useToast } from '@/context/ToastContext';
 import { useOrden, Th, BarraFiltros, coincideAlguno } from '@/components/Tabla';
@@ -26,7 +27,13 @@ const COLUMNAS_EGRESO = [
   { valor: 'cuenta', label: 'Cuenta' },
 ];
 
+/** Para filtrar: la moneda si se pagó en moneda extranjera, si no la cuenta principal. */
+function cuentaFiltro(e: J2Egreso) {
+  return e.moneda ? e.moneda.codigo : e.cuenta;
+}
+
 function cuentasDe(e: J2Egreso) {
+  if (e.moneda) return `${formatoCantidad(e.moneda.cantidad)} ${e.moneda.codigo}`;
   return salidasDe(e).map((s) => NOMBRES_CUENTA[s.cuenta] || s.cuenta).join(' + ');
 }
 
@@ -57,6 +64,11 @@ export function EgresosPage() {
   const [monto, setMonto] = useState('');
   const [fecha, setFecha] = useState(todayISO());
   const reparto = useReparto('mp');
+  const monedasConSaldo = j2.inversiones.monedas.filter((x) => x.cantidad > 0);
+  const [usarMoneda, setUsarMoneda] = useState(false);
+  const [monCodigo, setMonCodigo] = useState('');
+  const [monCant, setMonCant] = useState('');
+  const [monCot, setMonCot] = useState('');
   const [sueldoDe, setSueldoDe] = useState<J2Empleado | null>(null);
   const [configDe, setConfigDe] = useState<J2Empleado | null>(null);
 
@@ -96,7 +108,7 @@ export function EgresosPage() {
   /** Cuentas de pago que aparecen en los egresos cargados. */
   const cuentasUsadas = useMemo(() => {
     const claves = new Set<string>();
-    j2.egresos.forEach((e) => claves.add(e.cuenta));
+    j2.egresos.forEach((e) => claves.add(cuentaFiltro(e)));
     return [...claves];
   }, [j2.egresos]);
 
@@ -104,7 +116,7 @@ export function EgresosPage() {
     () =>
       j2.egresos.filter((e) => {
         if (fTipo !== 'todos' && e.tipo !== fTipo) return false;
-        if (fCuenta !== 'todas' && e.cuenta !== fCuenta) return false;
+        if (fCuenta !== 'todas' && cuentaFiltro(e) !== fCuenta) return false;
         if (fMes !== 'todos' && !e.fecha.startsWith(fMes)) return false;
         return coincideAlguno([e.concepto, e.categoria, LABEL_EGRESO[e.tipo]], busqueda);
       }),
@@ -118,7 +130,7 @@ export function EgresosPage() {
       categoria: (e: J2Egreso) => e.categoria,
       concepto: (e: J2Egreso) => e.concepto,
       monto: (e: J2Egreso) => e.monto,
-      cuenta: (e: J2Egreso) => NOMBRES_CUENTA[e.cuenta] || e.cuenta,
+      cuenta: (e: J2Egreso) => cuentasDe(e),
     }),
     []
   );
@@ -159,13 +171,28 @@ export function EgresosPage() {
       else setConfigDe(emp);
       return;
     }
+    if (!fecha) {
+      toast('⚠ Elegí una fecha', { tono: 'error' });
+      return;
+    }
+    if (usarMoneda) {
+      const mon = j2.inversiones.monedas.find((x) => x.codigo === monCodigo);
+      const cant = Number(monCant);
+      const cot = Number(monCot);
+      if (!mon) { toast('Elegí la moneda', { tono: 'error' }); return; }
+      if (!(cant > 0) || !(cot > 0)) { toast('Ingresá la cantidad y la cotización', { tono: 'error' }); return; }
+      if (cant > mon.cantidad) { toast(`Tenés ${formatoCantidad(mon.cantidad)} ${mon.codigo}: no alcanza`, { tono: 'error' }); return; }
+      const cat = tipo === 'fijo' ? categoria : LABEL_EGRESO[tipo] || 'Varios';
+      j2.pagarConMoneda({ codigo: mon.codigo, cantidad: cant, precio: cot, fecha, egresoTipo: tipo, categoria: cat, concepto: concepto.trim() || cat });
+      setConcepto('');
+      setMonCant('');
+      setAbierto(false);
+      toast(`✓ Pagado con ${formatoCantidad(cant)} ${mon.codigo} · $${Math.round(cant * cot).toLocaleString('es-AR')}`, { tono: 'exito' });
+      return;
+    }
     const m = parseInt(monto, 10);
     if (!m || m <= 0) {
       toast('⚠ Ingresá un monto válido', { tono: 'error' });
-      return;
-    }
-    if (!fecha) {
-      toast('⚠ Elegí una fecha', { tono: 'error' });
       return;
     }
     const errReparto = tipo === 'inventario' ? null : reparto.error(m);
@@ -199,7 +226,7 @@ export function EgresosPage() {
         e.categoria,
         e.concepto,
         String(e.monto),
-        NOMBRES_CUENTA[e.cuenta] || e.cuenta,
+        cuentasDe(e),
       ])
     );
     return filas.map((r) => r.map(csvEscape).join(',')).join('\n');
@@ -513,10 +540,12 @@ export function EgresosPage() {
                     <label htmlFor="egresos-concepto-detalle-2">Concepto / Detalle</label>
                     <input id="egresos-concepto-detalle-2" value={concepto} onChange={(e) => setConcepto(e.target.value)} />
                   </div>
-                  <div className="form-group">
-                    <label htmlFor="egresos-monto-3">Monto</label>
-                    <input id="egresos-monto-3" type="number" value={monto} onChange={(e) => setMonto(e.target.value)} />
-                  </div>
+                  {!usarMoneda && (
+                    <div className="form-group">
+                      <label htmlFor="egresos-monto-3">Monto</label>
+                      <input id="egresos-monto-3" type="number" value={monto} onChange={(e) => setMonto(e.target.value)} />
+                    </div>
+                  )}
                   <div className="form-group">
                     <label htmlFor="egresos-fecha-4">Fecha</label>
                     <input id="egresos-fecha-4" type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} />
@@ -531,7 +560,55 @@ export function EgresosPage() {
             ) : (
               tipo !== 'inventario' && (
                 <div style={{ marginBottom: 'var(--sp-3)' }}>
-                  <CamposReparto r={reparto} total={parseInt(monto, 10) || 0} idBase="egresos-pago" etiqueta="Cuenta de pago" />
+                  {monedasConSaldo.length > 0 && (
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 'var(--txt-md)', marginBottom: 8 }}>
+                      <input
+                        type="checkbox"
+                        checked={usarMoneda}
+                        onChange={(e) => {
+                          setUsarMoneda(e.target.checked);
+                          const primera = monedasConSaldo[0];
+                          if (e.target.checked && primera && !monCodigo) {
+                            setMonCodigo(primera.codigo);
+                            setMonCot(String(primera.precio || ''));
+                          }
+                        }}
+                      />
+                      Pagar con moneda extranjera
+                    </label>
+                  )}
+                  {usarMoneda ? (
+                    <div className="form-grid">
+                      <div className="form-group">
+                        <label htmlFor="egresos-mon">Moneda</label>
+                        <select
+                          id="egresos-mon"
+                          value={monCodigo}
+                          onChange={(e) => {
+                            setMonCodigo(e.target.value);
+                            setMonCot(String(monedasConSaldo.find((x) => x.codigo === e.target.value)?.precio || ''));
+                          }}
+                        >
+                          {monedasConSaldo.map((x) => (
+                            <option key={x.codigo} value={x.codigo}>{x.nombre} — tenés {formatoCantidad(x.cantidad)} {x.codigo}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label htmlFor="egresos-mon-cant">Cantidad pagada</label>
+                        <input id="egresos-mon-cant" type="number" step="0.01" min="0" value={monCant} onChange={(e) => setMonCant(e.target.value)} placeholder="Ej: 20" />
+                      </div>
+                      <div className="form-group">
+                        <label htmlFor="egresos-mon-cot">Cotización del día</label>
+                        <input id="egresos-mon-cot" type="number" step="0.01" min="0" value={monCot} onChange={(e) => setMonCot(e.target.value)} />
+                        {Number(monCant) > 0 && Number(monCot) > 0 && (
+                          <p className="form-ayuda">Gasto: ${Math.round(Number(monCant) * Number(monCot)).toLocaleString('es-AR')}</p>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <CamposReparto r={reparto} total={parseInt(monto, 10) || 0} idBase="egresos-pago" etiqueta="Cuenta de pago" />
+                  )}
                 </div>
               )
             )}

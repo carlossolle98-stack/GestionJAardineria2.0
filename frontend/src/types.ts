@@ -127,6 +127,8 @@ export type J2Egreso = {
    * el monto (un sueldo con adelanto ya entregado). Si falta, salió `monto` de `cuenta`.
    */
   partes?: J2Pago[];
+  /** Pagado con moneda extranjera: no sale de ninguna cuenta en pesos, baja la tenencia de esa moneda. */
+  moneda?: { codigo: string; cantidad: number; precio: number };
   origen?:
     | { tipo: 'liquidacion'; empleadoId: string; adelanto: number }
     | { tipo: 'credito'; creditoId: string; pagoId: string }
@@ -205,9 +207,12 @@ export type J2MovCapital = {
   anulado?: J2Anulacion;
 };
 
+/** Moneda extranjera en tenencia: cantidad en esa moneda y cotización en pesos. */
+export type J2Moneda = { codigo: string; nombre: string; cantidad: number; precio: number };
+
 export type J2Inversiones = {
   items: J2Inversion[];
-  usd: { cantidad: number; precio: number };
+  monedas: J2Moneda[];
   creditos: J2Credito[];
   capital: J2MovCapital[];
 };

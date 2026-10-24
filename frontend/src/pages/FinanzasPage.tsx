@@ -2,13 +2,14 @@ import { Fragment, useRef, useState, type ReactNode } from 'react';
 import { money, todayISO } from '@/lib/format';
 import { NOMBRES_CUENTA } from '@/lib/j2local';
 import { nombreCuenta } from '@/lib/j2reducer';
+import { CATALOGO_MONEDAS, formatoCantidad, nombreMoneda } from '@/lib/monedas';
 import { useJ2Local } from '@/context/J2LocalContext';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import { Modal, ModalAcciones, ModalAnular } from '@/components/Modal';
 import type { J2Credito, J2Inversion } from '@/types';
 
-type UsdOp = 'comprar' | 'vender' | 'precio' | null;
+type MonedaOp = 'comprar' | 'vender' | 'precio' | null;
 type Liquida = 'mp' | 'banco' | 'efectivo';
 type TipoCapital = 'aporte' | 'retiro' | 'credito';
 
@@ -76,17 +77,20 @@ export function FinanzasPage() {
 
   const [anular, setAnular] = useState<{ titulo: string; mensaje: ReactNode; hacer: (motivo: string) => void } | null>(null);
 
-  const [usdOp, setUsdOp] = useState<UsdOp>(null);
-  const [usdPrecio, setUsdPrecio] = useState('');
-  const [usdCant, setUsdCant] = useState('');
-  const [usdCuenta, setUsdCuenta] = useState<Liquida>('banco');
-  const [usdMotivo, setUsdMotivo] = useState('');
+  const [monOp, setMonOp] = useState<MonedaOp>(null);
+  const [monCodigo, setMonCodigo] = useState('USD');
+  const [monOtroCodigo, setMonOtroCodigo] = useState('');
+  const [monOtroNombre, setMonOtroNombre] = useState('');
+  const [monPrecio, setMonPrecio] = useState('');
+  const [monCant, setMonCant] = useState('');
+  const [monCuenta, setMonCuenta] = useState<Liquida>('banco');
+  const [monMotivo, setMonMotivo] = useState('');
 
   const c = j2.cuentas;
   const inv = j2.inversiones;
   const activas = inv.items.filter((i) => i.activa);
   const archivadas = inv.items.filter((i) => !i.activa);
-  const totalUSD = inv.usd.cantidad * inv.usd.precio;
+  const monedaDe = (codigo: string) => inv.monedas.find((m) => m.codigo === codigo);
   const creditosVigentes = inv.creditos.filter((x) => !x.anulado && x.saldo > 0);
   const deudaCreditos = creditosVigentes.reduce((s, x) => s + x.saldo, 0);
   const nombre = (k: string) => nombreCuenta(k, inv);
@@ -257,26 +261,46 @@ export function FinanzasPage() {
     setRendInv(null);
   }
 
-  function guardarUsd() {
-    const precio = parseFloat(usdPrecio);
-    if (Number.isNaN(precio) || precio <= 0) { toast('Precio inválido', { tono: 'error' }); return; }
-    if (usdOp === 'precio') {
-      j2.actualizarPrecioUsd(precio);
-      setUsdOp(null);
-      toast('Precio del dólar actualizado', { tono: 'exito' });
+  function abrirMoneda(op: NonNullable<MonedaOp>, codigo: string) {
+    setMonOp(op);
+    setMonCodigo(codigo);
+    setMonOtroCodigo('');
+    setMonOtroNombre('');
+    setMonPrecio(String(monedaDe(codigo)?.precio || ''));
+    setMonCant('');
+    setMonMotivo('');
+  }
+
+  function guardarMoneda() {
+    const otra = monCodigo === 'OTRA';
+    const codigo = (otra ? monOtroCodigo : monCodigo).trim().toUpperCase();
+    const nombre = otra ? monOtroNombre.trim() || codigo : monedaDe(codigo)?.nombre ?? nombreMoneda(codigo);
+    if (!codigo) { toast('Escribí el código de la moneda (ej: CAD)', { tono: 'error' }); return; }
+    const precio = parseFloat(monPrecio);
+    if (Number.isNaN(precio) || precio <= 0) { toast('Cotización inválida', { tono: 'error' }); return; }
+    if (monOp === 'precio') {
+      j2.actualizarPrecioMoneda(codigo, precio);
+      setMonOp(null);
+      toast(`Cotización de ${nombre} actualizada`, { tono: 'exito' });
       return;
     }
-    const cant = parseFloat(usdCant);
+    const cant = parseFloat(monCant);
     if (Number.isNaN(cant) || cant <= 0) { toast('Cantidad inválida', { tono: 'error' }); return; }
-    if (usdOp === 'comprar') {
-      j2.comprarUsd(cant, precio, usdCuenta, usdMotivo.trim());
-      toast('Compra de dólares registrada', { tono: 'exito' });
-    } else if (usdOp === 'vender') {
-      if (cant > inv.usd.cantidad) { toast('No tenés suficientes dólares', { tono: 'error' }); return; }
-      j2.venderUsd(cant, precio, usdCuenta, usdMotivo.trim());
-      toast('Venta de dólares registrada', { tono: 'exito' });
+    if (monOp === 'vender' && cant > (monedaDe(codigo)?.cantidad || 0)) {
+      toast(`No tenés suficiente ${nombre}`, { tono: 'error' });
+      return;
     }
-    setUsdOp(null);
+    j2.operarMoneda({
+      codigo,
+      nombre,
+      operacion: monOp === 'comprar' ? 'compra' : 'venta',
+      cantidad: cant,
+      precio,
+      cuenta: monCuenta,
+      motivo: monMotivo.trim(),
+    });
+    toast(`${monOp === 'comprar' ? 'Compra' : 'Venta'} de ${formatoCantidad(cant)} ${codigo} registrada`, { tono: 'exito' });
+    setMonOp(null);
   }
 
   const trList = [...j2.transferencias].sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
@@ -555,15 +579,24 @@ export function FinanzasPage() {
             </div>
           </div>
         ))}
-        <div className="card tierra">
-          <div className="card-label">Dólares</div>
-          <div className="card-valor">{inv.usd.cantidad} USD</div>
-          <div className="card-sub">{money(totalUSD)} a {money(inv.usd.precio)}</div>
-          <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
-            <button type="button" className="btn sm" onClick={() => { setUsdOp('comprar'); setUsdPrecio(String(inv.usd.precio || '')); setUsdCant(''); setUsdMotivo(''); }}>Comprar</button>
-            <button type="button" className="btn secundario sm" onClick={() => { setUsdOp('vender'); setUsdPrecio(String(inv.usd.precio || '')); setUsdCant(''); setUsdMotivo(''); }}>Vender</button>
-            <button type="button" className="btn secundario sm" onClick={() => { setUsdOp('precio'); setUsdPrecio(String(inv.usd.precio || '')); }}>Precio</button>
+        {inv.monedas.map((m) => (
+          <div key={m.codigo} className="card tierra">
+            <div className="card-label">{m.nombre}</div>
+            <div className="card-valor">{formatoCantidad(m.cantidad)} {m.codigo}</div>
+            <div className="card-sub">{money(Math.round(m.cantidad * m.precio))} a {money(m.precio)} c/u</div>
+            <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+              <button type="button" className="btn sm" onClick={() => abrirMoneda('comprar', m.codigo)}>Comprar</button>
+              <button type="button" className="btn secundario sm" onClick={() => abrirMoneda('vender', m.codigo)}>Vender</button>
+              <button type="button" className="btn secundario sm" onClick={() => abrirMoneda('precio', m.codigo)}>Cotización</button>
+            </div>
           </div>
+        ))}
+        <div className="card tierra">
+          <div className="card-label">Moneda extranjera</div>
+          <div className="card-sub" style={{ marginBottom: 8 }}>Dólar, euro, real, USDT u otra.</div>
+          <button type="button" className="btn sm" onClick={() => abrirMoneda('comprar', inv.monedas.length ? 'OTRA' : 'USD')}>
+            + Comprar moneda
+          </button>
         </div>
       </div>
 
@@ -715,40 +748,71 @@ export function FinanzasPage() {
         </Modal>
       )}
 
-      {usdOp && (
+      {monOp && (
         <Modal
-          titulo={usdOp === 'comprar' ? 'Comprar dólares' : usdOp === 'vender' ? 'Vender dólares' : 'Actualizar precio del dólar'}
-          onCerrar={() => setUsdOp(null)}
+          titulo={monOp === 'comprar' ? 'Comprar moneda extranjera' : monOp === 'vender' ? `Vender ${monedaDe(monCodigo)?.nombre ?? monCodigo}` : `Cotización — ${monedaDe(monCodigo)?.nombre ?? monCodigo}`}
+          descripcion={monOp === 'comprar' ? 'Pasar pesos a otra moneda no es un gasto: la plata sigue siendo de la empresa.' : undefined}
+          onCerrar={() => setMonOp(null)}
           ancho="chico"
         >
-          <form onSubmit={(e) => { e.preventDefault(); guardarUsd(); }} style={{ display: 'grid', gap: 'var(--sp-4)' }}>
+          <form onSubmit={(e) => { e.preventDefault(); guardarMoneda(); }} style={{ display: 'grid', gap: 'var(--sp-4)' }}>
             <div className="form-grid">
-              {usdOp !== 'precio' && (
+              {monOp === 'comprar' && (
                 <div className="form-group">
-                  <label htmlFor="fin-usd-cant">Cantidad USD</label>
-                  <input id="fin-usd-cant" type="number" step="0.01" value={usdCant} onChange={(e) => setUsdCant(e.target.value)} placeholder="Ej: 50" autoFocus />
+                  <label htmlFor="fin-mon-codigo">Moneda</label>
+                  <select id="fin-mon-codigo" value={monCodigo} onChange={(e) => { setMonCodigo(e.target.value); setMonPrecio(String(monedaDe(e.target.value)?.precio || '')); }}>
+                    {[...inv.monedas.map((m) => ({ codigo: m.codigo, nombre: m.nombre })), ...CATALOGO_MONEDAS.filter((c) => !monedaDe(c.codigo))].map((m) => (
+                      <option key={m.codigo} value={m.codigo}>{m.nombre} ({m.codigo})</option>
+                    ))}
+                    <option value="OTRA">Otra moneda…</option>
+                  </select>
+                </div>
+              )}
+              {monOp === 'comprar' && monCodigo === 'OTRA' && (
+                <>
+                  <div className="form-group">
+                    <label htmlFor="fin-mon-otro-cod">Código</label>
+                    <input id="fin-mon-otro-cod" value={monOtroCodigo} onChange={(e) => setMonOtroCodigo(e.target.value.toUpperCase())} placeholder="Ej: CAD" maxLength={6} />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="fin-mon-otro-nom">Nombre</label>
+                    <input id="fin-mon-otro-nom" value={monOtroNombre} onChange={(e) => setMonOtroNombre(e.target.value)} placeholder="Ej: Dólar canadiense" />
+                  </div>
+                </>
+              )}
+              {monOp !== 'precio' && (
+                <div className="form-group">
+                  <label htmlFor="fin-mon-cant">Cantidad</label>
+                  <input id="fin-mon-cant" type="number" step="0.01" min="0" value={monCant} onChange={(e) => setMonCant(e.target.value)} placeholder="Ej: 50" />
+                  {monOp === 'vender' && <p className="form-ayuda">Tenés {formatoCantidad(monedaDe(monCodigo)?.cantidad || 0)} {monCodigo}</p>}
                 </div>
               )}
               <div className="form-group">
-                <label htmlFor="fin-usd-precio">Precio en pesos por USD</label>
-                <input id="fin-usd-precio" type="number" value={usdPrecio} onChange={(e) => setUsdPrecio(e.target.value)} placeholder="Ej: 1300" />
+                <label htmlFor="fin-mon-precio">Cotización (pesos por unidad)</label>
+                <input id="fin-mon-precio" type="number" step="0.01" min="0" value={monPrecio} onChange={(e) => setMonPrecio(e.target.value)} placeholder="Ej: 1300" />
+                {monOp === 'comprar' && <p className="form-ayuda">Si no la sabés: pesos que salieron ÷ cantidad que recibiste.</p>}
               </div>
-              {usdOp !== 'precio' && (
+              {monOp !== 'precio' && (
                 <div className="form-group">
-                  <label htmlFor="fin-usd-cuenta">{usdOp === 'comprar' ? 'Pagás desde' : 'Cobrás en'}</label>
-                  <select id="fin-usd-cuenta" value={usdCuenta} onChange={(e) => setUsdCuenta(e.target.value as Liquida)}>
+                  <label htmlFor="fin-mon-cuenta">{monOp === 'comprar' ? 'Pagás desde' : 'Cobrás en'}</label>
+                  <select id="fin-mon-cuenta" value={monCuenta} onChange={(e) => setMonCuenta(e.target.value as Liquida)}>
                     {opcionesCuentas(false)}
                   </select>
                 </div>
               )}
-              {usdOp !== 'precio' && (
+              {monOp !== 'precio' && (
                 <div className="form-group">
-                  <label htmlFor="fin-usd-motivo">Detalle</label>
-                  <input id="fin-usd-motivo" value={usdMotivo} onChange={(e) => setUsdMotivo(e.target.value)} placeholder="Ej: Ahorro" />
+                  <label htmlFor="fin-mon-motivo">Detalle</label>
+                  <input id="fin-mon-motivo" value={monMotivo} onChange={(e) => setMonMotivo(e.target.value)} placeholder="Ej: Cuenta exterior para suscripciones" />
                 </div>
               )}
             </div>
-            <ModalAcciones onCancelar={() => setUsdOp(null)} textoConfirmar="Guardar" />
+            {monOp !== 'precio' && Number(monCant) > 0 && Number(monPrecio) > 0 && (
+              <p className="form-ayuda" style={{ margin: 0 }}>
+                {monOp === 'comprar' ? 'Salen' : 'Entran'} {money(Math.round(Number(monCant) * Number(monPrecio)))} de {NOMBRES_CUENTA[monCuenta]}.
+              </p>
+            )}
+            <ModalAcciones onCancelar={() => setMonOp(null)} textoConfirmar="Guardar" />
           </form>
         </Modal>
       )}

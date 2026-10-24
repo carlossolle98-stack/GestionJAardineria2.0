@@ -107,9 +107,25 @@ type J2Ctx = J2Datos & {
     nota: string;
   }) => void;
   removeTransferencia: (id: string) => void;
-  comprarUsd: (cantidad: number, precio: number, cuenta: keyof J2Cuentas, motivo: string) => void;
-  venderUsd: (cantidad: number, precio: number, cuenta: keyof J2Cuentas, motivo: string) => void;
-  actualizarPrecioUsd: (precio: number) => void;
+  operarMoneda: (p: {
+    codigo: string;
+    nombre: string;
+    operacion: 'compra' | 'venta';
+    cantidad: number;
+    precio: number;
+    cuenta: keyof J2Cuentas;
+    motivo: string;
+  }) => void;
+  actualizarPrecioMoneda: (codigo: string, precio: number) => void;
+  pagarConMoneda: (p: {
+    codigo: string;
+    cantidad: number;
+    precio: number;
+    fecha: string;
+    egresoTipo: J2EgresoTipo;
+    categoria: string;
+    concepto: string;
+  }) => void;
   addInversion: (nombre: string) => void;
   toggleInversion: (id: string) => void;
   rendimientoInversion: (id: string, monto: number, fecha: string) => void;
@@ -351,11 +367,25 @@ export function J2LocalProvider({ children }: { children: ReactNode }) {
         nota: string;
       }) => envia({ tipo: 'transferencia', payload: p }),
       removeTransferencia: (id: string) => envia({ tipo: 'removeTransferencia', id }),
-      comprarUsd: (cantidad: number, precio: number, cuenta: keyof J2Cuentas, motivo: string) =>
-        envia({ tipo: 'usd', operacion: 'compra', cantidad, precio, cuenta, motivo }),
-      venderUsd: (cantidad: number, precio: number, cuenta: keyof J2Cuentas, motivo: string) =>
-        envia({ tipo: 'usd', operacion: 'venta', cantidad, precio, cuenta, motivo }),
-      actualizarPrecioUsd: (precio: number) => envia({ tipo: 'precioUsd', precio }),
+      operarMoneda: (p: {
+        codigo: string;
+        nombre: string;
+        operacion: 'compra' | 'venta';
+        cantidad: number;
+        precio: number;
+        cuenta: keyof J2Cuentas;
+        motivo: string;
+      }) => envia({ tipo: 'moneda', ...p }),
+      actualizarPrecioMoneda: (codigo: string, precio: number) => envia({ tipo: 'precioMoneda', codigo, precio }),
+      pagarConMoneda: (p: {
+        codigo: string;
+        cantidad: number;
+        precio: number;
+        fecha: string;
+        egresoTipo: J2EgresoTipo;
+        categoria: string;
+        concepto: string;
+      }) => envia({ tipo: 'pagarConMoneda', ...p }),
       addInversion: (nombre: string) => envia({ tipo: 'addInversion', nombre }),
       toggleInversion: (id: string) => envia({ tipo: 'toggleInversion', id }),
       rendimientoInversion: (id: string, monto: number, fecha: string) =>
