@@ -135,6 +135,11 @@ type Movimiento = {
  * No recorta en cero: un saldo negativo es un dato real que hay que ver, y
  * recortarlo hacía que al revertir el movimiento la caja quedara inflada.
  */
+/** Los egresos contables (diferencia de inventario, costo de mercadería) no sacan plata de ninguna cuenta. */
+export function mueveCaja(tipo: J2EgresoTipo) {
+  return tipo !== 'inventario' && tipo !== 'costo_mercaderia';
+}
+
 function aplicar(d: J2Datos, mov: Movimiento): J2Datos {
   const { monto, cuenta, afectaSaldo = true } = mov;
 
@@ -308,7 +313,7 @@ function contraEgreso(d: J2Datos, id: string, an: J2Anulacion): J2Datos {
       monto: s.monto,
       cuenta: s.cuenta,
       fecha: an.fecha,
-      afectaSaldo: row.tipo !== 'inventario',
+      afectaSaldo: mueveCaja(row.tipo),
     });
   }
   return paso;
@@ -398,6 +403,7 @@ export type J2Accion =
   | { tipo: 'anularCuotaCredito'; creditoId: string; pagoId: string; motivo: string }
   | { tipo: 'ajustarCredito'; creditoId: string; nuevoSaldo: number; motivo: string }
   | { tipo: 'compraActivo'; nombre: string; monto: number; cuenta: keyof J2Cuentas; fecha: string }
+  | { tipo: 'compraMercaderia'; detalle: string; monto: number; cuenta: keyof J2Cuentas; fecha: string }
   | { tipo: 'ingresarPorMedio'; cuenta: keyof J2Cuentas; monto: number; concepto: string }
   | { tipo: 'addEmpleado'; nombre: string }
   | { tipo: 'toggleEmpleado'; id: string }
@@ -482,8 +488,8 @@ function transicion(d: J2Datos, a: J2Accion): J2Datos {
           monto: -s.monto,
           cuenta: s.cuenta,
           fecha: row.fecha,
-          // Una diferencia de inventario es un ajuste contable, no sale plata.
-          afectaSaldo: row.tipo !== 'inventario',
+          // Una diferencia de inventario o el costo de lo vendido son contables, no sale plata.
+          afectaSaldo: mueveCaja(row.tipo),
         });
       }
       return paso;
@@ -1005,6 +1011,18 @@ function transicion(d: J2Datos, a: J2Accion): J2Datos {
       return aplicar(d, {
         tipo: 'compra_activo',
         concepto: `Compra de activo — ${a.nombre}`,
+        monto: -a.monto,
+        cuenta: a.cuenta,
+        fecha: a.fecha,
+      });
+
+    /* — Compra de mercadería para stock: la plata pasa a ser mercadería, el gasto se reconoce al venderla — */
+    case 'compraMercaderia':
+      if (a.monto <= 0) return d;
+      return aplicar(d, {
+        tipo: 'compra_mercaderia',
+        concepto: 'Compra de mercadería',
+        detalle: a.detalle,
         monto: -a.monto,
         cuenta: a.cuenta,
         fecha: a.fecha,

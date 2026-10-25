@@ -42,7 +42,7 @@ export function CargarPage() {
     [j2.ingresos, mc]
   );
 
-  const esVenta = cTipo === 'Venta vivero' || cTipo === 'Venta producto digital';
+  const esVenta = cTipo === 'Venta vivero' || cTipo === 'Venta producto digital' || cTipo === 'Comisión de vivero';
   const montoTotal = cCombinado
     ? (Number(cMonto) || 0) + (Number(cMonto2) || 0)
     : Number(cMonto) || 0;
@@ -220,16 +220,17 @@ export function CargarPage() {
               <option>Cobro de trabajo</option>
               <option>Venta vivero</option>
               <option>Venta producto digital</option>
+              <option>Comisión de vivero</option>
               <option>Cobro deuda anterior</option>
             </select>
           </div>
           {esVenta && (
             <div className="form-group">
-              <label>¿Qué vendiste?</label>
+              <label>{cTipo === 'Comisión de vivero' ? '¿Qué vivero?' : '¿Qué vendiste?'}</label>
               <input
                 value={cDetalle}
                 onChange={(e) => setCDetalle(e.target.value)}
-                placeholder={cTipo === 'Venta vivero' ? 'Ej: Rosales, Sustrato, Fertilizante…' : 'Ej: Guía de poda en PDF, Curso online…'}
+                placeholder={cTipo === 'Venta vivero' ? 'Ej: Rosales, Sustrato, Fertilizante…' : cTipo === 'Comisión de vivero' ? 'Ej: El Sol, Sagrado Corazón, Marquez' : 'Ej: Guía de poda en PDF, Curso online…'}
               />
             </div>
           )}

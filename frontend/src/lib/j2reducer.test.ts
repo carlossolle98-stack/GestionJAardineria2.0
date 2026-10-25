@@ -460,6 +460,23 @@ describe('compra de activos', () => {
   });
 });
 
+describe('mercadería', () => {
+  it('comprar stock saca plata pero no es gasto', () => {
+    const { datos } = correr([{ tipo: 'compraMercaderia', detalle: '10 unidades Cebo', monto: 3_850, cuenta: 'efectivo', fecha: '2026-10-24' }]);
+    expect(datos.cuentas.efectivo).toBe(96_150);
+    expect(datos.egresos).toHaveLength(0);
+    expect(datos.movlog.at(-1)).toMatchObject({ tipo: 'compra_mercaderia', monto: -3_850 });
+  });
+
+  it('el costo de lo vendido es gasto sin mover caja, y anularlo tampoco la mueve', () => {
+    const { datos } = correr([egreso(770, { tipo: 'costo_mercaderia', categoria: 'Costo de lo vendido' })]);
+    expect(datos.cuentas.efectivo).toBe(100_000);
+    expect(datos.egresos[0]).toMatchObject({ tipo: 'costo_mercaderia', monto: 770 });
+    const anulado = correr([{ tipo: 'anularEgreso', id: datos.egresos[0].id, motivo: 'error' }], datos).datos;
+    expect(anulado.cuentas.efectivo).toBe(100_000);
+  });
+});
+
 describe('libro de movimientos sin borrar el historial', () => {
   it('al pasar el tope resume lo viejo y el libro sigue explicando cada saldo', () => {
     const inicial: J2Datos = { ...VACIO, cuentas: { mp: 0, banco: 0, efectivo: 0 } };

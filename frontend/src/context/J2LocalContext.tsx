@@ -144,6 +144,7 @@ type J2Ctx = J2Datos & {
   anularCuotaCredito: (creditoId: string, pagoId: string, motivo: string) => void;
   ajustarCredito: (creditoId: string, nuevoSaldo: number, motivo: string) => void;
   compraActivo: (p: { nombre: string; monto: number; cuenta: keyof J2Cuentas; fecha: string }) => void;
+  compraMercaderia: (p: { detalle: string; monto: number; cuenta: keyof J2Cuentas; fecha: string }) => void;
   ingresarPorMedio: (medioEtiqueta: string, monto: number) => void;
   addEmpleado: (nombre: string) => void;
   toggleEmpleado: (id: string) => void;
@@ -409,6 +410,8 @@ export function J2LocalProvider({ children }: { children: ReactNode }) {
         envia({ tipo: 'ajustarCredito', creditoId, nuevoSaldo, motivo }),
       compraActivo: (p: { nombre: string; monto: number; cuenta: keyof J2Cuentas; fecha: string }) =>
         envia({ tipo: 'compraActivo', ...p }),
+      compraMercaderia: (p: { detalle: string; monto: number; cuenta: keyof J2Cuentas; fecha: string }) =>
+        envia({ tipo: 'compraMercaderia', ...p }),
       ingresarPorMedio: (medioEtiqueta: string, monto: number) =>
         envia({
           tipo: 'ingresarPorMedio',

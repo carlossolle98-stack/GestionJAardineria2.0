@@ -33,6 +33,7 @@ export const LABEL_EGRESO: Record<J2EgresoTipo, string> = {
   mercaderia: 'Mercadería',
   inventario: 'Inv. diferencia',
   bancario: 'Mov. bancario',
+  costo_mercaderia: 'Costo de mercadería',
 };
 
 export function mesClaveRef(d = new Date()) {

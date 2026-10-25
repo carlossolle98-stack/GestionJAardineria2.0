@@ -9,7 +9,8 @@ import { useJ2Local } from '@/context/J2LocalContext';
 import { useAuth } from '@/context/AuthContext';
 import { ErrorCarga } from '@/components/Estados';
 import { totalBienesDeUso } from '@/lib/activos';
-import type { Activo, ResumenPayload, Turno } from '@/types';
+import { valorStock } from '@/lib/inventario';
+import type { Activo, ItemInventario, ResumenPayload, Turno } from '@/types';
 
 export function ResumenPage() {
   const { puede } = useAuth();
@@ -59,6 +60,15 @@ export function ResumenPage() {
     retry: false,
   });
   const totalBienes = totalBienesDeUso(activosFijos ?? []);
+
+  // La mercadería en stock, al costo, también es de la empresa.
+  const { data: inventario, isError: sinInventario } = useQuery({
+    queryKey: ['inventario'],
+    queryFn: () => getJson<ItemInventario[]>('/api/inventario'),
+    enabled: puede('finanzas') && puede('inventario'),
+    retry: false,
+  });
+  const totalMercaderia = valorStock(inventario ?? []);
 
   const hoy = todayISO();
 
@@ -118,7 +128,7 @@ export function ResumenPage() {
     deudaPendientes.length > 0
       ? deudaPendientes.map((d) => `${d.nombreCliente.split(' ')[0]} ${money(d.monto)}`).join(' · ')
       : 'Sin deudas pendientes';
-  const totalActivos = cajaLiquidaTotal + totalInv + totalDeudaPendiente + totalBienes;
+  const totalActivos = cajaLiquidaTotal + totalInv + totalDeudaPendiente + totalBienes + totalMercaderia;
   const totalDeudas = deudaCreditos + deudaAguinaldos;
   const patrimonioTotal = totalActivos - totalDeudas;
   const meses = armarMeses();
@@ -234,6 +244,15 @@ export function ResumenPage() {
                 </td>
                 <td style={{ textAlign: 'right', fontFamily: 'var(--fuente-mono)' }}>{money(Math.round(totalBienes))}</td>
               </tr>
+              {(totalMercaderia > 0 || sinInventario) && (
+                <tr>
+                  <td>
+                    Mercadería (stock al costo)
+                    {sinInventario && <span style={{ fontSize: 12, color: 'var(--texto-3)' }}> · no se pudo leer, no está sumada</span>}
+                  </td>
+                  <td style={{ textAlign: 'right', fontFamily: 'var(--fuente-mono)' }}>{money(Math.round(totalMercaderia))}</td>
+                </tr>
+              )}
               <tr style={{ fontWeight: 700 }}><td>Total activos</td><td style={{ textAlign: 'right', fontFamily: 'var(--fuente-mono)' }}>{money(Math.round(totalActivos))}</td></tr>
               <tr><td>Menos: deuda por créditos</td><td style={{ textAlign: 'right', fontFamily: 'var(--fuente-mono)', color: 'var(--rojo)' }}>−{money(deudaCreditos)}</td></tr>
               {deudaAguinaldos > 0 && (

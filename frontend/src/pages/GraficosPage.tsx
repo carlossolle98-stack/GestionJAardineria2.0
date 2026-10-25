@@ -15,6 +15,7 @@ const TIPO_LABELS: Record<string, string> = {
   mercaderia: 'Mercadería',
   inventario: 'Inventario',
   bancario: 'Bancario',
+  costo_mercaderia: 'Costo de mercadería',
 };
 const TIPO_COLORES: Record<string, string> = {
   fijo: '#e74c3c',
@@ -23,6 +24,7 @@ const TIPO_COLORES: Record<string, string> = {
   mercaderia: '#9b59b6',
   inventario: '#3498db',
   bancario: '#95a5a6',
+  costo_mercaderia: '#8d6e63',
 };
 const COLOR_ING = '#2e7d32';
 const COLOR_EGR = '#c0392b';

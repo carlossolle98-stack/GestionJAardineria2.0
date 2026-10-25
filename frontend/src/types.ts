@@ -72,7 +72,15 @@ export type ResumenPayload = {
   mesClave: string;
 };
 
-export type J2EgresoTipo = 'fijo' | 'varios' | 'sueldo' | 'mercaderia' | 'inventario' | 'bancario';
+/** costo_mercaderia: costo de lo vendido o usado del stock. No mueve caja: la plata salió al comprarlo. */
+export type J2EgresoTipo =
+  | 'fijo'
+  | 'varios'
+  | 'sueldo'
+  | 'mercaderia'
+  | 'inventario'
+  | 'bancario'
+  | 'costo_mercaderia';
 
 /**
  * dependencia: se le retiene mutual (queda al negocio) y se le separa aguinaldo
@@ -265,22 +273,45 @@ export type Activo = {
   notas?: string;
 };
 
+/** entrada/salida son los movimientos viejos, anteriores a los tipos. */
+export type TipoMovInventario = 'compra' | 'venta' | 'uso' | 'merma' | 'ajuste' | 'entrada' | 'salida';
+
 export type MovimientoInventario = {
   _id: string;
   fecha: string;
-  tipo: 'entrada' | 'salida';
+  tipo: TipoMovInventario;
+  /** En un ajuste, la diferencia con signo. */
   cantidad: number;
+  costoUnitario?: number;
+  precioUnitario?: number;
+  cliente?: string;
   motivo: string;
+  refId?: string;
+  usuario?: string;
 };
 
 export type ItemInventario = {
   _id: string;
   nombre: string;
+  codigo?: string;
+  marca?: string;
   categoria: string;
+  /** Puede ser negativo: indica un error de stock a revisar. */
   stock: number;
   unidad: string;
   stockMinimo: number;
+  /** Costo promedio ponderado por unidad. */
+  costo?: number;
+  precioVenta?: number;
+  proveedor?: string;
+  ubicacion?: string;
+  origen?: 'propio' | 'pedido';
+  cuidados?: string;
+  temporada?: string;
+  notas?: string;
+  activo?: boolean;
   movimientos: MovimientoInventario[];
+  ultimoMovimiento?: MovimientoInventario;
 };
 
 export type J2DeudaCliente = {

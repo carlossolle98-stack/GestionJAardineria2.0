@@ -3,7 +3,7 @@ import { todayISO } from '@/lib/format';
 import { LABEL_EGRESO, NOMBRES_CUENTA, csvEscape, downloadCsv, mesClaveRef } from '@/lib/j2local';
 import type { J2Egreso, J2EgresoTipo, J2Empleado } from '@/types';
 import { CamposReparto, ModalConfigurarEmpleado, ModalPagarSueldo, useReparto } from '@/components/Sueldos';
-import { salidasDe } from '@/lib/j2reducer';
+import { mueveCaja, salidasDe } from '@/lib/j2reducer';
 import { formatoCantidad } from '@/lib/monedas';
 import { useJ2Local } from '@/context/J2LocalContext';
 import { useToast } from '@/context/ToastContext';
@@ -13,7 +13,7 @@ import { Vacio } from '@/components/Estados';
 
 const CATS_FIJO = ['Monotributo', 'Seguro', 'Mutual', 'Marketing', 'ChatGPT', 'Claude', 'Otro'];
 
-const TIPOS_EGRESO: J2EgresoTipo[] = ['fijo', 'varios', 'sueldo', 'mercaderia', 'inventario', 'bancario'];
+const TIPOS_EGRESO: J2EgresoTipo[] = ['fijo', 'varios', 'sueldo', 'mercaderia', 'inventario', 'bancario', 'costo_mercaderia'];
 
 /** Columnas por las que se puede ordenar el historial. */
 type ColEgreso = 'fecha' | 'tipo' | 'categoria' | 'concepto' | 'monto' | 'cuenta';
@@ -34,6 +34,7 @@ function cuentaFiltro(e: J2Egreso) {
 
 function cuentasDe(e: J2Egreso) {
   if (e.moneda) return `${formatoCantidad(e.moneda.cantidad)} ${e.moneda.codigo}`;
+  if (!mueveCaja(e.tipo)) return '— (no mueve caja)';
   return salidasDe(e).map((s) => NOMBRES_CUENTA[s.cuenta] || s.cuenta).join(' + ');
 }
 
@@ -85,7 +86,7 @@ export function EgresosPage() {
     const varios  = j2.egresos.filter((e) => e.tipo === 'varios'       && e.fecha.startsWith(mc));
     const sueldos = j2.egresos.filter((e) => e.tipo === 'sueldo'       && e.fecha.startsWith(mc));
     const mercs   = j2.egresos.filter((e) => e.tipo === 'mercaderia'   && e.fecha.startsWith(mc));
-    const invs    = j2.egresos.filter((e) => e.tipo === 'inventario'   && e.fecha.startsWith(mc));
+    const invs    = j2.egresos.filter((e) => (e.tipo === 'inventario' || e.tipo === 'costo_mercaderia') && e.fecha.startsWith(mc));
     const bancs   = j2.egresos.filter((e) => e.tipo === 'bancario'     && e.fecha.startsWith(mc));
     const tf = fijos.reduce((s, e) => s + e.monto, 0);
     const tv = varios.reduce((s, e) => s + e.monto, 0);
@@ -271,7 +272,7 @@ export function EgresosPage() {
               stats.varios.length && `Varios $${stats.tv.toLocaleString('es-AR')}`,
               stats.sueldos.length && `Sueldos $${stats.ts.toLocaleString('es-AR')}`,
               stats.mercs.length && `Merc. $${stats.tm.toLocaleString('es-AR')}`,
-              stats.invs.length && `Inv. $${stats.ti.toLocaleString('es-AR')}`,
+              stats.invs.length && `Inv./costo merc. $${stats.ti.toLocaleString('es-AR')}`,
               stats.bancs.length && `Banc. $${stats.tb.toLocaleString('es-AR')}`,
             ]
               .filter(Boolean)

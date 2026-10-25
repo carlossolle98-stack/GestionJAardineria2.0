@@ -6,7 +6,8 @@ export const NOMBRES_MES = [
 export type MesImportado = { clave: string; anio: number; mes: string; ingresos: number; egresos: number };
 
 /** Acepta "1234.56", "1.234,56" y "1234,56". */
-function numero(texto: string): number {
+/** Lee números con formato argentino (1.234,56), con $ o sin separadores. */
+export function numero(texto: string): number {
   let t = texto.trim().replace(/[$\s]/g, '');
   if (t.includes(',') && t.includes('.')) t = t.replace(/\./g, '').replace(',', '.');
   else if (t.includes(',')) t = t.replace(',', '.');
