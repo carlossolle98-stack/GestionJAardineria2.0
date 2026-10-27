@@ -1,3 +1,8 @@
+/**
+ * En producción queda vacío: /api va por el mismo dominio y Netlify lo pasa al
+ * servidor (netlify.toml). Con la API en otro dominio, Safari bloquea la cookie
+ * de sesión y en iPhone no se podía entrar.
+ */
 const base = () => (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 
 export class ApiError extends Error {

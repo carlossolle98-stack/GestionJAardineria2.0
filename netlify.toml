@@ -5,8 +5,16 @@
   # Si el push no toca frontend/, no se compila (cada build gasta créditos).
   ignore  = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- ."
 
+# La API se llama por el mismo dominio de la app (ver el proxy de abajo): así la
+# cookie de sesión es propia del sitio y Safari en iPhone no la bloquea.
 [build.environment]
-  VITE_API_URL = "https://gestionjaardineria20-backend-production.up.railway.app"
+  VITE_API_URL = ""
+
+[[redirects]]
+  from   = "/api/*"
+  to     = "https://gestionjaardineria20-backend-production.up.railway.app/api/:splat"
+  status = 200
+  force  = true
 
 [[redirects]]
   from   = "/*"
