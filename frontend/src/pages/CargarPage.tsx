@@ -42,27 +42,38 @@ export function CargarPage() {
     [j2.ingresos, mc]
   );
 
-  const esVenta = cTipo === 'Venta vivero' || cTipo === 'Venta producto digital' || cTipo === 'Comisión de vivero';
+  const esComision = cTipo === 'Comisión de vivero';
+  const esVenta = cTipo === 'Venta vivero' || cTipo === 'Venta producto digital';
+  // Las horas sólo tienen sentido en trabajos: en una venta o una comisión
+  // alteraban el valor hora del cliente.
+  const pideHoras = cTipo === 'Cobro de trabajo' || cTipo === 'Cobro deuda anterior';
+  /** En una venta el cliente es opcional: sin nombre va como consumidor final. */
+  const nombreCobro = cCliente.trim() || (esVenta ? 'Varios / Consumidor Final' : '');
+  const viveros = useMemo(() => {
+    const vistos = new Set(['El Sol', 'Sagrado Corazón', 'Marquez']);
+    for (const i of j2.ingresos) if (i.concepto.startsWith('Comisión de vivero') && i.cliente) vistos.add(i.cliente);
+    return [...vistos];
+  }, [j2.ingresos]);
   const montoTotal = cCombinado
     ? (Number(cMonto) || 0) + (Number(cMonto2) || 0)
     : Number(cMonto) || 0;
 
   const valorHoraPreview = useMemo(() => {
     const m = montoTotal;
-    const h = Number(cHoras);
+    const h = pideHoras ? Number(cHoras) : 0;
     return m > 0 && h > 0 ? Math.round(m / h) : 0;
-  }, [montoTotal, cHoras]);
+  }, [montoTotal, cHoras, pideHoras]);
 
   const mut = useMutation({
     mutationFn: async () => {
       const monto1 = Number(cMonto);
       const monto2 = cCombinado ? Number(cMonto2) : 0;
-      const horas = Number(cHoras) || 0;
-      const tipoFinal = esVenta && cDetalle.trim() ? `${cTipo} — ${cDetalle.trim()}` : cTipo;
+      const horas = pideHoras ? Number(cHoras) || 0 : 0;
+      const tipoFinal = (esVenta || esComision) && cDetalle.trim() ? `${cTipo} — ${cDetalle.trim()}` : cTipo;
 
       // 1. Registrar cobro(s) diario(s)
       const cobro = await sendJson<CobroDiario>('/api/cobros-diarios', 'POST', {
-        cliente: cCliente.trim(),
+        cliente: nombreCobro,
         monto: monto1,
         fecha: cFecha,
         medio: cMedio,
@@ -70,7 +81,7 @@ export function CargarPage() {
       });
       if (cCombinado && monto2 > 0) {
         await sendJson('/api/cobros-diarios', 'POST', {
-          cliente: cCliente.trim(),
+          cliente: nombreCobro,
           monto: monto2,
           fecha: cFecha,
           medio: cMedio2,
@@ -80,9 +91,10 @@ export function CargarPage() {
 
       // 2. Registrar pago en ficha del cliente (total combinado)
       const clienteMatch = clientes.find(
-        (c) => c.nombre.toLowerCase() === cCliente.trim().toLowerCase()
+        (c) => c.nombre.toLowerCase() === nombreCobro.toLowerCase()
       );
-      if (clienteMatch) {
+      // Una comisión la paga un vivero, no un cliente: no va a la ficha de nadie.
+      if (clienteMatch && !esComision) {
         await sendJson(`/api/clientes/${clienteMatch._id}/pagos`, 'POST', {
           fecha: cFecha,
           monto: monto1 + monto2,
@@ -94,13 +106,13 @@ export function CargarPage() {
       return cobro;
     },
     onSuccess: () => {
-      const conceptoFinal = esVenta && cDetalle.trim()
+      const conceptoFinal = (esVenta || esComision) && cDetalle.trim()
         ? `${cTipo} — ${cDetalle.trim()}`
         : cTipo;
       // Registrar uno o dos ingresos en j2 según la cuenta
       j2.addIngreso({
         fecha: cFecha,
-        cliente: cCliente.trim(),
+        cliente: nombreCobro,
         concepto: conceptoFinal,
         monto: Number(cMonto),
         medio: cMedio,
@@ -108,7 +120,7 @@ export function CargarPage() {
       if (cCombinado && Number(cMonto2) > 0) {
         j2.addIngreso({
           fecha: cFecha,
-          cliente: cCliente.trim(),
+          cliente: nombreCobro,
           concepto: conceptoFinal,
           monto: Number(cMonto2),
           medio: cMedio2,
@@ -128,7 +140,7 @@ export function CargarPage() {
   });
 
   function registrar() {
-    if (!cCliente.trim()) { toast('⚠ Ingresá el nombre del cliente'); return; }
+    if (!nombreCobro) { toast(esComision ? '⚠ Ingresá el vivero' : '⚠ Ingresá el nombre del cliente'); return; }
     if (!Number(cMonto) || Number(cMonto) <= 0) { toast('⚠ Ingresá un monto válido'); return; }
     if (cCombinado && (!Number(cMonto2) || Number(cMonto2) <= 0)) {
       toast('⚠ Ingresá el segundo monto'); return;
@@ -175,30 +187,57 @@ export function CargarPage() {
       <div className="tabla-wrap" style={{ padding: 20 }}>
         <div className="form-grid">
           <div className="form-group">
-            <label htmlFor="cargar-cliente-1">Cliente</label>
-            <input id="cargar-cliente-1" value={cCliente} onChange={(e) => setCCliente(e.target.value)} list="dl-clientes" placeholder="Nombre del cliente" />
+            <label htmlFor="cargar-tipo">Tipo</label>
+            <select
+              id="cargar-tipo"
+              value={cTipo}
+              onChange={(e) => { setCTipo(e.target.value); setCDetalle(''); setCHoras(''); }}
+            >
+              <option>Cobro de trabajo</option>
+              <option>Venta vivero</option>
+              <option>Venta producto digital</option>
+              <option>Comisión de vivero</option>
+              <option>Cobro deuda anterior</option>
+            </select>
+          </div>
+          <div className="form-group">
+            <label htmlFor="cargar-cliente-1">{esComision ? 'Vivero' : esVenta ? 'Cliente (opcional)' : 'Cliente'}</label>
+            <input
+              id="cargar-cliente-1"
+              value={cCliente}
+              onChange={(e) => setCCliente(e.target.value)}
+              list={esComision ? 'dl-viveros' : 'dl-clientes'}
+              placeholder={esComision ? 'Ej: El Sol, Sagrado Corazón, Marquez' : esVenta ? 'Si lo dejás vacío: Consumidor final' : 'Nombre del cliente'}
+            />
             <datalist id="dl-clientes">
               <option value="Varios / Consumidor Final" />
               {clientes.map((c) => (
                 <option key={c._id} value={c.nombre} />
               ))}
             </datalist>
+            <datalist id="dl-viveros">
+              {viveros.map((v) => <option key={v} value={v} />)}
+            </datalist>
           </div>
           <div className="form-group">
             <label htmlFor="cargar-monto-cobrado-2">Monto cobrado</label>
             <input id="cargar-monto-cobrado-2" type="number" value={cMonto} onChange={(e) => setCMonto(e.target.value)} placeholder="Ej: 45000" />
           </div>
-          <div className="form-group">
-            <label>Horas trabajadas</label>
-            <input
-              type="number"
-              step="any"
-              min="0"
-              value={cHoras}
-              onChange={(e) => setCHoras(e.target.value)}
-              placeholder="Ej: 1.5 o 3.5"
-            />
-          </div>
+          {pideHoras && (
+            <div className="form-group">
+              <label htmlFor="cargar-horas">Horas trabajadas</label>
+              <input
+                id="cargar-horas"
+                type="number"
+                inputMode="decimal"
+                step="any"
+                min="0"
+                value={cHoras}
+                onChange={(e) => setCHoras(e.target.value)}
+                placeholder="Ej: 1.5 o 3.5"
+              />
+            </div>
+          )}
           <div className="form-group">
             <label htmlFor="cargar-fecha-3">Fecha</label>
             <input id="cargar-fecha-3" type="date" value={cFecha} onChange={(e) => setCFecha(e.target.value)} />
@@ -211,26 +250,14 @@ export function CargarPage() {
               <option>Efectivo</option>
             </select>
           </div>
-          <div className="form-group">
-            <label>Tipo</label>
-            <select
-              value={cTipo}
-              onChange={(e) => { setCTipo(e.target.value); setCDetalle(''); }}
-            >
-              <option>Cobro de trabajo</option>
-              <option>Venta vivero</option>
-              <option>Venta producto digital</option>
-              <option>Comisión de vivero</option>
-              <option>Cobro deuda anterior</option>
-            </select>
-          </div>
-          {esVenta && (
+          {(esVenta || esComision) && (
             <div className="form-group">
-              <label>{cTipo === 'Comisión de vivero' ? '¿Qué vivero?' : '¿Qué vendiste?'}</label>
+              <label htmlFor="cargar-detalle">{esComision ? 'Detalle (opcional)' : '¿Qué vendiste?'}</label>
               <input
+                id="cargar-detalle"
                 value={cDetalle}
                 onChange={(e) => setCDetalle(e.target.value)}
-                placeholder={cTipo === 'Venta vivero' ? 'Ej: Rosales, Sustrato, Fertilizante…' : cTipo === 'Comisión de vivero' ? 'Ej: El Sol, Sagrado Corazón, Marquez' : 'Ej: Guía de poda en PDF, Curso online…'}
+                placeholder={cTipo === 'Venta vivero' ? 'Ej: Rosales, Sustrato, Fertilizante…' : esComision ? 'Ej: comisión de septiembre' : 'Ej: Guía de poda en PDF, Curso online…'}
               />
             </div>
           )}

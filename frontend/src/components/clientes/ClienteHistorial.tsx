@@ -19,7 +19,10 @@ export function ClienteHistorial({ cliente }: Props) {
   const pagos = [...(cliente.pagos || [])].sort((a, b) => a.fecha.localeCompare(b.fecha));
   const total = pagos.reduce((s, p) => s + p.monto, 0);
   const horasTot = pagos.reduce((s, p) => s + (Number(p.horas) || 0), 0);
-  const vh = horasTot > 0 ? Math.round(total / horasTot) : 0;
+  // Sólo los cobros de trabajos (los que tienen horas): una venta de insumos o
+  // una deuda cobrada sin horas bajaban el valor hora del cliente.
+  const montoConHoras = pagos.reduce((s, p) => s + ((Number(p.horas) || 0) > 0 ? p.monto : 0), 0);
+  const vh = horasTot > 0 ? Math.round(montoConHoras / horasTot) : 0;
 
   const addMut = useMutation({
     mutationFn: () =>

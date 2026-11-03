@@ -154,7 +154,7 @@ type J2Ctx = J2Datos & {
   registrarAdelanto: (empId: string, monto: number, cuenta: keyof J2Cuentas) => void;
   moverListaEspera: (id: string, direccion: 'arriba' | 'abajo') => void;
   addDeudaCliente: (p: Omit<J2DeudaCliente, 'id' | 'estado'>) => void;
-  pagarDeudaCliente: (id: string, cuenta: keyof J2Cuentas) => void;
+  pagarDeudaCliente: (id: string, cuenta: keyof J2Cuentas, fecha?: string) => void;
   removeDeudaCliente: (id: string) => void;
 };
 
@@ -509,8 +509,8 @@ export function J2LocalProvider({ children }: { children: ReactNode }) {
         envia({ tipo: 'moverListaEspera', id, direccion }),
       addDeudaCliente: (p: Omit<J2DeudaCliente, 'id' | 'estado'>) =>
         envia({ tipo: 'addDeudaCliente', payload: p }),
-      pagarDeudaCliente: (id: string, cuenta: keyof J2Cuentas) =>
-        envia({ tipo: 'pagarDeudaCliente', id, cuenta }),
+      pagarDeudaCliente: (id: string, cuenta: keyof J2Cuentas, fecha?: string) =>
+        envia({ tipo: 'pagarDeudaCliente', id, cuenta, fecha }),
       removeDeudaCliente: (id: string) => envia({ tipo: 'removeDeudaCliente', id }),
     }),
     [envia]

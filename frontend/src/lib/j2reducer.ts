@@ -420,7 +420,7 @@ export type J2Accion =
   | { tipo: 'interesesAguinaldo'; empleadoId: string; intereses: number }
   | { tipo: 'registrarAdelanto'; empleadoId: string; monto: number; cuenta: keyof J2Cuentas }
   | { tipo: 'addDeudaCliente'; payload: Omit<J2DeudaCliente, 'id' | 'estado'> }
-  | { tipo: 'pagarDeudaCliente'; id: string; cuenta: keyof J2Cuentas }
+  | { tipo: 'pagarDeudaCliente'; id: string; cuenta: keyof J2Cuentas; fecha?: string }
   | { tipo: 'removeDeudaCliente'; id: string }
   | { tipo: 'moverListaEspera'; id: string; direccion: 'arriba' | 'abajo' }
   /** Toma los datos del servidor y vuelve a aplicar encima lo que todavía no se guardó. */
@@ -1153,7 +1153,7 @@ function transicion(d: J2Datos, a: J2Accion): J2Datos {
     case 'pagarDeudaCliente': {
       const row = d.deudasClientes.find((x) => x.id === a.id);
       if (!row || row.estado === 'pagado') return d;
-      const fechaPago = hoyLocal();
+      const fechaPago = a.fecha || hoyLocal();
 
       const conPago: J2Datos = {
         ...d,

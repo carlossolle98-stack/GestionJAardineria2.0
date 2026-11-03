@@ -31,6 +31,8 @@ export function CobrosPage() {
 
   const [openPagoId, setOpenPagoId] = useState<string | null>(null);
   const [pagoCuenta, setPagoCuenta] = useState<'mp' | 'banco' | 'efectivo'>('mp');
+  const [pagoFecha, setPagoFecha] = useState(todayISO());
+  const [pagoHoras, setPagoHoras] = useState('');
   const [verPagadas, setVerPagadas] = useState(false);
 
   const pendientes = j2.deudasClientes.filter((d) => d.estado === 'pendiente');
@@ -231,7 +233,9 @@ export function CobrosPage() {
     const deuda = j2.deudasClientes.find((d) => d.id === id);
     if (!deuda) { toast('No encontramos esa deuda', { tono: 'error' }); return; }
 
-    j2.pagarDeudaCliente(id, pagoCuenta);
+    j2.pagarDeudaCliente(id, pagoCuenta, pagoFecha);
+    const horas = Number(pagoHoras) || 0;
+    setPagoHoras('');
     setOpenPagoId(null);
 
     // Si coincide con cliente formal → reducir badge + registrar pago en historial
@@ -244,9 +248,9 @@ export function CobrosPage() {
           toast('No se pudo actualizar la deuda en la ficha del cliente', { tono: 'error' });
         }),
         sendJson(`/api/clientes/${formal._id}/pagos`, 'POST', {
-          fecha: deuda.fechaPago || new Date().toISOString().slice(0, 10),
+          fecha: pagoFecha,
           monto: deuda.monto,
-          horas: 0,
+          horas,
           concepto: deuda.concepto,
           medio: NOMBRES_CUENTA[pagoCuenta] || pagoCuenta,
         }).catch(() => {}),
@@ -372,7 +376,7 @@ export function CobrosPage() {
                           <button
                             type="button"
                             className="btn sm"
-                            onClick={() => setOpenPagoId((id) => (id === d.id ? null : d.id))}
+                            onClick={() => { setPagoFecha(todayISO()); setPagoHoras(''); setOpenPagoId((id) => (id === d.id ? null : d.id)); }}
                           >
                             ✓ Ya cobré
                           </button>
@@ -405,6 +409,14 @@ export function CobrosPage() {
                                   <option value="banco">Transferencia bancaria</option>
                                   <option value="efectivo">Efectivo</option>
                                 </select>
+                              </div>
+                              <div className="form-group" style={{ minWidth: 140 }}>
+                                <label htmlFor="cobros-fecha-pago">Fecha del cobro</label>
+                                <input id="cobros-fecha-pago" type="date" value={pagoFecha} onChange={(e) => setPagoFecha(e.target.value)} />
+                              </div>
+                              <div className="form-group" style={{ minWidth: 140 }}>
+                                <label htmlFor="cobros-horas-pago">Horas trabajadas</label>
+                                <input id="cobros-horas-pago" type="number" inputMode="decimal" min="0" step="any" value={pagoHoras} onChange={(e) => setPagoHoras(e.target.value)} placeholder="Sólo si es por trabajos" />
                               </div>
                               <button type="button" className="btn sm" onClick={() => confirmarPago(d.id)}>
                                 ✓ Confirmar cobro

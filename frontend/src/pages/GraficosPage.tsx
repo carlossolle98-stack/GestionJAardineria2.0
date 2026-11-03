@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '@/lib/api';
 import { money } from '@/lib/format';
-import { mesClaveRef } from '@/lib/j2local';
+import { NOMBRES_CUENTA, medioACuenta, mesClaveRef } from '@/lib/j2local';
 import { totalesMensuales } from '@/lib/historialMensual';
 import type { ResumenPayload } from '@/types';
 import { useJ2Local } from '@/context/J2LocalContext';
@@ -353,8 +353,10 @@ export function GraficosPage() {
     const mesActual = meses[meses.length - 1];
     const del = j2.ingresos.filter((i) => i.fecha.startsWith(mesActual));
     const medios = new Map<string, number>();
+    // Por cuenta y no por el texto del medio: "Transferencia bancaria" (Cargar) y
+    // "banco" (cobro de una deuda) son la misma cuenta y salían como dos barras.
     for (const i of del) {
-      const m = i.medio || 'Sin especificar';
+      const m = NOMBRES_CUENTA[medioACuenta(i.medio)] || 'Sin especificar';
       medios.set(m, (medios.get(m) ?? 0) + i.monto);
     }
     const coloresMedio = ['#2e7d32', '#1565c0', '#6a1b9a', '#e65100', '#00695c'];
