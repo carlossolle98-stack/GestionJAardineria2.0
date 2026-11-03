@@ -20,6 +20,7 @@ const GRUPOS: { titulo: string; tabs: Tab[] }[] = [
       { to: '/movimientos', label: 'Movimientos', icono: '📥', permiso: 'movimientos' },
       { to: '/', label: 'Resumen', icono: '📊', end: true, permiso: 'resumen' },
       { to: '/graficos', label: 'Gráficos', icono: '📈', permiso: 'resumen' },
+      { to: '/contabilidad', label: 'Contabilidad', icono: '📒', permiso: 'finanzas' },
     ],
   },
   {

@@ -30,6 +30,7 @@ const InventarioPage = lazy(() => import('@/pages/InventarioPage').then((m) => (
 const ProveedoresPage = lazy(() => import('@/pages/ProveedoresPage').then((m) => ({ default: m.ProveedoresPage })));
 const GraficosPage = lazy(() => import('@/pages/GraficosPage').then((m) => ({ default: m.GraficosPage })));
 const ActivosPage = lazy(() => import('@/pages/ActivosPage').then((m) => ({ default: m.ActivosPage })));
+const ContabilidadPage = lazy(() => import('@/pages/ContabilidadPage').then((m) => ({ default: m.ContabilidadPage })));
 const TareasPage = lazy(() => import('@/pages/TareasPage').then((m) => ({ default: m.TareasPage })));
 
 const qc = new QueryClient({
@@ -105,6 +106,7 @@ function Rutas() {
           <Route path="proveedores" element={<P permiso="egresos"><ProveedoresPage /></P>} />
           <Route path="graficos" element={<P permiso="resumen"><GraficosPage /></P>} />
           <Route path="activos" element={<P permiso="finanzas"><ActivosPage /></P>} />
+          <Route path="contabilidad" element={<P permiso="finanzas"><ContabilidadPage /></P>} />
           <Route path="usuarios" element={<P permiso="usuarios"><UsuariosPage /></P>} />
           <Route path="sin-acceso" element={<SinAcceso />} />
           <Route path="*" element={<Navigate to={inicio} replace />} />
