@@ -59,7 +59,16 @@ const TOPE_UNDO = 25;
 
 export const CUENTAS_LIQUIDAS: (keyof J2Cuentas)[] = ['mp', 'banco', 'efectivo'];
 
+/**
+ * Ids que trae la acción desde que se despachó. Así, si hay que volver a aplicar
+ * la acción sobre datos más nuevos del servidor, genera los mismos ids y lo que
+ * se haga después con ese registro (anularlo, pagarlo) sigue encontrándolo.
+ */
+let semillas: string[] = [];
+let usadas = 0;
+
 export function nuevoId(prefijo: string) {
+  if (usadas < semillas.length) return `${prefijo}_${semillas[usadas++]}`;
   const azar =
     typeof crypto !== 'undefined' && 'randomUUID' in crypto
       ? crypto.randomUUID().slice(0, 8)
@@ -413,10 +422,26 @@ export type J2Accion =
   | { tipo: 'addDeudaCliente'; payload: Omit<J2DeudaCliente, 'id' | 'estado'> }
   | { tipo: 'pagarDeudaCliente'; id: string; cuenta: keyof J2Cuentas }
   | { tipo: 'removeDeudaCliente'; id: string }
-  | { tipo: 'moverListaEspera'; id: string; direccion: 'arriba' | 'abajo' };
+  | { tipo: 'moverListaEspera'; id: string; direccion: 'arriba' | 'abajo' }
+  /** Toma los datos del servidor y vuelve a aplicar encima lo que todavía no se guardó. */
+  | { tipo: 'rebasar'; datos: Partial<J2Datos>; acciones: J2Accion[] };
+
+/** Ids reservados al despachar la acción (ver `nuevoId`). */
+export type ConSemillas = { _ids?: string[] };
+
+export function conSemillas<T extends J2Accion>(a: T): T & ConSemillas {
+  const ids = Array.from({ length: 12 }, () =>
+    `${Date.now().toString(36)}_${
+      typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID().slice(0, 8)
+        : Math.random().toString(36).slice(2, 10)
+    }`
+  );
+  return { ...a, _ids: ids };
+}
 
 /** Acciones que no tiene sentido deshacer (carga inicial, el propio deshacer). */
-const SIN_UNDO = new Set(['hidratar', 'deshacer', 'precioMoneda']);
+const SIN_UNDO = new Set(['hidratar', 'deshacer', 'precioMoneda', 'rebasar']);
 
 export function j2Reducer(estado: J2Estado, accion: J2Accion): J2Estado {
   if (accion.tipo === 'deshacer') {
@@ -431,7 +456,23 @@ export function j2Reducer(estado: J2Estado, accion: J2Accion): J2Estado {
     return { ...estado, datos };
   }
 
-  const datos = transicion(estado.datos, accion);
+  if (accion.tipo === 'rebasar') {
+    const base = { ...estado.datos, ...limpiar(accion.datos) };
+    base.inversiones = normalizarInversiones(base.inversiones);
+    let e: J2Estado = { datos: base, pasado: [] };
+    for (const a of accion.acciones) e = j2Reducer(e, a);
+    return e;
+  }
+
+  semillas = (accion as ConSemillas)._ids ?? [];
+  usadas = 0;
+  let datos: J2Datos;
+  try {
+    datos = transicion(estado.datos, accion);
+  } finally {
+    semillas = [];
+    usadas = 0;
+  }
   if (datos === estado.datos) return estado;
 
   const pasado = SIN_UNDO.has(accion.tipo)

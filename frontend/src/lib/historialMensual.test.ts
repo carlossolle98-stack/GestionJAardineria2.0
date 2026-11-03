@@ -31,4 +31,20 @@ describe('totales por mes para Resumen y Gráficos', () => {
     expect(t.get('2026-11')?.fuente).toBe('app');
     expect(t.get('2026-12')).toEqual({ ingresos: 0, egresos: 0, fuente: 'app' });
   });
+
+  it('un mes de la planilla en 0 no tapa lo cargado en la app (octubre al pasar a noviembre)', () => {
+    const t = totalesMensuales(
+      [...historial, { mes: 'Octubre', anio: 2026, ingresos: 0, egresos: 0, estado: 'Cerrado' }],
+      [ing('2026-10-05', 200_000)],
+      [egr('2026-10-06', 50_000)],
+      '2026-11'
+    );
+    expect(t.get('2026-10')).toEqual({ ingresos: 200_000, egresos: 50_000, fuente: 'app' });
+  });
+
+  it('un mes de la planilla "En curso" cede ante la app, pero se muestra si la app no tiene nada', () => {
+    const abierto = [{ mes: 'Mayo', anio: 2026, ingresos: 0, egresos: 199_755, estado: 'En curso' }];
+    expect(totalesMensuales(abierto, [ing('2026-05-03', 900)], [], '2026-11').get('2026-05')?.fuente).toBe('app');
+    expect(totalesMensuales(abierto, [], [], '2026-11').get('2026-05')).toEqual({ ingresos: 0, egresos: 199_755, fuente: 'planilla' });
+  });
 });

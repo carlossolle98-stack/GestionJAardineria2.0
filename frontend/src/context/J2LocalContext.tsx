@@ -9,9 +9,10 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { getJson, sendJson, sendJsonKeepalive, ApiError } from '@/lib/api';
+import { getJson, sendJson, ApiError } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import {
+  conSemillas,
   j2Reducer,
   medioACuenta,
   nombreCuenta,
@@ -195,7 +196,58 @@ export function J2LocalProvider({ children }: { children: ReactNode }) {
   const ultimoEnviado = useRef<string>('');
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const datosRef = useRef(datos);
+  /**
+   * Acciones hechas en este equipo que el servidor todavía no confirmó. Si otro
+   * usuario (u otra pestaña) guardó antes, se toman sus datos y se vuelven a
+   * aplicar éstas encima: antes el guardado se rechazaba y, al recargar, lo
+   * cargado se perdía. Quedan también en el equipo por si se cierra la página.
+   */
+  const pendientes = useRef<J2Accion[]>([]);
+  /** Cuántas de `pendientes` ya están reflejadas en `datosRef`. */
+  const pendientesEnDatos = useRef(0);
+  const enVuelo = useRef(false);
+  const conflictos = useRef(0);
+  const seccionesRef = useRef<Seccion[]>([]);
   datosRef.current = datos;
+  pendientesEnDatos.current = pendientes.current.length;
+  seccionesRef.current = sync.secciones;
+
+  const clavePendientes = usuario?.id ? `j2_pendientes_${usuario.id}` : null;
+  const clavePendientesRef = useRef(clavePendientes);
+  clavePendientesRef.current = clavePendientes;
+
+  const persistirPendientes = useCallback(() => {
+    const clave = clavePendientesRef.current;
+    if (!clave) return;
+    try {
+      if (pendientes.current.length) localStorage.setItem(clave, JSON.stringify(pendientes.current));
+      else localStorage.removeItem(clave);
+    } catch {
+      // Sin almacenamiento local se sigue igual; sólo se pierde el respaldo.
+    }
+  }, []);
+
+  /** Sólo se envían las secciones que este usuario puede escribir. */
+  const armarPayload = useCallback((d: J2Datos) => {
+    const cuerpo: Record<string, unknown> = {};
+    for (const s of seccionesRef.current) cuerpo[s] = d[s];
+    return cuerpo;
+  }, []);
+
+  /** Lee el documento del servidor y devuelve lo que este usuario puede ver. */
+  const leerServidor = useCallback(async () => {
+    const d = await getJson<Record<string, unknown>>('/api/j2data');
+    const secciones = (d.secciones as Seccion[]) ?? [];
+    const parcial: Partial<J2Datos> = {};
+    for (const s of secciones) {
+      if (d[s] !== undefined) (parcial as Record<string, unknown>)[s] = d[s];
+    }
+    // Firma de lo recibido: sin esto, la propia carga se veía como un cambio
+    // y disparaba un guardado inútil.
+    const recibido: Record<string, unknown> = {};
+    for (const sec of secciones) recibido[sec] = parcial[sec] ?? d[sec];
+    return { rev: Number(d.rev) || 0, secciones, parcial, firma: JSON.stringify(recibido) };
+  }, []);
 
   /* ---------------- Carga inicial ---------------- */
 
@@ -203,28 +255,33 @@ export function J2LocalProvider({ children }: { children: ReactNode }) {
     let cancelado = false;
     listo.current = false;
 
-    getJson<Record<string, unknown>>('/api/j2data')
-      .then((d) => {
-        if (cancelado || !d) return;
-        const secciones = (d.secciones as Seccion[]) ?? [];
-        rev.current = Number(d.rev) || 0;
+    leerServidor()
+      .then((r) => {
+        if (cancelado) return;
+        rev.current = r.rev;
+        seccionesRef.current = r.secciones;
 
-        const parcial: Partial<J2Datos> = {};
-        for (const s of secciones) {
-          if (d[s] !== undefined) (parcial as Record<string, unknown>)[s] = d[s];
+        let guardadas: J2Accion[] = [];
+        try {
+          const crudo = clavePendientes ? localStorage.getItem(clavePendientes) : null;
+          if (crudo) guardadas = JSON.parse(crudo) as J2Accion[];
+        } catch {
+          guardadas = [];
         }
-        dispatch({ tipo: 'hidratar', datos: parcial });
-
-        // Se registra la firma de lo que acaba de llegar: sin esto, la propia
-        // carga inicial se veía como un cambio y disparaba un guardado inútil.
-        const recibido: Record<string, unknown> = {};
-        for (const sec of secciones) recibido[sec] = parcial[sec] ?? d[sec];
-        ultimoEnviado.current = JSON.stringify(recibido);
+        if (guardadas.length) {
+          // Quedaron cambios sin guardar de la vez anterior: van encima de lo del servidor.
+          pendientes.current = guardadas;
+          dispatch({ tipo: 'rebasar', datos: r.parcial, acciones: guardadas });
+        } else {
+          pendientes.current = [];
+          dispatch({ tipo: 'hidratar', datos: r.parcial });
+        }
+        ultimoEnviado.current = r.firma;
 
         setSync((s) => ({
           ...s,
-          secciones,
-          estado: secciones.length ? 'al-dia' : 'inactivo',
+          secciones: r.secciones,
+          estado: r.secciones.length ? 'al-dia' : 'inactivo',
           error: null,
         }));
       })
@@ -248,85 +305,107 @@ export function J2LocalProvider({ children }: { children: ReactNode }) {
 
   /* ---------------- Guardado ---------------- */
 
-  /** Sólo se envían las secciones que este usuario puede escribir. */
-  const armarPayload = useCallback(
-    (d: J2Datos) => {
-      const cuerpo: Record<string, unknown> = {};
-      for (const s of sync.secciones) cuerpo[s] = d[s];
-      return cuerpo;
-    },
-    [sync.secciones]
-  );
+  const guardarRef = useRef<() => Promise<void>>(async () => {});
 
-  useEffect(() => {
-    if (!listo.current || sync.secciones.length === 0) return;
-
-    const cuerpo = armarPayload(datos);
-    const firma = JSON.stringify(cuerpo);
-
-    // Sin cambios reales no se escribe: antes un refetch bastaba para disparar
-    // un PUT de todo el documento cada pocos segundos.
-    if (firma === ultimoEnviado.current) return;
-
-    escribirCache(datos);
-
+  const programarGuardado = useCallback((ms: number) => {
     if (timer.current) clearTimeout(timer.current);
-    setSync((s) => (s.estado === 'guardando' ? s : { ...s, estado: 'guardando' }));
+    timer.current = setTimeout(() => {
+      timer.current = null;
+      void guardarRef.current();
+    }, ms);
+  }, []);
 
-    timer.current = setTimeout(async () => {
-      try {
-        const r = await sendJson<{ rev: number }>('/api/j2data', 'PUT', {
-          ...cuerpo,
-          rev: rev.current,
-        });
-        rev.current = r.rev;
-        ultimoEnviado.current = firma;
-        setSync((s) => ({ ...s, estado: 'al-dia', ultimoGuardado: new Date(), error: null }));
-      } catch (e) {
-        const err = e as ApiError;
+  const guardar = useCallback(async () => {
+    if (enVuelo.current) {
+      programarGuardado(RETARDO_GUARDADO);
+      return;
+    }
+    const cuerpo = armarPayload(datosRef.current);
+    const firma = JSON.stringify(cuerpo);
+    if (firma === ultimoEnviado.current) {
+      setSync((s) => (s.estado === 'guardando' ? { ...s, estado: 'al-dia' } : s));
+      return;
+    }
+    const incluidas = pendientesEnDatos.current;
+    enVuelo.current = true;
+    try {
+      const r = await sendJson<{ rev: number }>('/api/j2data', 'PUT', { ...cuerpo, rev: rev.current });
+      rev.current = r.rev;
+      ultimoEnviado.current = firma;
+      pendientes.current = pendientes.current.slice(incluidas);
+      pendientesEnDatos.current = Math.max(0, pendientesEnDatos.current - incluidas);
+      persistirPendientes();
+      conflictos.current = 0;
+      setSync((s) => ({ ...s, estado: 'al-dia', ultimoGuardado: new Date(), error: null }));
+    } catch (e) {
+      const err = e as ApiError;
+      if (err.code === 'CONFLICTO_REV' && conflictos.current < 5) {
+        conflictos.current += 1;
+        try {
+          const srv = await leerServidor();
+          rev.current = srv.rev;
+          ultimoEnviado.current = srv.firma;
+          // El cambio de datos vuelve a programar el guardado.
+          dispatch({ tipo: 'rebasar', datos: srv.parcial, acciones: [...pendientes.current] });
+        } catch (e2) {
+          setSync((s) => ({ ...s, estado: 'error', error: (e2 as Error).message }));
+          programarGuardado(15000);
+        }
+      } else {
+        conflictos.current = 0;
         setSync((s) => ({
           ...s,
           estado: 'error',
-          error:
-            err.code === 'CONFLICTO_REV'
-              ? 'Otro usuario guardó cambios. Recargá la página para ver la versión actual.'
-              : err.message,
+          error: `${err.message}. Lo cargado queda guardado en este equipo y se vuelve a intentar.`,
         }));
+        programarGuardado(15000);
       }
-    }, RETARDO_GUARDADO);
+    } finally {
+      enVuelo.current = false;
+    }
+  }, [armarPayload, leerServidor, persistirPendientes, programarGuardado]);
+  guardarRef.current = guardar;
 
-    return () => {
-      if (timer.current) clearTimeout(timer.current);
-    };
-  }, [datos, sync.secciones, armarPayload]);
+  useEffect(() => {
+    if (!listo.current || sync.secciones.length === 0) return;
+    if (JSON.stringify(armarPayload(datos)) === ultimoEnviado.current) return;
 
-  // Al cerrar o esconder la pestaña se manda lo pendiente con keepalive,
-  // que es lo único que el navegador garantiza terminar.
+    escribirCache(datos);
+    setSync((s) => (s.estado === 'guardando' ? s : { ...s, estado: 'guardando' }));
+    programarGuardado(enVuelo.current ? RETARDO_GUARDADO * 2 : RETARDO_GUARDADO);
+  }, [datos, sync.secciones, armarPayload, programarGuardado]);
+
+  // Al volver a la pestaña se traen los cambios de los demás, si no hay nada
+  // propio pendiente: así una pestaña vieja no trabaja sobre datos atrasados.
   useEffect(() => {
     if (sync.secciones.length === 0) return;
-
-    const volcar = () => {
-      const cuerpo = armarPayload(datosRef.current);
-      if (JSON.stringify(cuerpo) === ultimoEnviado.current) return;
-      if (timer.current) clearTimeout(timer.current);
-      void sendJsonKeepalive('/api/j2data', { ...cuerpo, rev: rev.current });
+    const alVolver = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (pendientes.current.length || enVuelo.current || timer.current) return;
+      leerServidor()
+        .then((srv) => {
+          if (pendientes.current.length || srv.rev === rev.current) return;
+          rev.current = srv.rev;
+          ultimoEnviado.current = srv.firma;
+          dispatch({ tipo: 'hidratar', datos: srv.parcial });
+        })
+        .catch(() => {});
     };
-
-    const alOcultar = () => {
-      if (document.visibilityState === 'hidden') volcar();
-    };
-
-    document.addEventListener('visibilitychange', alOcultar);
-    window.addEventListener('pagehide', volcar);
-    return () => {
-      document.removeEventListener('visibilitychange', alOcultar);
-      window.removeEventListener('pagehide', volcar);
-    };
-  }, [armarPayload, sync.secciones.length]);
+    document.addEventListener('visibilitychange', alVolver);
+    return () => document.removeEventListener('visibilitychange', alVolver);
+  }, [leerServidor, sync.secciones.length]);
 
   /* ---------------- Acciones ---------------- */
 
-  const envia = useCallback((a: J2Accion) => dispatch(a), []);
+  const envia = useCallback(
+    (a: J2Accion) => {
+      const accion = conSemillas(a);
+      pendientes.current = [...pendientes.current, accion];
+      persistirPendientes();
+      dispatch(accion);
+    },
+    [persistirPendientes]
+  );
 
   const acciones = useMemo(
     () => ({

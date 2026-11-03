@@ -23,19 +23,20 @@ export function addDays(d: Date, n: number) {
 export function weekRangeFromOffset(offsetWeeks: number) {
   const lunes = mondayOfToday();
   lunes.setDate(lunes.getDate() + offsetWeeks * 7);
-  const sabado = addDays(lunes, 5);
-  return { lunes, desde: toYMD(lunes), hasta: toYMD(sabado) };
+  const domingo = addDays(lunes, 6);
+  return { lunes, desde: toYMD(lunes), hasta: toYMD(domingo) };
 }
 
 export function labelSemana(lunes: Date) {
-  const viernes = addDays(lunes, 5);
+  const domingo = addDays(lunes, 6);
   const op: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'long', year: 'numeric' };
-  return `${lunes.getDate()} al ${viernes.toLocaleDateString('es-AR', op)}`;
+  return `${lunes.getDate()} al ${domingo.toLocaleDateString('es-AR', op)}`;
 }
 
-const NOMBRES = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+const NOMBRES = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 
-export function diasLaborablesSemana(lunes: Date) {
+/** Los siete días: aunque el domingo no se trabaje, un turno cargado ese día tiene que verse. */
+export function diasSemana(lunes: Date) {
   return NOMBRES.map((nombre, i) => {
     const fecha = addDays(lunes, i);
     return { nombre, fecha, ymd: toYMD(fecha) };

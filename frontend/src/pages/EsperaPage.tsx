@@ -222,9 +222,8 @@ export function EsperaPage() {
                   type="button"
                   className="btn sm"
                   onClick={() => {
-                    nav('/agenda', { state: { prefillCliente: e.nombreCliente } });
-                    j2.removeListaEspera(e.id);
-                    toast(`Agendá el turno de ${e.nombreCliente}`, { tono: 'exito' });
+                    // Sale de la lista recién cuando el turno queda guardado en la agenda.
+                    nav('/agenda', { state: { prefillCliente: e.nombreCliente, esperaId: e.id } });
                   }}
                 >
                   📅 Agendar

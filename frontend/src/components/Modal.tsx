@@ -36,6 +36,7 @@ export function Modal({
   const caja = useRef<HTMLDivElement>(null);
   const contenido = useRef<HTMLDivElement>(null);
   const focoPrevio = useRef<HTMLElement | null>(null);
+  const empezoEnFondo = useRef(false);
   // Las pantallas pasan `onCerrar` como función nueva en cada render. Si el efecto
   // dependiera de ella, se re-ejecutaba con cada tecla y mandaba el foco a la cruz.
   const cerrarRef = useRef(onCerrar);
@@ -87,8 +88,14 @@ export function Modal({
   return (
     <div
       className="dialogo-fondo"
-      onMouseDown={(e) => {
-        if (cerrarAlTocarFondo && e.target === e.currentTarget) onCerrar();
+      // Se cierra en el click (al soltar), no al apoyar: si se cerraba antes, el
+      // toque terminaba sobre lo que había debajo, por ejemplo la ✕ de un turno.
+      onPointerDown={(e) => {
+        empezoEnFondo.current = e.target === e.currentTarget;
+      }}
+      onClick={(e) => {
+        if (cerrarAlTocarFondo && empezoEnFondo.current && e.target === e.currentTarget) onCerrar();
+        empezoEnFondo.current = false;
       }}
     >
       <div

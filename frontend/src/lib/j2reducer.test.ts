@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  conSemillas,
   j2Reducer,
   normalizarInversiones,
   TOPE_MOVLOG,
@@ -457,6 +458,25 @@ describe('compra de activos', () => {
     const { datos } = correr([{ tipo: 'compraActivo', nombre: 'Desmalezadora', monto: 300_000, cuenta: 'efectivo', fecha: '2026-10-09' }]);
     expect(datos.cuentas.efectivo).toBe(-200_000);
     expect(datos.egresos).toHaveLength(0);
+  });
+});
+
+describe('guardado con otro usuario al mismo tiempo', () => {
+  it('vuelve a aplicar lo propio sobre los datos nuevos del servidor, con los mismos ids', () => {
+    const alta = conSemillas(egreso(10_000));
+    const local = correr([alta]);
+    const id = local.datos.egresos[0].id;
+    const anular = conSemillas({ tipo: 'anularEgreso', id, motivo: 'duplicado' } as J2Accion);
+    const conAnulacion = j2Reducer(local, anular);
+
+    // Mientras tanto otro usuario cargó un ingreso en efectivo.
+    const servidor = { ...VACIO, cuentas: { ...VACIO.cuentas, efectivo: 150_000 }, ingresos: [{ id: 'ing_otro', fecha: '2026-11-01', cliente: 'Pérez', concepto: 'Corte', monto: 50_000, medio: 'Efectivo' }] };
+    const r = j2Reducer(conAnulacion, { tipo: 'rebasar', datos: servidor, acciones: [alta, anular] });
+
+    expect(r.datos.ingresos.map((i) => i.id)).toEqual(['ing_otro']);
+    expect(r.datos.egresos[0].id).toBe(id);
+    expect(r.datos.egresos[0].anulado?.motivo).toBe('duplicado');
+    expect(r.datos.cuentas.efectivo).toBe(150_000);
   });
 });
 

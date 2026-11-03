@@ -3,11 +3,12 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getJson, sendJson } from '@/lib/api';
 import { todayISO } from '@/lib/format';
-import { diasLaborablesSemana, labelSemana, toYMD, weekRangeFromOffset } from '@/lib/agenda';
+import { diasSemana, labelSemana, toYMD, weekRangeFromOffset } from '@/lib/agenda';
 import type { Turno } from '@/types';
 import { useToast } from '@/context/ToastContext';
 import { useOrden, BarraFiltros, coincideAlguno } from '@/components/Tabla';
-import { Modal, ModalAcciones } from '@/components/Modal';
+import { Modal, ModalAcciones, ModalConfirmar } from '@/components/Modal';
+import { useJ2Local } from '@/context/J2LocalContext';
 import { Vacio } from '@/components/Estados';
 
 const DURACIONES = ['1 hora', '1.5 horas', '2 horas', '3 horas', 'Medio día', 'Día completo'];
@@ -20,6 +21,7 @@ export function AgendaPage() {
   const { toast } = useToast();
   const loc = useLocation();
   const nav = useNavigate();
+  const j2 = useJ2Local();
   const [offset, setOffset] = useState(0);
   const { lunes, desde, hasta } = useMemo(() => weekRangeFromOffset(offset), [offset]);
 
@@ -35,6 +37,9 @@ export function AgendaPage() {
   const [tHora, setTHora] = useState('');
   const [tDur, setTDur] = useState('1 hora');
   const [tTipo, setTTipo] = useState('Cliente fijo');
+  /** Si el turno viene de la lista de espera: se la saca de ahí al guardarlo, no antes. */
+  const [esperaId, setEsperaId] = useState<string | null>(null);
+  const [borrarT, setBorrarT] = useState<Turno | null>(null);
 
   // ── Edición de turno ────────────────────────────────────────
   const [editT, setEditT] = useState<Turno | null>(null);
@@ -50,9 +55,10 @@ export function AgendaPage() {
   const [filTipo, setFilTipo] = useState('');
 
   useEffect(() => {
-    const st = loc.state as { prefillCliente?: string } | null;
+    const st = loc.state as { prefillCliente?: string; esperaId?: string } | null;
     if (st?.prefillCliente) {
       setTCliente(st.prefillCliente);
+      setEsperaId(st.esperaId ?? null);
       setAbrirAlta(true);
       nav(loc.pathname, { replace: true, state: {} });
     }
@@ -62,6 +68,7 @@ export function AgendaPage() {
     setAbrirAlta(false);
     setTCliente('');
     setTHora('');
+    setEsperaId(null);
   }
 
   const addMut = useMutation({
@@ -76,8 +83,9 @@ export function AgendaPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['turnos'] });
       qc.invalidateQueries({ queryKey: ['turnos-all'] });
+      if (esperaId) j2.removeListaEspera(esperaId);
+      toast(esperaId ? `✓ Turno agregado · ${tCliente.trim()} salió de la lista de espera` : '✓ Turno agregado', { tono: 'exito' });
       cerrarAlta();
-      toast('✓ Turno agregado', { tono: 'exito' });
     },
     onError: (e: Error) => toast(e.message, { tono: 'error' }),
   });
@@ -295,7 +303,7 @@ export function AgendaPage() {
           }
         />
       ) : (
-        diasLaborablesSemana(lunes).map(({ nombre, fecha, ymd }) => {
+        diasSemana(lunes).map(({ nombre, fecha, ymd }) => {
           const lista = porDia.get(ymd) || [];
           const esHoy = ymd === hoyYmd;
           return (
@@ -356,7 +364,7 @@ export function AgendaPage() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => delMut.mutate(t._id)}
+                        onClick={() => setBorrarT(t)}
                         aria-label={`Eliminar turno de ${t.cliente}`}
                         style={{ opacity: 0.5, border: 'none', background: 'none', cursor: 'pointer' }}
                       >
@@ -374,6 +382,17 @@ export function AgendaPage() {
             </div>
           );
         })
+      )}
+
+      {borrarT && (
+        <ModalConfirmar
+          titulo="Eliminar turno"
+          peligro
+          textoConfirmar="Eliminar"
+          mensaje={<>Se elimina el turno de <strong>{borrarT.cliente}</strong> del {borrarT.fecha}{borrarT.hora ? ` a las ${borrarT.hora}` : ''}.</>}
+          onConfirmar={() => { delMut.mutate(borrarT._id); setBorrarT(null); }}
+          onCerrar={() => setBorrarT(null)}
+        />
       )}
 
       {/* ── Modal: editar turno ── */}
