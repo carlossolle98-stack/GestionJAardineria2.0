@@ -6,7 +6,8 @@ import { CambiarPasswordDialogo } from '@/components/CambiarPasswordDialogo';
 import type { Permiso } from '@/lib/permisos';
 
 /** `permisoAlt`: la pestaña también se ve con este otro permiso. */
-type Tab = { to: string; label: string; icono: string; end?: boolean; permiso: Permiso; permisoAlt?: Permiso };
+/** Sin `permiso`, la pestaña la ve cualquiera que haya entrado (por ejemplo, marcar las horas). */
+type Tab = { to: string; label: string; icono: string; end?: boolean; permiso?: Permiso; permisoAlt?: Permiso };
 
 /** La navegación se agrupa por intención, no en una fila plana de doce tabs. */
 const GRUPOS: { titulo: string; tabs: Tab[] }[] = [
@@ -26,6 +27,7 @@ const GRUPOS: { titulo: string; tabs: Tab[] }[] = [
   {
     titulo: 'Operación',
     tabs: [
+      { to: '/horas', label: 'Horas', icono: '⏱️' },
       { to: '/tareas', label: 'Tareas', icono: '✅', permiso: 'tareas', permisoAlt: 'tareas_admin' },
       { to: '/agenda', label: 'Agenda', icono: '📅', permiso: 'agenda' },
       { to: '/espera', label: 'En espera', icono: '⏳', permiso: 'espera' },
@@ -99,7 +101,7 @@ export function AppLayout() {
   // Sólo se muestran los grupos con al menos una pantalla habilitada.
   const gruposVisibles = GRUPOS.map((g) => ({
     ...g,
-    tabs: g.tabs.filter((t) => puede(t.permiso) || (t.permisoAlt ? puede(t.permisoAlt) : false)),
+    tabs: g.tabs.filter((t) => !t.permiso || puede(t.permiso) || (t.permisoAlt ? puede(t.permisoAlt) : false)),
   })).filter((g) => g.tabs.length > 0);
 
   // Al navegar se cierra el panel lateral.

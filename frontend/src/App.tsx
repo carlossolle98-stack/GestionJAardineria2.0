@@ -30,6 +30,7 @@ const InventarioPage = lazy(() => import('@/pages/InventarioPage').then((m) => (
 const ProveedoresPage = lazy(() => import('@/pages/ProveedoresPage').then((m) => ({ default: m.ProveedoresPage })));
 const GraficosPage = lazy(() => import('@/pages/GraficosPage').then((m) => ({ default: m.GraficosPage })));
 const ActivosPage = lazy(() => import('@/pages/ActivosPage').then((m) => ({ default: m.ActivosPage })));
+const HorasPage = lazy(() => import('@/pages/HorasPage').then((m) => ({ default: m.HorasPage })));
 const ContabilidadPage = lazy(() => import('@/pages/ContabilidadPage').then((m) => ({ default: m.ContabilidadPage })));
 const TareasPage = lazy(() => import('@/pages/TareasPage').then((m) => ({ default: m.TareasPage })));
 
@@ -107,6 +108,7 @@ function Rutas() {
           <Route path="graficos" element={<P permiso="resumen"><GraficosPage /></P>} />
           <Route path="activos" element={<P permiso="finanzas"><ActivosPage /></P>} />
           <Route path="contabilidad" element={<P permiso="finanzas"><ContabilidadPage /></P>} />
+          <Route path="horas" element={<HorasPage />} />
           <Route path="usuarios" element={<P permiso="usuarios"><UsuariosPage /></P>} />
           <Route path="sin-acceso" element={<SinAcceso />} />
           <Route path="*" element={<Navigate to={inicio} replace />} />
