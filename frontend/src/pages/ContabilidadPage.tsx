@@ -1,21 +1,14 @@
 import { Fragment, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { getJson } from '@/lib/api';
 import { money, todayISO } from '@/lib/format';
-import { valorStock } from '@/lib/inventario';
 import { NOMBRES_MES } from '@/lib/historial';
 import {
   estadoDeResultados,
-  generarLibros,
   mayor,
   situacionPatrimonial,
   sumasYSaldos,
   type FilaInforme,
 } from '@/lib/contabilidad';
-import type { J2Datos } from '@/lib/j2reducer';
-import type { Activo, ItemInventario } from '@/types';
-import { useJ2Local } from '@/context/J2LocalContext';
-import { useAuth } from '@/context/AuthContext';
+import { useLibros } from '@/hooks/useLibros';
 import { Vacio } from '@/components/Estados';
 
 type Vista = 'balance' | 'resultados' | 'diario' | 'mayor' | 'sumas' | 'ajustes';
@@ -26,7 +19,7 @@ const VISTAS: { id: Vista; label: string }[] = [
   { id: 'diario', label: 'Libro diario' },
   { id: 'mayor', label: 'Mayor' },
   { id: 'sumas', label: 'Sumas y saldos' },
-  { id: 'ajustes', label: 'Sin justificar' },
+  { id: 'ajustes', label: 'Saldos iniciales y diferencias' },
 ];
 
 const num = { textAlign: 'right' as const, fontFamily: 'var(--fuente-mono)', whiteSpace: 'nowrap' as const };
@@ -40,8 +33,6 @@ function finDeMes(anio: number, mes: number) {
 }
 
 export function ContabilidadPage() {
-  const j2 = useJ2Local();
-  const { puede } = useAuth();
   const hoy = todayISO();
   const [vista, setVista] = useState<Vista>('balance');
   const [anio, setAnio] = useState(Number(hoy.slice(0, 4)));
@@ -49,37 +40,7 @@ export function ContabilidadPage() {
   const [mes, setMes] = useState(Number(hoy.slice(5, 7)));
   const [cuentaMayor, setCuentaMayor] = useState('1.1.3');
 
-  const { data: inventario, isError: sinInventario } = useQuery({
-    queryKey: ['inventario'],
-    queryFn: () => getJson<ItemInventario[]>('/api/inventario'),
-    enabled: puede('inventario'),
-    retry: false,
-  });
-  const { data: activos, isError: sinActivos } = useQuery({
-    queryKey: ['activos'],
-    queryFn: () => getJson<Activo[]>('/api/activos'),
-    retry: false,
-  });
-
-  const libros = useMemo(() => {
-    // El contexto entrega los anulados aparte: para los libros van todos, con su contraasiento.
-    const datos: J2Datos = {
-      cuentas: j2.cuentas,
-      inversiones: j2.inversiones,
-      egresos: [...j2.egresos, ...j2.egresosAnulados],
-      ingresos: [...j2.ingresos, ...j2.ingresosAnulados],
-      transferencias: j2.transferencias,
-      empleados: j2.empleados,
-      deudasClientes: j2.deudasClientes,
-      listaEspera: j2.listaEspera,
-      movlog: j2.movlog,
-    };
-    return generarLibros(datos, {
-      hoy,
-      mercaderia: inventario ? valorStock(inventario) : undefined,
-      activos: activos ?? undefined,
-    });
-  }, [j2, inventario, activos, hoy]);
+  const { libros, sinInventario, sinActivos } = useLibros();
 
   const desde = mes ? `${anio}-${String(mes).padStart(2, '0')}-01` : `${anio}-01-01`;
   const hasta = mes ? finDeMes(anio, mes) : `${anio}-12-31`;
@@ -103,6 +64,7 @@ export function ContabilidadPage() {
   const mov = useMemo(() => mayor(libros, cuentaMayor, desde, hasta), [libros, cuentaMayor, desde, hasta]);
   const nombre = (c: string) => libros.plan.get(c)?.nombre ?? c;
   const totalSinJustificar = libros.diferencias.reduce((t, d) => t + d.diferencia, 0);
+  const totalDiferencias = libros.diferencias.filter((d) => d.contra === '3.6.2').reduce((t, d) => t + d.diferencia, 0);
 
   return (
     <>
@@ -172,7 +134,7 @@ export function ContabilidadPage() {
             onClick={() => setVista(v.id)}
           >
             {v.label}
-            {v.id === 'ajustes' && libros.diferencias.length > 0 && ` (${libros.diferencias.length})`}
+            {v.id === 'ajustes' && libros.diferencias.some((d) => d.contra === '3.6.2') && ` (${libros.diferencias.filter((d) => d.contra === '3.6.2').length})`}
           </button>
         ))}
       </div>
@@ -311,10 +273,11 @@ export function ContabilidadPage() {
       {vista === 'ajustes' && (
         <>
           <p style={{ maxWidth: '68ch', color: 'var(--texto-2)', marginBottom: 12 }}>
-            Saldos que la app tiene pero que no se explican con operaciones cargadas: la plata con la que se empezó a usar la
-            app, correcciones de saldo, stock importado, movimientos muy viejos que quedaron resumidos o registros que
-            se perdieron. Van al asiento de apertura contra "Saldos iniciales y ajustes sin justificar", para que el balance
-            cierre y se vea cuánto es. Lo ideal es que, con el tiempo, cada diferencia tenga su operación.
+            Saldos que la app tiene pero que no se explican con operaciones cargadas. Van al asiento de apertura para que
+            el balance cierre y se vea cuánto es cada uno. Hay dos clases: los <strong>saldos iniciales</strong> (máquinas,
+            stock y deudas que ya existían antes de usar la app) son normales; las <strong>diferencias de caja e
+            inversiones</strong> incluyen la plata con la que se empezó, correcciones de saldo y movimientos que no se
+            cargaron, y conviene que con el tiempo cada una tenga su operación.
           </p>
           {libros.diferencias.length === 0 ? (
             <Vacio icono="✅" titulo="Todo está explicado por operaciones" />
@@ -323,20 +286,29 @@ export function ContabilidadPage() {
               <div className="tabla-scroll">
                 <table>
                   <thead>
-                    <tr><th>Cuenta</th><th style={num}>Según operaciones</th><th style={num}>Saldo real</th><th style={num}>Sin justificar</th></tr>
+                    <tr><th>Cuenta</th><th>Clase</th><th style={num}>Según operaciones</th><th style={num}>Saldo real</th><th style={num}>Diferencia</th></tr>
                   </thead>
                   <tbody>
                     {libros.diferencias.map((d) => (
                       <tr key={d.cuenta}>
                         <td>{d.nombre}</td>
+                        <td>
+                          <span className={`badge ${d.contra === '3.6.2' ? 'pendiente' : 'info'}`}>
+                            {d.contra === '3.6.2' ? 'Sin justificar' : 'Saldo inicial'}
+                          </span>
+                        </td>
                         <td style={num}>{importe(d.libros)}</td>
                         <td style={num}>{importe(d.real)}</td>
                         <td style={{ ...num, fontWeight: 700 }}>{importe(d.diferencia)}</td>
                       </tr>
                     ))}
                     <tr style={{ fontWeight: 700 }}>
-                      <td colSpan={3}>Total en "Saldos iniciales y ajustes sin justificar"</td>
-                      <td style={num}>{importe(totalSinJustificar)}</td>
+                      <td colSpan={4}>Saldos iniciales</td>
+                      <td style={num}>{importe(totalSinJustificar - totalDiferencias)}</td>
+                    </tr>
+                    <tr style={{ fontWeight: 700 }}>
+                      <td colSpan={4}>Diferencias de caja e inversiones sin justificar</td>
+                      <td style={num}>{importe(totalDiferencias)}</td>
                     </tr>
                   </tbody>
                 </table>

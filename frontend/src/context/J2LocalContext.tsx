@@ -20,6 +20,7 @@ import {
   totalesDelLog,
   type J2Accion,
   type J2Datos,
+  type Financiacion,
   type NuevoCredito,
 } from '@/lib/j2reducer';
 import type {
@@ -138,10 +139,12 @@ type J2Ctx = J2Datos & {
   pagarCuotaCredito: (p: {
     creditoId: string;
     total: number;
-    interes: number;
-    cuenta: keyof J2Cuentas;
+    interes?: number;
+    pagos: J2Pago[];
     fecha: string;
   }) => void;
+  configurarCredito: (creditoId: string, datos: { totalADevolver?: number; cuotas?: number }) => void;
+  comprarBien: (p: { nombre: string; fecha: string; pagos: J2Pago[]; financiaciones: Financiacion[] }) => void;
   anularCuotaCredito: (creditoId: string, pagoId: string, motivo: string) => void;
   ajustarCredito: (creditoId: string, nuevoSaldo: number, motivo: string) => void;
   compraActivo: (p: { nombre: string; monto: number; cuenta: keyof J2Cuentas; fecha: string }) => void;
@@ -476,13 +479,12 @@ export function J2LocalProvider({ children }: { children: ReactNode }) {
       anularCapital: (id: string, motivo: string) => envia({ tipo: 'anularCapital', id, motivo }),
       recibirCredito: (p: NuevoCredito) => envia({ tipo: 'recibirCredito', payload: p }),
       anularCredito: (id: string, motivo: string) => envia({ tipo: 'anularCredito', id, motivo }),
-      pagarCuotaCredito: (p: {
-        creditoId: string;
-        total: number;
-        interes: number;
-        cuenta: keyof J2Cuentas;
-        fecha: string;
-      }) => envia({ tipo: 'pagarCuotaCredito', ...p }),
+      pagarCuotaCredito: (p: { creditoId: string; total: number; interes?: number; pagos: J2Pago[]; fecha: string }) =>
+        envia({ tipo: 'pagarCuotaCredito', ...p }),
+      configurarCredito: (creditoId: string, datos: { totalADevolver?: number; cuotas?: number }) =>
+        envia({ tipo: 'configurarCredito', creditoId, ...datos }),
+      comprarBien: (p: { nombre: string; fecha: string; pagos: J2Pago[]; financiaciones: Financiacion[] }) =>
+        envia({ tipo: 'comprarBien', ...p }),
       anularCuotaCredito: (creditoId: string, pagoId: string, motivo: string) =>
         envia({ tipo: 'anularCuotaCredito', creditoId, pagoId, motivo }),
       ajustarCredito: (creditoId: string, nuevoSaldo: number, motivo: string) =>

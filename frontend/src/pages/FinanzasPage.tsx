@@ -1,7 +1,7 @@
 import { Fragment, useRef, useState, type ReactNode } from 'react';
 import { money, todayISO } from '@/lib/format';
 import { NOMBRES_CUENTA } from '@/lib/j2local';
-import { nombreCuenta } from '@/lib/j2reducer';
+import { nombreCuenta, separarCuota } from '@/lib/j2reducer';
 import { CATALOGO_MONEDAS, formatoCantidad, nombreMoneda } from '@/lib/monedas';
 import { useJ2Local } from '@/context/J2LocalContext';
 import { useAuth } from '@/context/AuthContext';
@@ -58,6 +58,7 @@ export function FinanzasPage() {
   const [capNota, setCapNota] = useState('');
   const [capCuotas, setCapCuotas] = useState('');
   const [capPrevio, setCapPrevio] = useState(false);
+  const [capValorCuota, setCapValorCuota] = useState('');
   const previo = capTipo === 'credito' && capPrevio;
 
   const [cuota, setCuota] = useState<J2Credito | null>(null);
@@ -69,6 +70,13 @@ export function FinanzasPage() {
   const [ajMotivo, setAjMotivo] = useState('');
   const [cuCuenta, setCuCuenta] = useState<Liquida>('banco');
   const [cuFecha, setCuFecha] = useState(todayISO());
+  /** Segunda cuenta para pagar la cuota, si se paga desde dos. */
+  const [cuDos, setCuDos] = useState(false);
+  const [cuMonto2, setCuMonto2] = useState('');
+  const [cuCuenta2, setCuCuenta2] = useState<Liquida>('mp');
+  /** El interés se calcula solo; sólo se escribe a mano si el resumen dice otra cosa. */
+  const [cuInteresManual, setCuInteresManual] = useState(false);
+  const [cuValorCuota, setCuValorCuota] = useState('');
 
   const [nuevaInv, setNuevaInv] = useState('');
   const [rendInv, setRendInv] = useState<J2Inversion | null>(null);
@@ -147,6 +155,8 @@ export function FinanzasPage() {
     }
     if (capTipo === 'credito') {
       const cuotas = parseInt(capCuotas, 10);
+      const valorCuota = Number(capValorCuota) || 0;
+      const totalADevolver = !capPrevio && cuotas > 0 && valorCuota > 0 ? cuotas * valorCuota : undefined;
       j2.recibirCredito({
         fecha: capFecha,
         entidad: capQuien.trim(),
@@ -155,8 +165,10 @@ export function FinanzasPage() {
         cuotas: cuotas > 0 ? cuotas : undefined,
         nota: capNota.trim(),
         previo: capPrevio || undefined,
+        totalADevolver: totalADevolver && totalADevolver > m ? totalADevolver : undefined,
       });
       setCapCuotas('');
+      setCapValorCuota('');
     } else {
       j2.movCapital({ fecha: capFecha, tipo: capTipo, socio: capQuien.trim(), monto: m, cuenta: capCuenta, nota: capNota.trim() });
     }
@@ -179,22 +191,47 @@ export function FinanzasPage() {
 
   function abrirCuota(cr: J2Credito) {
     setCuota(cr);
-    setCuTotal('');
+    const devolver = cr.totalADevolver ?? 0;
+    // Si se conoce el valor de la cuota, se propone; si no, queda vacío.
+    setCuTotal(devolver && cr.cuotas ? String(Math.round(devolver / cr.cuotas)) : '');
     setCuInteres('');
+    setCuInteresManual(false);
+    setCuDos(false);
+    setCuMonto2('');
+    setCuValorCuota('');
     setCuFecha(todayISO());
+  }
+
+  /** El crédito como quedaría con el valor de cuota recién cargado, para calcular el interés. */
+  function creditoParaCalculo(cr: J2Credito): J2Credito {
+    const valor = Number(cuValorCuota) || 0;
+    if (cr.totalADevolver || cr.previo || !valor || !cr.cuotas) return cr;
+    return { ...cr, totalADevolver: valor * cr.cuotas };
   }
 
   function pagarCuota() {
     if (!cuota) return;
     const total = Number(cuTotal) || 0;
-    const interes = Number(cuInteres) || 0;
-    if (total <= 0) { toast('Ingresá el total de la cuota', { tono: 'error' }); return; }
-    if (interes < 0 || interes > total) { toast('El interés tiene que estar entre 0 y el total de la cuota', { tono: 'error' }); return; }
-    if (total - interes > cuota.saldo) {
-      toast(`El capital (${money(total - interes)}) supera lo que se debe (${money(cuota.saldo)}). Revisá los montos o ajustá la deuda.`, { tono: 'error' });
-      return;
+    if (total <= 0) { toast('Ingresá cuánto pagaste', { tono: 'error' }); return; }
+    const monto2 = cuDos ? Number(cuMonto2) || 0 : 0;
+    if (cuDos && (monto2 <= 0 || monto2 >= total)) { toast('El monto de la segunda cuenta tiene que ser menor al total', { tono: 'error' }); return; }
+    const pagos = cuDos
+      ? [{ cuenta: cuCuenta, monto: total - monto2 }, { cuenta: cuCuenta2, monto: monto2 }]
+      : [{ cuenta: cuCuenta, monto: total }];
+    let interes: number | undefined;
+    if (cuInteresManual) {
+      interes = Number(cuInteres) || 0;
+      if (interes < 0 || interes > total) { toast('El interés tiene que estar entre 0 y lo que pagaste', { tono: 'error' }); return; }
+      if (total - interes > cuota.saldo + 0.5) {
+        toast(`El capital (${money(total - interes)}) supera lo que se debe (${money(cuota.saldo)}). Revisá los montos o ajustá la deuda.`, { tono: 'error' });
+        return;
+      }
     }
-    j2.pagarCuotaCredito({ creditoId: cuota.id, total, interes, cuenta: cuCuenta, fecha: cuFecha });
+    const conValor = creditoParaCalculo(cuota);
+    if (conValor !== cuota && conValor.totalADevolver && conValor.totalADevolver > cuota.monto) {
+      j2.configurarCredito(cuota.id, { totalADevolver: conValor.totalADevolver });
+    }
+    j2.pagarCuotaCredito({ creditoId: cuota.id, total, interes, pagos, fecha: cuFecha });
     toast(`Cuota pagada · ${money(total)}`, { tono: 'exito' });
     setCuota(null);
   }
@@ -224,7 +261,7 @@ export function FinanzasPage() {
     }
     setAnular({
       titulo: 'Anular crédito',
-      mensaje: cr.previo
+      mensaje: cr.previo || cr.bien
         ? <>Se anula la deuda con <strong>{cr.entidad}</strong> por <strong>{money(cr.monto)}</strong>. La caja no cambia.</>
         : <>Se anula el crédito de <strong>{cr.entidad}</strong> por <strong>{money(cr.monto)}</strong> y esa plata sale de {nombre(cr.cuenta)}.</>,
       hacer: (motivo) => j2.anularCredito(cr.id, motivo),
@@ -400,6 +437,23 @@ export function FinanzasPage() {
               <input id="fin-cap-cuotas" type="number" inputMode="numeric" min="1" value={capCuotas} onChange={(e) => setCapCuotas(e.target.value)} placeholder="Ej: 36" />
             </div>
           )}
+          {capTipo === 'credito' && !previo && (
+            <div className="form-group">
+              <label htmlFor="fin-cap-valor-cuota">Valor de cada cuota</label>
+              <input id="fin-cap-valor-cuota" type="number" inputMode="numeric" min="0" value={capValorCuota} onChange={(e) => setCapValorCuota(e.target.value)} placeholder="Lo que pagás por mes" />
+              {(() => {
+                const total = (parseInt(capCuotas, 10) || 0) * (Number(capValorCuota) || 0);
+                const pedido = Number(capMonto) || 0;
+                if (!total || !pedido) return <p className="form-ayuda">Con este dato la app calcula sola el interés de cada cuota.</p>;
+                const interes = total - pedido;
+                return (
+                  <p className="form-ayuda">
+                    Devolvés {money(total)} en total: {interes > 0 ? `${money(interes)} de interés (${Math.round((interes / pedido) * 100)} % sobre lo pedido)` : 'sin interés'}.
+                  </p>
+                );
+              })()}
+            </div>
+          )}
           <div className="form-group">
             <label htmlFor="fin-cap-nota">Nota</label>
             <input id="fin-cap-nota" value={capNota} onChange={(e) => setCapNota(e.target.value)} placeholder={capTipo === 'credito' ? 'Ej: tasa fija, para comprar herramientas' : ''} />
@@ -432,7 +486,11 @@ export function FinanzasPage() {
                     <Fragment key={cr.id}>
                       <tr style={cr.anulado ? { color: 'var(--texto-3)' } : undefined}>
                         <td data-label="Crédito">
-                          <strong>{cr.entidad}</strong>
+                          <strong>{cr.tipoCredito === 'tarjeta' ? `💳 ${cr.entidad}` : cr.entidad}</strong>
+                          {cr.bien && <div style={{ fontSize: 12, color: 'var(--texto-2)' }}>Compra de {cr.bien}</div>}
+                          {cr.totalADevolver && cr.totalADevolver > cr.monto && (
+                            <div style={{ fontSize: 12, color: 'var(--texto-2)' }}>Se devuelven {money(cr.totalADevolver)} · interés {money(cr.totalADevolver - cr.monto)}</div>
+                          )}
                           {cr.nota && <div style={{ fontSize: 12, color: 'var(--texto-2)' }}>{cr.nota}</div>}
                           {cr.anulado && <div style={{ fontSize: 12 }}>Anulado el {cr.anulado.fecha}: {cr.anulado.motivo}</div>}
                         </td>
@@ -693,42 +751,79 @@ export function FinanzasPage() {
         </div>
       </div>
 
-      {cuota && (
-        <Modal titulo={`Pagar cuota — ${cuota.entidad}`} descripcion={`Falta pagar ${money(cuota.saldo)} de capital.`} onCerrar={() => setCuota(null)} ancho="chico">
-          <form onSubmit={(e) => { e.preventDefault(); pagarCuota(); }} style={{ display: 'grid', gap: 'var(--sp-4)' }}>
-            <div className="form-grid">
-              <div className="form-group">
-                <label htmlFor="fin-cu-total">Total de la cuota</label>
-                <input id="fin-cu-total" type="number" inputMode="numeric" min="0" value={cuTotal} onChange={(e) => setCuTotal(e.target.value)} autoFocus />
+      {cuota && (() => {
+        const total = Number(cuTotal) || 0;
+        const cr = creditoParaCalculo(cuota);
+        const calc = total > 0 ? separarCuota(cr, total) : null;
+        const sinDato = !cr.totalADevolver && !cr.previo;
+        const nro = cuota.pagos.filter((p) => !p.anulado).length + 1;
+        return (
+          <Modal titulo={`Pagar cuota — ${cuota.entidad}`} descripcion={`Falta pagar ${money(cuota.saldo)} de capital.`} onCerrar={() => setCuota(null)} ancho="chico">
+            <form onSubmit={(e) => { e.preventDefault(); pagarCuota(); }} style={{ display: 'grid', gap: 'var(--sp-4)' }}>
+              <div className="form-grid">
+                <div className="form-group">
+                  <label htmlFor="fin-cu-total">Cuánto pagaste</label>
+                  <input id="fin-cu-total" type="number" inputMode="numeric" min="0" value={cuTotal} onChange={(e) => setCuTotal(e.target.value)} autoFocus />
+                  {cuota.cuotas ? <p className="form-ayuda">Cuota {nro} de {cuota.cuotas}.</p> : null}
+                </div>
+                <div className="form-group">
+                  <label htmlFor="fin-cu-cuenta">{cuDos ? 'Primera cuenta' : 'Sale de'}</label>
+                  <select id="fin-cu-cuenta" value={cuCuenta} onChange={(e) => setCuCuenta(e.target.value as Liquida)}>
+                    {opcionesCuentas(false)}
+                  </select>
+                  {cuDos && total > 0 && <p className="form-ayuda">Sale {money(Math.max(0, total - (Number(cuMonto2) || 0)))} de acá.</p>}
+                </div>
+                {cuDos && (
+                  <>
+                    <div className="form-group">
+                      <label htmlFor="fin-cu-cuenta2">Segunda cuenta</label>
+                      <select id="fin-cu-cuenta2" value={cuCuenta2} onChange={(e) => setCuCuenta2(e.target.value as Liquida)}>
+                        {opcionesCuentas(false)}
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label htmlFor="fin-cu-monto2">Monto de la segunda cuenta</label>
+                      <input id="fin-cu-monto2" type="number" inputMode="numeric" min="0" value={cuMonto2} onChange={(e) => setCuMonto2(e.target.value)} />
+                    </div>
+                  </>
+                )}
+                <div className="form-group">
+                  <label htmlFor="fin-cu-fecha">Fecha</label>
+                  <input id="fin-cu-fecha" type="date" value={cuFecha} onChange={(e) => setCuFecha(e.target.value)} />
+                </div>
+                {sinDato && cuota.cuotas && !cuInteresManual && (
+                  <div className="form-group">
+                    <label htmlFor="fin-cu-valor">Valor de cada cuota</label>
+                    <input id="fin-cu-valor" type="number" inputMode="numeric" min="0" value={cuValorCuota} onChange={(e) => setCuValorCuota(e.target.value)} placeholder="Para calcular el interés" />
+                    <p className="form-ayuda">Se guarda en el crédito: no lo vas a tener que cargar de nuevo.</p>
+                  </div>
+                )}
+                {cuInteresManual && (
+                  <div className="form-group">
+                    <label htmlFor="fin-cu-interes">De eso, interés</label>
+                    <input id="fin-cu-interes" type="number" inputMode="numeric" min="0" value={cuInteres} onChange={(e) => setCuInteres(e.target.value)} />
+                  </div>
+                )}
               </div>
-              <div className="form-group">
-                <label htmlFor="fin-cu-interes">De eso, interés</label>
-                <input id="fin-cu-interes" type="number" inputMode="numeric" min="0" value={cuInteres} onChange={(e) => setCuInteres(e.target.value)} />
-                <p className="form-ayuda">
-                  {cuota.previo
-                    ? 'Si cargaste la deuda como suma de las cuotas, dejalo en 0.'
-                    : 'Figura en el resumen del banco. Incluí IVA y gastos.'}
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14 }}>
+                <input type="checkbox" checked={cuDos} onChange={(e) => setCuDos(e.target.checked)} />
+                Lo pagué desde dos cuentas
+              </label>
+              {!cuInteresManual && calc && (
+                <p className="form-ayuda" style={{ margin: 0 }}>
+                  Baja la deuda <strong>{money(calc.capital)}</strong>
+                  {calc.interes > 0 ? <> · interés <strong>{money(calc.interes)}</strong> (va a Egresos como gasto financiero)</> : ' · sin interés'}.
+                  {sinDato && !(Number(cuValorCuota) > 0) && ' Como no está cargado cuánto se devuelve en total, todo va a capital hasta cancelar la deuda; lo que pagues de más se registra como interés.'}
                 </p>
-              </div>
-              <div className="form-group">
-                <label htmlFor="fin-cu-cuenta">Sale de</label>
-                <select id="fin-cu-cuenta" value={cuCuenta} onChange={(e) => setCuCuenta(e.target.value as Liquida)}>
-                  {opcionesCuentas(false)}
-                </select>
-              </div>
-              <div className="form-group">
-                <label htmlFor="fin-cu-fecha">Fecha</label>
-                <input id="fin-cu-fecha" type="date" value={cuFecha} onChange={(e) => setCuFecha(e.target.value)} />
-              </div>
-            </div>
-            <p className="form-ayuda" style={{ margin: 0 }}>
-              Capital que baja la deuda: <strong>{money(Math.max(0, (Number(cuTotal) || 0) - (Number(cuInteres) || 0)))}</strong>. El interés se carga como egreso bancario, porque es un costo del negocio.
-              {cuota.cuotas ? ` Esta es la cuota ${cuota.pagos.filter((p) => !p.anulado).length + 1} de ${cuota.cuotas}.` : ''}
-            </p>
-            <ModalAcciones onCancelar={() => setCuota(null)} textoConfirmar="Pagar cuota" />
-          </form>
-        </Modal>
-      )}
+              )}
+              <button type="button" className="btn secundario sm" style={{ justifySelf: 'start' }} onClick={() => setCuInteresManual((v) => !v)}>
+                {cuInteresManual ? 'Calcular el interés solo' : 'El resumen dice otro interés'}
+              </button>
+              <ModalAcciones onCancelar={() => setCuota(null)} textoConfirmar="Pagar cuota" />
+            </form>
+          </Modal>
+        );
+      })()}
 
       {rendInv && (
         <Modal titulo={`Rendimiento — ${rendInv.nombre}`} descripcion="Lo que ganó o perdió la inversión. No mueve la caja." onCerrar={() => setRendInv(null)} ancho="chico">

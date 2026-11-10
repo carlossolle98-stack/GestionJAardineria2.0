@@ -8,9 +8,9 @@ import { diasDesde, mesClaveRef } from '@/lib/j2local';
 import { useJ2Local } from '@/context/J2LocalContext';
 import { useAuth } from '@/context/AuthContext';
 import { ErrorCarga } from '@/components/Estados';
-import { totalBienesDeUso } from '@/lib/activos';
-import { valorStock } from '@/lib/inventario';
-import type { Activo, ItemInventario, ResumenPayload, Turno } from '@/types';
+import { estadoDeResultados, situacionPatrimonial } from '@/lib/contabilidad';
+import { useLibros } from '@/hooks/useLibros';
+import type { ResumenPayload, Turno } from '@/types';
 
 export function ResumenPage() {
   const { puede } = useAuth();
@@ -36,10 +36,6 @@ export function ResumenPage() {
   const totalMonedas = monedasConSaldo.reduce((s, m) => s + m.cantidad * m.precio, 0);
   const invActivas = inv.items.filter((i) => i.activa || i.saldo !== 0);
   const totalInv = invActivas.reduce((s, i) => s + i.saldo, 0) + totalMonedas;
-  const deudaCreditos = inv.creditos.filter((x) => !x.anulado).reduce((s, x) => s + x.saldo, 0);
-  const deudaAguinaldos = j2.empleados
-    .filter((e) => e.modalidad === 'sinDescuentos')
-    .reduce((s, e) => s + Math.max(0, e.aguinaldoDevengado || 0), 0);
 
   // Del servidor sólo sale el historial viejo de meses: si falla, el resto del resumen sigue funcionando.
   const { data, error, refetch } = useQuery({
@@ -52,23 +48,8 @@ export function ResumenPage() {
     queryFn: () => getJson<Turno[]>('/api/turnos'),
   });
 
-  // Los bienes de uso suman al patrimonio; si no se pueden leer, el balance lo aclara.
-  const { data: activosFijos, isError: sinActivos } = useQuery({
-    queryKey: ['activos'],
-    queryFn: () => getJson<Activo[]>('/api/activos'),
-    enabled: puede('finanzas'),
-    retry: false,
-  });
-  const totalBienes = totalBienesDeUso(activosFijos ?? []);
-
-  // La mercadería en stock, al costo, también es de la empresa.
-  const { data: inventario, isError: sinInventario } = useQuery({
-    queryKey: ['inventario'],
-    queryFn: () => getJson<ItemInventario[]>('/api/inventario'),
-    enabled: puede('finanzas') && puede('inventario'),
-    retry: false,
-  });
-  const totalMercaderia = valorStock(inventario ?? []);
+  // Balance y resultado salen de los libros contables: los mismos números que Contabilidad.
+  const { libros, sinInventario, sinActivos } = useLibros();
 
   const hoy = todayISO();
 
@@ -128,17 +109,29 @@ export function ResumenPage() {
     deudaPendientes.length > 0
       ? deudaPendientes.map((d) => `${d.nombreCliente.split(' ')[0]} ${money(d.monto)}`).join(' · ')
       : 'Sin deudas pendientes';
-  const totalActivos = cajaLiquidaTotal + totalInv + totalDeudaPendiente + totalBienes + totalMercaderia;
-  const totalDeudas = deudaCreditos + deudaAguinaldos;
-  const patrimonioTotal = totalActivos - totalDeudas;
+  const sp = situacionPatrimonial(libros, hoy);
+  const saldoDe = (pred: (codigo: string) => boolean, lista = sp.activo) =>
+    lista.filter((f) => pred(f.codigo)).reduce((t, f) => t + f.importe, 0);
+  const balCaja = saldoDe((c) => c.startsWith('1.1.'));
+  const balInversiones = saldoDe((c) => c.startsWith('1.2.'));
+  const balCobrar = saldoDe((c) => c === '1.3.1');
+  const balAdelantos = saldoDe((c) => c === '1.4.1');
+  const balMercaderia = saldoDe((c) => c === '1.5.1');
+  const balBienes = saldoDe((c) => c.startsWith('1.6.'));
+  const balPrestamos = saldoDe((c) => c === '2.3.1', sp.pasivo);
+  const balTarjetas = saldoDe((c) => c === '2.2.1', sp.pasivo);
+  const balAguinaldos = saldoDe((c) => c === '2.4.1', sp.pasivo);
+  const totalActivos = sp.totalActivo;
+  const totalDeudas = sp.totalPasivo;
+  const patrimonioTotal = sp.totalPatrimonio;
   const meses = armarMeses();
 
-  // Ingresos y resultado del mes — 100% local
-  const ingresosMesLocal = j2.ingresos
-    .filter((i) => i.fecha.startsWith(mc))
-    .reduce((s, i) => s + i.monto, 0);
-  const totalEgresosMes = totalFijos + totalVarios;
-  const resultadoMes = ingresosMesLocal - totalEgresosMes;
+  // Resultado del mes: el mismo estado de resultados de Contabilidad (incluye
+  // amortizaciones, costo de lo vendido y rendimientos, que no son movimientos de caja).
+  const erMes = estadoDeResultados(libros, `${mc}-01`, `${mc}-31`);
+  const ingresosMesLocal = erMes.totalIngresos;
+  const totalEgresosMes = erMes.totalGastos;
+  const resultadoMes = erMes.resultado;
   const mesNombre = new Date(mc + '-02').toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
   const mesLabel = mesNombre.charAt(0).toUpperCase() + mesNombre.slice(1);
 
@@ -149,7 +142,10 @@ export function ResumenPage() {
       .filter(([k]) => k <= mc)
       .sort(([a], [b]) => b.localeCompare(a))
       .slice(0, verTodo ? undefined : 12)
-      .map(([clave, v]) => {
+      .map(([clave, original]) => {
+        // Los meses que salen de la app usan el estado de resultados contable, igual que la tarjeta del mes.
+        const er = original.fuente === 'app' ? estadoDeResultados(libros, `${clave}-01`, `${clave}-31`) : null;
+        const v = er ? { ...original, ingresos: er.totalIngresos, egresos: er.totalGastos } : original;
         const nombre = new Date(clave + '-02T12:00:00').toLocaleDateString('es-AR', { month: 'long' });
         return {
           clave,
@@ -212,17 +208,17 @@ export function ResumenPage() {
         <div className="card azul">
           <div className="card-label">Resultado {mesLabel}</div>
           <div className="card-valor" style={{ color: resultadoMes < 0 ? 'var(--rojo)' : '#2e7d32' }}>
-            {resultadoMes >= 0 ? '+' : ''}{money(resultadoMes)}
+            {resultadoMes >= 0 ? '+' : ''}{money(Math.round(resultadoMes))}
           </div>
           <div className="card-sub">
-            Ingresos {money(ingresosMesLocal)} · Egresos {money(totalEgresosMes)}
+            Ingresos {money(Math.round(ingresosMesLocal))} · Gastos {money(Math.round(totalEgresosMes))}
           </div>
         </div>
         <div className="card tierra">
           <div className="card-label">Patrimonio neto</div>
-          <div className="card-valor">{money(patrimonioTotal)}</div>
+          <div className="card-valor">{money(Math.round(patrimonioTotal))}</div>
           <div className="card-sub">
-            Tiene {money(Math.round(totalActivos))} · Debe {money(totalDeudas)}
+            Tiene {money(Math.round(totalActivos))} · Debe {money(Math.round(totalDeudas))}
           </div>
         </div>
       </div>
@@ -234,29 +230,37 @@ export function ResumenPage() {
               <tr><th>Lo que tiene la empresa</th><th style={{ textAlign: 'right' }}>Monto</th></tr>
             </thead>
             <tbody>
-              <tr><td>Caja (Mercado Pago, banco y efectivo)</td><td style={{ textAlign: 'right', fontFamily: 'var(--fuente-mono)' }}>{money(cajaLiquidaTotal)}</td></tr>
-              <tr><td>Inversiones y dólares</td><td style={{ textAlign: 'right', fontFamily: 'var(--fuente-mono)' }}>{money(totalInv)}</td></tr>
-              <tr><td>Cuentas por cobrar</td><td style={{ textAlign: 'right', fontFamily: 'var(--fuente-mono)' }}>{money(totalDeudaPendiente)}</td></tr>
-              <tr>
-                <td>
-                  Bienes de uso (valor libro)
-                  {sinActivos && <span style={{ fontSize: 12, color: 'var(--texto-3)' }}> · no se pudieron leer, no están sumados</span>}
-                </td>
-                <td style={{ textAlign: 'right', fontFamily: 'var(--fuente-mono)' }}>{money(Math.round(totalBienes))}</td>
-              </tr>
-              {(totalMercaderia > 0 || sinInventario) && (
+              <tr><td>Caja (Mercado Pago, banco y efectivo)</td><td style={{ textAlign: 'right', fontFamily: 'var(--fuente-mono)' }}>{money(Math.round(balCaja))}</td></tr>
+              <tr><td>Inversiones y monedas extranjeras</td><td style={{ textAlign: 'right', fontFamily: 'var(--fuente-mono)' }}>{money(Math.round(balInversiones))}</td></tr>
+              <tr><td>Cuentas por cobrar</td><td style={{ textAlign: 'right', fontFamily: 'var(--fuente-mono)' }}>{money(Math.round(balCobrar))}</td></tr>
+              {balAdelantos !== 0 && (
+                <tr><td>Adelantos al personal</td><td style={{ textAlign: 'right', fontFamily: 'var(--fuente-mono)' }}>{money(Math.round(balAdelantos))}</td></tr>
+              )}
+              {(balMercaderia !== 0 || sinInventario) && (
                 <tr>
                   <td>
                     Mercadería (stock al costo)
-                    {sinInventario && <span style={{ fontSize: 12, color: 'var(--texto-3)' }}> · no se pudo leer, no está sumada</span>}
+                    {sinInventario && <span style={{ fontSize: 12, color: 'var(--texto-3)' }}> · no se pudo leer Inventario</span>}
                   </td>
-                  <td style={{ textAlign: 'right', fontFamily: 'var(--fuente-mono)' }}>{money(Math.round(totalMercaderia))}</td>
+                  <td style={{ textAlign: 'right', fontFamily: 'var(--fuente-mono)' }}>{money(Math.round(balMercaderia))}</td>
                 </tr>
               )}
+              <tr>
+                <td>
+                  Bienes de uso (menos amortizaciones)
+                  {sinActivos && <span style={{ fontSize: 12, color: 'var(--texto-3)' }}> · no se pudo leer Activos</span>}
+                </td>
+                <td style={{ textAlign: 'right', fontFamily: 'var(--fuente-mono)' }}>{money(Math.round(balBienes))}</td>
+              </tr>
               <tr style={{ fontWeight: 700 }}><td>Total activos</td><td style={{ textAlign: 'right', fontFamily: 'var(--fuente-mono)' }}>{money(Math.round(totalActivos))}</td></tr>
-              <tr><td>Menos: deuda por créditos</td><td style={{ textAlign: 'right', fontFamily: 'var(--fuente-mono)', color: 'var(--rojo)' }}>−{money(deudaCreditos)}</td></tr>
-              {deudaAguinaldos > 0 && (
-                <tr><td>Menos: aguinaldos a pagar</td><td style={{ textAlign: 'right', fontFamily: 'var(--fuente-mono)', color: 'var(--rojo)' }}>−{money(deudaAguinaldos)}</td></tr>
+              {balPrestamos !== 0 && (
+                <tr><td>Menos: préstamos y créditos</td><td style={{ textAlign: 'right', fontFamily: 'var(--fuente-mono)', color: 'var(--rojo)' }}>−{money(Math.round(balPrestamos))}</td></tr>
+              )}
+              {balTarjetas !== 0 && (
+                <tr><td>Menos: tarjetas de crédito</td><td style={{ textAlign: 'right', fontFamily: 'var(--fuente-mono)', color: 'var(--rojo)' }}>−{money(Math.round(balTarjetas))}</td></tr>
+              )}
+              {balAguinaldos !== 0 && (
+                <tr><td>Menos: aguinaldos a pagar</td><td style={{ textAlign: 'right', fontFamily: 'var(--fuente-mono)', color: 'var(--rojo)' }}>−{money(Math.round(balAguinaldos))}</td></tr>
               )}
               <tr style={{ fontWeight: 700 }}><td>Patrimonio neto</td><td style={{ textAlign: 'right', fontFamily: 'var(--fuente-mono)' }}>{money(Math.round(patrimonioTotal))}</td></tr>
             </tbody>

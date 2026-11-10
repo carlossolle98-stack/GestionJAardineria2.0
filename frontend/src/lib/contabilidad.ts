@@ -9,12 +9,17 @@
  * Todo se calcula por fecha, así que un movimiento cargado días después del
  * cierre cae igual en su mes y en su ejercicio: no hay nada que "tomar" el 31.
  *
- * Lo que la app no puede explicar con operaciones (saldos con los que se
- * arrancó, correcciones manuales, movimientos viejos resumidos) va a la cuenta
- * 3.6 "Saldos iniciales y ajustes sin justificar", para que se vea cuánto es.
+ * Lo que la app no puede explicar con operaciones va al asiento de apertura:
+ * los bienes, el stock y las deudas que ya existían a 3.6.1 "Saldos iniciales";
+ * las diferencias de caja e inversiones (saldos con los que se arrancó,
+ * correcciones manuales, movimientos perdidos) a 3.6.2, para que se vea cuánto es.
+ *
+ * Criterio de ingresos: lo percibido (al cobrar). Lo que se trabajó y falta
+ * cobrar figura como activo (1.3.1) contra 3.7.1 hasta que se cobra; recién ahí
+ * pasa a resultados.
  */
 import type { Activo, J2Egreso, J2Ingreso } from '@/types';
-import { medioACuenta, mueveCaja, salidasDe, type J2Datos } from '@/lib/j2reducer';
+import { medioACuenta, mueveCaja, repartir, salidasDe, type J2Datos } from '@/lib/j2reducer';
 
 export type Rubro = 'activo' | 'pasivo' | 'pn' | 'ingreso' | 'gasto';
 
@@ -25,18 +30,22 @@ export const PLAN: Cuenta[] = [
   { codigo: '1.1.2', nombre: 'Mercado Pago', rubro: 'activo' },
   { codigo: '1.1.3', nombre: 'Banco', rubro: 'activo' },
   { codigo: '1.1.9', nombre: 'Otras cuentas', rubro: 'activo' },
+  { codigo: '1.3.1', nombre: 'Clientes: trabajos y ventas a cobrar', rubro: 'activo' },
   { codigo: '1.4.1', nombre: 'Adelantos al personal', rubro: 'activo' },
   { codigo: '1.5.1', nombre: 'Mercadería', rubro: 'activo' },
   { codigo: '1.6.1', nombre: 'Bienes de uso (valor de origen)', rubro: 'activo' },
   { codigo: '1.6.9', nombre: 'Amortizaciones acumuladas', rubro: 'activo' },
 
+  { codigo: '2.2.1', nombre: 'Tarjetas de crédito a pagar', rubro: 'pasivo' },
   { codigo: '2.3.1', nombre: 'Préstamos y deudas financieras', rubro: 'pasivo' },
   { codigo: '2.4.1', nombre: 'Aguinaldos a pagar', rubro: 'pasivo' },
 
   { codigo: '3.1.1', nombre: 'Capital (aportes)', rubro: 'pn' },
   { codigo: '3.3.1', nombre: 'Retiros de socios', rubro: 'pn' },
   { codigo: '3.4.1', nombre: 'Resultados acumulados', rubro: 'pn' },
-  { codigo: '3.6.1', nombre: 'Saldos iniciales y ajustes sin justificar', rubro: 'pn' },
+  { codigo: '3.6.1', nombre: 'Saldos iniciales (bienes, stock y deudas que ya existían)', rubro: 'pn' },
+  { codigo: '3.6.2', nombre: 'Diferencias de caja e inversiones sin justificar', rubro: 'pn' },
+  { codigo: '3.7.1', nombre: 'Cobros pendientes (resultado a realizar)', rubro: 'pn' },
 
   { codigo: '4.1', nombre: 'Servicios de jardinería', rubro: 'ingreso' },
   { codigo: '4.3', nombre: 'Venta de mercadería', rubro: 'ingreso' },
@@ -226,7 +235,7 @@ function asientosDeEgresos(d: J2Datos): Asiento[] {
       if (Math.abs(faltante) > 0.004) {
         // En un sueldo, la parte que no salió de caja es el adelanto ya entregado.
         const esSueldo = o?.tipo === 'sueldo' || o?.tipo === 'liquidacion';
-        lineas.push(H(esSueldo ? '1.4.1' : '3.6.1', faltante));
+        lineas.push(H(esSueldo ? '1.4.1' : '3.6.2', faltante));
       }
     }
     if (o?.tipo === 'sueldo' && o.devengado > 0) {
@@ -254,31 +263,57 @@ function asientosDeCapital(d: J2Datos): Asiento[] {
   });
 }
 
+function cuentaDeCredito(cr: { tipoCredito?: string }) {
+  return cr.tipoCredito === 'tarjeta' ? '2.2.1' : '2.3.1';
+}
+
+/**
+ * Lo trabajado o vendido sin cobrar: queda como crédito contra 3.7.1 y pasa a
+ * resultados recién al cobrarlo (el cobro genera su propio ingreso).
+ */
+function asientosDeCobrosPendientes(d: J2Datos): Asiento[] {
+  return d.deudasClientes.flatMap((dc) => {
+    const alta = asiento(`dc:${dc.id}`, dc.fecha, `A cobrar: ${dc.concepto} — ${dc.nombreCliente}`, `deuda:${dc.id}`, [
+      D('1.3.1', dc.monto),
+      H('3.7.1', dc.monto),
+    ]);
+    if (dc.estado !== 'pagado') return [alta];
+    const fecha = dc.fechaPago || dc.fecha;
+    return [
+      alta,
+      asiento(`dc:${dc.id}~cobro`, fecha, `Cobrado: ${dc.concepto} — ${dc.nombreCliente}`, `deuda:${dc.id}`, [
+        D('3.7.1', dc.monto),
+        H('1.3.1', dc.monto),
+      ]),
+    ];
+  });
+}
+
 function asientosDeCreditos(d: J2Datos): Asiento[] {
   return d.inversiones.creditos.flatMap((cr) => {
-    const alta = asiento(
-      `cred:${cr.id}`,
-      cr.fecha,
-      `${cr.previo ? 'Deuda que ya venía' : 'Crédito recibido'} — ${cr.entidad}`,
-      `credito:${cr.id}`,
-      // Una deuda que ya existía al empezar no trajo plata: se reconoce contra los saldos iniciales.
-      [D(cr.previo ? '3.6.1' : cuentaDeCaja(cr.cuenta, d), cr.monto), H('2.3.1', cr.monto)]
-    );
-    const cuotas = cr.pagos.flatMap((p) =>
-      p.capital > 0
-        ? conAnulacion(
-            asiento(`cuota:${p.id}`, p.fecha, `Cuota (capital) — ${cr.entidad}`, `credito:${cr.id}`, [
-              D('2.3.1', p.capital),
-              H(cuentaDeCaja(p.cuenta, d), p.capital),
-            ]),
-            p.anulado
-          )
-        : []
-    );
+    const pasivo = cuentaDeCredito(cr);
+    // Un crédito que pagó directo un bien no trajo plata: entra el bien. Una deuda
+    // que ya existía al empezar se reconoce contra los saldos iniciales.
+    const debe = cr.bien ? '1.6.1' : cr.previo ? '3.6.1' : cuentaDeCaja(cr.cuenta, d);
+    const nombre = cr.bien
+      ? `${cr.tipoCredito === 'tarjeta' ? 'Compra con tarjeta' : 'Compra financiada'}: ${cr.bien} — ${cr.entidad}`
+      : `${cr.previo ? 'Deuda que ya venía' : 'Crédito recibido'} — ${cr.entidad}`;
+    const alta = asiento(`cred:${cr.id}`, cr.fecha, nombre, `credito:${cr.id}`, [D(debe, cr.monto), H(pasivo, cr.monto)]);
+    const cuotas = cr.pagos.flatMap((p) => {
+      if (p.capital <= 0) return [];
+      const partes = p.partes?.length ? p.partes : [{ cuenta: p.cuenta as 'mp' | 'banco' | 'efectivo', monto: p.capital + p.interes }];
+      return conAnulacion(
+        asiento(`cuota:${p.id}`, p.fecha, `Cuota (capital) — ${cr.entidad}`, `credito:${cr.id}`, [
+          D(pasivo, p.capital),
+          ...repartir(p.capital, partes).map((s) => H(cuentaDeCaja(s.cuenta, d), s.monto)),
+        ]),
+        p.anulado
+      );
+    });
     const ajustes = cr.ajustes.map((aj) =>
       asiento(`credaj:${aj.id}`, aj.fecha, `Ajuste de deuda — ${cr.entidad} (${aj.motivo})`, `credito:${cr.id}`, [
-        D('3.6.1', aj.diferencia),
-        H('2.3.1', aj.diferencia),
+        D('3.6.2', aj.diferencia),
+        H(pasivo, aj.diferencia),
       ])
     );
     return [...conAnulacion(alta, cr.anulado), ...cuotas, ...ajustes];
@@ -309,7 +344,7 @@ function asientosDelLibro(d: J2Datos): Asiento[] {
         out.push(asiento(id, m.fecha, m.concepto, origen, [D('1.4.1', -m.monto), H(caja, -m.monto)]));
         break;
       case 'correccion':
-        out.push(asiento(id, m.fecha, `${m.concepto}${detalle}`, origen, [D(caja, m.monto), H('3.6.1', m.monto)]));
+        out.push(asiento(id, m.fecha, `${m.concepto}${detalle}`, origen, [D(caja, m.monto), H('3.6.2', m.monto)]));
         break;
       case 'moneda_compra':
       case 'moneda_venta': {
@@ -334,7 +369,7 @@ export type Contexto = {
   hoy?: string;
 };
 
-export type Diferencia = { cuenta: string; nombre: string; libros: number; real: number; diferencia: number };
+export type Diferencia = { cuenta: string; nombre: string; libros: number; real: number; diferencia: number; contra: '3.6.1' | '3.6.2' };
 
 /**
  * Compara lo que dicen los asientos con los saldos reales de la app y arma el
@@ -350,7 +385,10 @@ function apertura(d: J2Datos, asientos: Asiento[], ctx: Contexto, plan: Map<stri
   for (const m of d.inversiones.monedas) reales.set(`1.2.ME.${m.codigo}`, Math.round(m.cantidad * m.precio));
   reales.set('1.4.1', d.empleados.reduce((s, e) => s + Math.max(0, e.adelanto || 0), 0));
   // En el pasivo el saldo real es lo que se debe: en los libros, Haber menos Debe.
-  reales.set('2.3.1', -d.inversiones.creditos.filter((c) => !c.anulado).reduce((s, c) => s + c.saldo, 0));
+  const vigentes = d.inversiones.creditos.filter((c) => !c.anulado);
+  reales.set('2.3.1', -vigentes.filter((c) => cuentaDeCredito(c) === '2.3.1').reduce((s, c) => s + c.saldo, 0));
+  reales.set('2.2.1', -vigentes.filter((c) => cuentaDeCredito(c) === '2.2.1').reduce((s, c) => s + c.saldo, 0));
+  reales.set('1.3.1', d.deudasClientes.filter((x) => x.estado === 'pendiente').reduce((s, x) => s + x.monto, 0));
   reales.set('2.4.1', -d.empleados.reduce((s, e) => s + Math.max(0, e.aguinaldoDevengado || 0), 0));
   if (ctx.mercaderia !== undefined) reales.set('1.5.1', ctx.mercaderia);
   if (ctx.activos) {
@@ -363,8 +401,10 @@ function apertura(d: J2Datos, asientos: Asiento[], ctx: Contexto, plan: Map<stri
     const libros = saldos.get(cuenta) ?? 0;
     const dif = redondo(real - libros);
     if (Math.abs(dif) < 1) continue;
-    diferencias.push({ cuenta, nombre: plan.get(cuenta)?.nombre ?? cuenta, libros, real, diferencia: dif });
-    lineas.push(D(cuenta, dif), H('3.6.1', dif));
+    // Caja e inversiones sin explicar son una alerta; bienes, stock y deudas viejas, saldos iniciales.
+    const contra = cuenta.startsWith('1.1.') || (cuenta.startsWith('1.2.') && !cuenta.startsWith('1.2.ME.')) ? '3.6.2' : '3.6.1';
+    diferencias.push({ cuenta, nombre: plan.get(cuenta)?.nombre ?? cuenta, libros, real, diferencia: dif, contra });
+    lineas.push(D(cuenta, dif), H(contra, dif));
   }
   const primera = asientos.reduce((min, a) => (a.fecha < min ? a.fecha : min), ctx.hoy ?? '9999-12-31');
   const fecha = primera === '9999-12-31' ? (ctx.hoy ?? '2000-01-01') : `${primera.slice(0, 7)}-01`;
@@ -427,6 +467,7 @@ export function generarLibros(d: J2Datos, ctx: Contexto = {}): Libros {
     ...asientosDeTransferencias(d),
     ...asientosDeCapital(d),
     ...asientosDeCreditos(d),
+    ...asientosDeCobrosPendientes(d),
     ...asientosDelLibro(d),
     ...asientosDeAmortizacion(ctx),
   ].filter((a) => a.lineas.length > 0);

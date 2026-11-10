@@ -9,6 +9,7 @@ import { BarraFiltros, coincideAlguno, Th, useOrden } from '@/components/Tabla';
 import { Vacio } from '@/components/Estados';
 import { useToast } from '@/context/ToastContext';
 import { useJ2Local } from '@/context/J2LocalContext';
+import { FormasDePago, armarPago, totalFilas, type FilaPago } from '@/components/FormasDePago';
 
 const CATEGORIAS = ['Herramienta', 'Vehículo', 'Equipo eléctrico', 'Equipo de riego', 'Maquinaria', 'Otro'];
 const ESTADOS_ACTIVO = ['Activo', 'En reparación', 'Dado de baja'];
@@ -63,7 +64,8 @@ export function ActivosPage() {
   const [nVida, setNVida] = useState('5');
   const [nEstado, setNEstado] = useState('Activo');
   const [nNotas, setNNotas] = useState('');
-  const [nPago, setNPago] = useState<'ninguna' | 'mp' | 'banco' | 'efectivo'>('ninguna');
+  /** Cómo se pagó: sin filas, el bien ya era de la empresa y no mueve nada. */
+  const [nFormas, setNFormas] = useState<FilaPago[]>([]);
 
   // Edición
   const [editA, setEditA] = useState<Activo | null>(null);
@@ -90,13 +92,21 @@ export function ActivosPage() {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['activos'] });
-      // La compra sale de caja recién cuando el activo quedó guardado.
-      if (nPago !== 'ninguna') {
-        j2.compraActivo({ nombre: nNombre.trim(), monto: Number(nValor), cuenta: nPago, fecha: nFecha });
+      // La compra sale de caja y crea las deudas recién cuando el activo quedó guardado.
+      const { pagos, financiaciones } = armarPago(nFormas);
+      if (pagos.length || financiaciones.length) {
+        j2.comprarBien({ nombre: nNombre.trim(), fecha: nFecha, pagos, financiaciones });
       }
-      setNNombre(''); setNValor(''); setNFecha(''); setNNotas(''); setNPago('ninguna');
+      setNNombre(''); setNValor(''); setNFecha(''); setNNotas(''); setNFormas([]);
       setShowNew(false);
-      toast(nPago !== 'ninguna' ? 'Activo registrado y pago descontado de la caja' : 'Activo registrado', { tono: 'exito' });
+      toast(
+        financiaciones.length
+          ? `Activo registrado · ${financiaciones.length === 1 ? 'la deuda quedó' : 'las deudas quedaron'} en Finanzas`
+          : pagos.length
+            ? 'Activo registrado y pago descontado de la caja'
+            : 'Activo registrado',
+        { tono: 'exito' }
+      );
     },
     onError: (e: Error) => toast(e.message, { tono: 'error' }),
   });
@@ -351,6 +361,10 @@ export function ActivosPage() {
               if (!nNombre.trim()) { toast('Ingresá el nombre', { tono: 'error' }); return; }
               if (!nValor || Number(nValor) <= 0) { toast('Ingresá el valor de compra', { tono: 'error' }); return; }
               if (!nFecha) { toast('Ingresá la fecha de compra', { tono: 'error' }); return; }
+              if (nFormas.length && Math.abs(totalFilas(nFormas) - Number(nValor)) >= 1) {
+                toast(`Las formas de pago suman ${money(totalFilas(nFormas))} y el bien vale ${money(Number(nValor))}: tienen que coincidir`, { tono: 'error' });
+                return;
+              }
               addMut.mutate();
             }}
           >
@@ -390,16 +404,13 @@ export function ActivosPage() {
               <input id="act-notas" value={nNotas} onChange={(e) => setNNotas(e.target.value)} placeholder="Ej: comprado en Ferreria López, modelo 2023" />
             </div>
             <div className="form-group" style={{ marginBottom: 'var(--sp-3)' }}>
-              <label htmlFor="act-pago">¿Cómo se pagó?</label>
-              <select id="act-pago" value={nPago} onChange={(e) => setNPago(e.target.value as typeof nPago)}>
-                <option value="ninguna">No mover caja (ya era de la empresa o lo aportó un socio)</option>
-                <option value="mp">Pagado desde Mercado Pago</option>
-                <option value="banco">Pagado desde Banco</option>
-                <option value="efectivo">Pagado desde Efectivo</option>
-              </select>
-              <p className="form-ayuda">
-                Comprar un bien no es un gasto del mes: la plata sale de la caja y pasa a ser parte del activo. Si lo compraste con el crédito, elegí la cuenta donde entró el crédito.
+              <label>¿Cómo se pagó?</label>
+              <p className="form-ayuda" style={{ marginTop: 0 }}>
+                Sumá una fila por cada forma: cuentas que pagaron, un crédito o una tarjeta en cuotas. Comprar un bien no es
+                un gasto del mes: la plata (o la deuda) pasa a ser parte del activo. Sin filas, el bien ya era de la empresa y
+                no se mueve nada.
               </p>
+              <FormasDePago filas={nFormas} onCambio={setNFormas} total={Number(nValor) || 0} />
             </div>
             {addMut.error && (
               <div className="alerta urgente" role="alert">No se pudo guardar: {addMut.error.message}</div>

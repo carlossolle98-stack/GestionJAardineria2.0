@@ -181,6 +181,8 @@ export type J2PagoCredito = {
   interes: number;
   cuenta: string;
   egresoId?: string;
+  /** Si se pagó desde más de una cuenta: lo que salió de cada una (capital + interés). */
+  partes?: J2Pago[];
   anulado?: J2Anulacion;
 };
 
@@ -198,6 +200,15 @@ export type J2Credito = {
   nota?: string;
   /** Deuda que ya existía al cargarla: se registra lo que falta pagar, sin sumar plata a la caja. */
   previo?: boolean;
+  /**
+   * Lo que hay que devolver en total (cuotas × valor de la cuota). La diferencia
+   * con `monto` es el interés, que se reparte solo entre las cuotas.
+   */
+  totalADevolver?: number;
+  /** prestamo: plata o financiación de una entidad; tarjeta: compra en cuotas con tarjeta de crédito. */
+  tipoCredito?: 'prestamo' | 'tarjeta';
+  /** Financió directamente la compra de un bien: no entró plata a la caja, entró el bien. */
+  bien?: string;
   pagos: J2PagoCredito[];
   ajustes: J2AjusteCredito[];
   anulado?: J2Anulacion;

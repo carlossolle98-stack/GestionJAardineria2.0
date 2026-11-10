@@ -334,6 +334,51 @@ function contraEgreso(d: J2Datos, id: string, an: J2Anulacion): J2Datos {
 
 export type NuevoCredito = Omit<J2Credito, 'id' | 'saldo' | 'pagos' | 'ajustes' | 'anulado'>;
 
+export type Financiacion = {
+  entidad: string;
+  tipoCredito: 'prestamo' | 'tarjeta';
+  /** Parte del precio que cubrió. */
+  monto: number;
+  cuotas?: number;
+  /** Total a devolver; si falta o es igual a `monto`, sin interés. */
+  totalADevolver?: number;
+};
+
+/** Reparte un importe entre cuentas en proporción a lo que salió de cada una. */
+export function repartir(monto: number, partes: J2Pago[]): J2Pago[] {
+  const total = partes.reduce((s, p) => s + p.monto, 0);
+  if (!partes.length || total <= 0) return [];
+  let asignado = 0;
+  return partes.map((p, i) => {
+    const m = i === partes.length - 1 ? Math.round((monto - asignado) * 100) / 100 : Math.round((monto * p.monto) / total * 100) / 100;
+    asignado += m;
+    return { cuenta: p.cuenta, monto: m };
+  });
+}
+
+/**
+ * Cuánto de un pago es capital y cuánto interés. Con el total a devolver
+ * cargado, el interés se reparte en proporción en cada pago y el último cierra
+ * la cuenta exacta. Sin ese dato, todo va a capital hasta cancelar la deuda y
+ * lo que se pague de más es interés.
+ */
+export function separarCuota(cr: J2Credito, total: number): { capital: number; interes: number } {
+  const pagado = cr.pagos.filter((p) => !p.anulado).reduce((s, p) => s + p.capital + p.interes, 0);
+  const devolver = cr.totalADevolver ?? 0;
+  if (devolver > cr.monto) {
+    const restante = devolver - pagado;
+    if (total >= restante - 0.5 || total >= cr.saldo + (devolver - cr.monto)) {
+      const capital = Math.min(cr.saldo, total);
+      return { capital, interes: Math.max(0, Math.round((total - capital) * 100) / 100) };
+    }
+    const interes = Math.round((total * (devolver - cr.monto)) / devolver);
+    const capital = Math.min(cr.saldo, total - interes);
+    return { capital, interes: total - capital };
+  }
+  const capital = Math.min(cr.saldo, total);
+  return { capital, interes: Math.max(0, total - capital) };
+}
+
 export type J2Accion =
   | { tipo: 'hidratar'; datos: Partial<J2Datos> }
   | { tipo: 'deshacer' }
@@ -402,11 +447,24 @@ export type J2Accion =
   | { tipo: 'recibirCredito'; payload: NuevoCredito }
   | { tipo: 'anularCredito'; id: string; motivo: string }
   | {
+      tipo: 'comprarBien';
+      nombre: string;
+      fecha: string;
+      /** Lo que salió de las cuentas. */
+      pagos: J2Pago[];
+      /** Lo que se financió: un crédito o una tarjeta que pagó directo al vendedor. */
+      financiaciones: Financiacion[];
+    }
+  | { tipo: 'configurarCredito'; creditoId: string; totalADevolver?: number; cuotas?: number }
+  | {
       tipo: 'pagarCuotaCredito';
       creditoId: string;
       total: number;
-      interes: number;
-      cuenta: keyof J2Cuentas;
+      /** Si no viene, se calcula con lo que se pidió y lo que hay que devolver. */
+      interes?: number;
+      cuenta?: keyof J2Cuentas;
+      /** Pago desde varias cuentas. Si no viene, sale todo de `cuenta`. */
+      pagos?: J2Pago[];
       fecha: string;
     }
   | { tipo: 'anularCuotaCredito'; creditoId: string; pagoId: string; motivo: string }
@@ -919,17 +977,32 @@ function transicion(d: J2Datos, a: J2Accion): J2Datos {
         monto: -row.monto,
         cuenta: row.previo ? 'credito' : row.cuenta,
         fecha: an.fecha,
-        afectaSaldo: !row.previo,
+        afectaSaldo: !row.previo && !row.bien,
       });
     }
 
     case 'pagarCuotaCredito': {
       const cred = d.inversiones.creditos.find((x) => x.id === a.creditoId);
-      if (!cred || cred.anulado || a.interes < 0 || a.total <= 0 || a.interes > a.total) return d;
-      const capital = Math.min(a.total - a.interes, cred.saldo);
+      if (!cred || cred.anulado || a.total <= 0) return d;
+      const pagosPedidos = agrupar(a.pagos?.length ? a.pagos : [{ cuenta: a.cuenta ?? 'banco', monto: a.total }]);
+      // Si lo repartido no suma el total, la diferencia va a la primera cuenta.
+      const dif = a.total - pagosPedidos.reduce((t, x) => t + x.monto, 0);
+      const partes = agrupar([...pagosPedidos, { cuenta: pagosPedidos[0]?.cuenta ?? 'banco', monto: dif }]);
+      const sep = a.interes === undefined ? separarCuota(cred, a.total) : { interes: a.interes, capital: Math.min(a.total - a.interes, cred.saldo) };
+      if (sep.interes < 0 || sep.interes > a.total) return d;
+      const capital = sep.capital;
+      const interes = a.total - capital;
       const pagoId = nuevoId('pago');
-      const egresoId = a.interes > 0 ? nuevoId('eg') : undefined;
-      const pago: J2PagoCredito = { id: pagoId, fecha: a.fecha, capital, interes: a.interes, cuenta: a.cuenta, egresoId };
+      const egresoId = interes > 0 ? nuevoId('eg') : undefined;
+      const pago: J2PagoCredito = {
+        id: pagoId,
+        fecha: a.fecha,
+        capital,
+        interes,
+        cuenta: partes[0].cuenta,
+        ...(partes.length > 1 ? { partes } : {}),
+        egresoId,
+      };
       let paso: J2Datos = {
         ...d,
         inversiones: {
@@ -940,31 +1013,97 @@ function transicion(d: J2Datos, a: J2Accion): J2Datos {
         },
       };
       // El capital devuelto achica la deuda: no es un gasto.
-      if (capital > 0) {
+      for (const s of capital > 0 ? repartir(capital, partes) : []) {
         paso = aplicar(paso, {
           tipo: 'credito_cuota',
-          concepto: `Cuota crédito — ${cred.entidad}`,
+          concepto: `Cuota ${cred.tipoCredito === 'tarjeta' ? 'tarjeta' : 'crédito'} — ${cred.entidad}`,
           detalle: 'Devolución de capital',
-          monto: -capital,
-          cuenta: a.cuenta,
+          monto: -s.monto,
+          cuenta: s.cuenta,
           fecha: a.fecha,
         });
       }
       // El interés sí es un costo del negocio: va a Egresos.
       if (egresoId) {
+        const partesInteres = repartir(interes, partes);
         const eg: J2Egreso = {
           id: egresoId,
           fecha: a.fecha,
           tipo: 'bancario',
           categoria: `Intereses — ${cred.entidad}`,
           concepto: 'Intereses de crédito',
-          monto: a.interes,
-          cuenta: a.cuenta,
+          monto: interes,
+          cuenta: partesInteres[0].cuenta,
+          ...(partesInteres.length > 1 ? { partes: partesInteres } : {}),
           origen: { tipo: 'credito', creditoId: cred.id, pagoId },
         };
+        paso = { ...paso, egresos: [...paso.egresos, eg] };
+        for (const s of partesInteres) {
+          paso = aplicar(paso, { tipo: 'egreso', concepto: eg.categoria, detalle: eg.concepto, monto: -s.monto, cuenta: s.cuenta, fecha: a.fecha });
+        }
+      }
+      return paso;
+    }
+
+    case 'configurarCredito':
+      return {
+        ...d,
+        inversiones: {
+          ...d.inversiones,
+          creditos: d.inversiones.creditos.map((x) =>
+            x.id === a.creditoId
+              ? {
+                  ...x,
+                  ...(a.totalADevolver !== undefined ? { totalADevolver: a.totalADevolver } : {}),
+                  ...(a.cuotas !== undefined ? { cuotas: a.cuotas } : {}),
+                }
+              : x
+          ),
+        },
+      };
+
+    /* — Compra de un bien con varias formas de pago — */
+    case 'comprarBien': {
+      const pagos = agrupar(a.pagos);
+      const fin = a.financiaciones.filter((f) => f.monto > 0 && f.entidad.trim());
+      if (!pagos.length && !fin.length) return d;
+      let paso = d;
+      for (const s of pagos) {
+        paso = aplicar(paso, {
+          tipo: 'compra_activo',
+          concepto: `Compra de activo — ${a.nombre}`,
+          monto: -s.monto,
+          cuenta: s.cuenta,
+          fecha: a.fecha,
+        });
+      }
+      for (const f of fin) {
+        const cred: J2Credito = {
+          id: nuevoId('cred'),
+          fecha: a.fecha,
+          entidad: f.entidad.trim(),
+          monto: f.monto,
+          saldo: f.monto,
+          cuenta: 'bien',
+          cuotas: f.cuotas && f.cuotas > 0 ? f.cuotas : undefined,
+          totalADevolver: f.totalADevolver && f.totalADevolver > f.monto ? f.totalADevolver : undefined,
+          tipoCredito: f.tipoCredito,
+          bien: a.nombre,
+          pagos: [],
+          ajustes: [],
+        };
         paso = aplicar(
-          { ...paso, egresos: [...paso.egresos, eg] },
-          { tipo: 'egreso', concepto: eg.categoria, detalle: eg.concepto, monto: -a.interes, cuenta: a.cuenta, fecha: a.fecha }
+          { ...paso, inversiones: { ...paso.inversiones, creditos: [...paso.inversiones.creditos, cred] } },
+          {
+            tipo: 'credito',
+            concepto: `${f.tipoCredito === 'tarjeta' ? 'Tarjeta' : 'Financiación'} — ${cred.entidad}`,
+            detalle: `Compra de ${a.nombre}`,
+            monto: f.monto,
+            cuenta: 'bien',
+            fecha: a.fecha,
+            // La plata fue directo al vendedor: entra el bien y queda la deuda.
+            afectaSaldo: false,
+          }
         );
       }
       return paso;
@@ -990,13 +1129,14 @@ function transicion(d: J2Datos, a: J2Accion): J2Datos {
           ),
         },
       };
-      if (pago.capital > 0) {
+      const partesPago = pago.partes?.length ? pago.partes : [{ cuenta: pago.cuenta as keyof J2Cuentas, monto: pago.capital + pago.interes }];
+      for (const s of pago.capital > 0 ? repartir(pago.capital, partesPago) : []) {
         paso = aplicar(paso, {
           tipo: 'credito_cuota_anulada',
           concepto: `Anulación cuota — ${cred.entidad}`,
           detalle: an.motivo,
-          monto: pago.capital,
-          cuenta: pago.cuenta,
+          monto: s.monto,
+          cuenta: s.cuenta,
           fecha: an.fecha,
         });
       }
