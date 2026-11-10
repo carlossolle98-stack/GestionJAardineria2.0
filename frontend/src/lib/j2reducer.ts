@@ -157,11 +157,12 @@ function aplicar(d: J2Datos, mov: Movimiento): J2Datos {
 
   if (afectaSaldo && monto !== 0) {
     if (esCuentaLiquida(cuenta)) {
-      cuentas = { ...cuentas, [cuenta]: (cuentas[cuenta] || 0) + monto };
+      // Redondeado a centavos: repartir un pago entre cuentas deja decimales de punto flotante.
+      cuentas = { ...cuentas, [cuenta]: Math.round(((cuentas[cuenta] || 0) + monto) * 100) / 100 };
     } else if (inversiones.items.some((i) => i.id === cuenta)) {
       inversiones = {
         ...inversiones,
-        items: inversiones.items.map((i) => (i.id === cuenta ? { ...i, saldo: i.saldo + monto } : i)),
+        items: inversiones.items.map((i) => (i.id === cuenta ? { ...i, saldo: Math.round((i.saldo + monto) * 100) / 100 } : i)),
       };
     }
   }
@@ -1013,7 +1014,8 @@ function transicion(d: J2Datos, a: J2Accion): J2Datos {
         },
       };
       // El capital devuelto achica la deuda: no es un gasto.
-      for (const s of capital > 0 ? repartir(capital, partes) : []) {
+      const partesCapital = capital > 0 ? repartir(capital, partes) : [];
+      for (const s of partesCapital) {
         paso = aplicar(paso, {
           tipo: 'credito_cuota',
           concepto: `Cuota ${cred.tipoCredito === 'tarjeta' ? 'tarjeta' : 'crédito'} — ${cred.entidad}`,
@@ -1025,7 +1027,11 @@ function transicion(d: J2Datos, a: J2Accion): J2Datos {
       }
       // El interés sí es un costo del negocio: va a Egresos.
       if (egresoId) {
-        const partesInteres = repartir(interes, partes);
+        const partesInteres = partesCapital.length
+          ? partes
+              .map((p, i) => ({ cuenta: p.cuenta, monto: Math.round((p.monto - (partesCapital[i]?.monto ?? 0)) * 100) / 100 }))
+              .filter((p) => p.monto !== 0)
+          : partes;
         const eg: J2Egreso = {
           id: egresoId,
           fecha: a.fecha,
