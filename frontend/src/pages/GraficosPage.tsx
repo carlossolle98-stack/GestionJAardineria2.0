@@ -6,6 +6,7 @@ import { NOMBRES_CUENTA, medioACuenta, mesClaveRef } from '@/lib/j2local';
 import { totalesMensuales } from '@/lib/historialMensual';
 import type { ResumenPayload } from '@/types';
 import { useJ2Local } from '@/context/J2LocalContext';
+import { RendimientoEquipo } from '@/components/RendimientoEquipo';
 
 const MESES_ES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 const TIPO_LABELS: Record<string, string> = {
@@ -475,6 +476,8 @@ export function GraficosPage() {
           )}
         </div>
       </div>
+
+      <RendimientoEquipo />
     </>
   );
 }
