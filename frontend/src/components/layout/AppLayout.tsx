@@ -28,6 +28,7 @@ const GRUPOS: { titulo: string; tabs: Tab[] }[] = [
     titulo: 'Operación',
     tabs: [
       { to: '/horas', label: 'Horas', icono: '⏱️' },
+      { to: '/carga', label: 'Carga', icono: '🚚', permiso: 'tareas', permisoAlt: 'agenda' },
       { to: '/tareas', label: 'Tareas', icono: '✅', permiso: 'tareas', permisoAlt: 'tareas_admin' },
       { to: '/agenda', label: 'Agenda', icono: '📅', permiso: 'agenda' },
       { to: '/espera', label: 'En espera', icono: '⏳', permiso: 'espera' },
