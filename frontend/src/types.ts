@@ -168,6 +168,9 @@ export type J2ListaEspera = {
   trabajo: string;
   notas: string;
   fechaAgregado: string;
+  /** Vuelta automática al marcar un turno como realizado: el turno y el día de la visita. */
+  turnoId?: string;
+  ultimaVisita?: string;
 };
 
 export type J2Cuentas = { mp: number; banco: number; efectivo: number };

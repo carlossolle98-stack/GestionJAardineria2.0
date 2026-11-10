@@ -4,11 +4,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getJson, sendJson } from '@/lib/api';
 import { todayISO } from '@/lib/format';
 import { diasSemana, labelSemana, toYMD, weekRangeFromOffset } from '@/lib/agenda';
-import type { Turno } from '@/types';
+import type { Cliente, Turno } from '@/types';
 import { useToast } from '@/context/ToastContext';
 import { useOrden, BarraFiltros, coincideAlguno } from '@/components/Tabla';
 import { Modal, ModalAcciones, ModalConfirmar } from '@/components/Modal';
 import { useJ2Local } from '@/context/J2LocalContext';
+import { useAuth } from '@/context/AuthContext';
 import { Vacio } from '@/components/Estados';
 
 const DURACIONES = ['1 hora', '1.5 horas', '2 horas', '3 horas', 'Medio día', 'Día completo'];
@@ -22,6 +23,7 @@ export function AgendaPage() {
   const loc = useLocation();
   const nav = useNavigate();
   const j2 = useJ2Local();
+  const { puede } = useAuth();
   const [offset, setOffset] = useState(0);
   const { lunes, desde, hasta } = useMemo(() => weekRangeFromOffset(offset), [offset]);
 
@@ -118,15 +120,55 @@ export function AgendaPage() {
     onError: (e: Error) => toast(e.message, { tono: 'error' }),
   });
 
+  const { data: clientes = [] } = useQuery({
+    queryKey: ['clientes'],
+    queryFn: () => getJson<Cliente[]>('/api/clientes'),
+    enabled: puede('clientes'),
+  });
+
+  /**
+   * Al hacer un turno, el cliente vuelve a la lista de espera con la fecha de la
+   * visita (no la del día en que se marca): así los días sin ir son exactos.
+   * Si ya estaba esperando por otra cosa, se deja como está.
+   */
+  function volverAEspera(t: Turno) {
+    if (!puede('espera')) return false;
+    const mismo = (n: string) => n.trim().toLowerCase() === t.cliente.trim().toLowerCase();
+    const previas = j2.listaEspera.filter((e) => mismo(e.nombreCliente));
+    if (previas.some((e) => !e.turnoId)) return false;
+    for (const e of previas) j2.removeListaEspera(e.id);
+    j2.addListaEspera({
+      clienteId: clientes.find((c) => mismo(c.nombre))?._id ?? '',
+      nombreCliente: t.cliente,
+      trabajo: t.tipo === 'Cliente fijo' ? 'Mantenimiento' : '',
+      notas: `Última visita: ${t.fecha.split('-').reverse().join('/')}`,
+      fechaAgregado: t.fecha,
+      turnoId: t._id,
+      ultimaVisita: t.fecha,
+    });
+    return true;
+  }
+
   const toggleMut = useMutation({
-    mutationFn: (p: { id: string; realizado: boolean }) =>
-      sendJson(`/api/turnos/${p.id}`, 'PATCH', { realizado: p.realizado }),
+    mutationFn: (p: { turno: Turno; realizado: boolean }) =>
+      sendJson(`/api/turnos/${p.turno._id}`, 'PATCH', { realizado: p.realizado }),
     onSuccess: (_d, p) => {
       qc.invalidateQueries({ queryKey: ['turnos'] });
       qc.invalidateQueries({ queryKey: ['turnos-all'] });
-      toast(p.realizado ? '✓ Turno marcado como hecho' : 'Turno marcado como pendiente', {
-        tono: 'exito',
-      });
+      let volvio = false;
+      if (p.realizado) volvio = volverAEspera(p.turno);
+      else {
+        // Desmarcado: se saca la vuelta automática que había generado.
+        for (const e of j2.listaEspera.filter((x) => x.turnoId === p.turno._id)) j2.removeListaEspera(e.id);
+      }
+      toast(
+        p.realizado
+          ? volvio
+            ? `✓ Turno hecho · ${p.turno.cliente} volvió a la lista de espera desde el ${p.turno.fecha.split('-').reverse().join('/')}`
+            : '✓ Turno marcado como hecho'
+          : 'Turno marcado como pendiente',
+        { tono: 'exito' }
+      );
     },
     onError: (e: Error) => toast(e.message, { tono: 'error' }),
   });
@@ -342,7 +384,7 @@ export function AgendaPage() {
                       <button
                         type="button"
                         className="btn secundario sm"
-                        onClick={() => toggleMut.mutate({ id: t._id, realizado: !t.realizado })}
+                        onClick={() => toggleMut.mutate({ turno: t, realizado: !t.realizado })}
                         disabled={toggleMut.isPending}
                       >
                         {t.realizado ? '✓ Hecho' : '○ Pendiente'}
