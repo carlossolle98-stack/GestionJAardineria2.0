@@ -31,6 +31,20 @@ export type Turno = {
   duracion: string;
   tipo: string;
   realizado?: boolean;
+  equipoId?: string;
+  equipoNombre?: string;
+  /** Al hacerlo: quiénes fueron y cuánto se tardó. */
+  personas?: { usuarioId: string; nombre: string }[];
+  horasReales?: number | null;
+};
+
+export type Equipo = {
+  _id: string;
+  nombre: string;
+  color: string;
+  miembros: { usuarioId: string; nombre: string }[];
+  encargado: string;
+  activo: boolean;
 };
 
 export type CobroDiario = {
@@ -103,6 +117,25 @@ export type J2Empleado = {
   mutualCuenta?: 'mp' | 'banco' | 'efectivo';
   /** sinDescuentos: aguinaldo acumulado que el negocio le debe. */
   aguinaldoDevengado?: number;
+  horario?: J2Horario;
+};
+
+/** Cómo y cuánto se le paga, y qué se espera de su horario (para el presentismo). */
+export type J2Horario = {
+  pago: 'semanal' | 'mensual' | 'jornada' | 'temporada';
+  /** Por semana, por mes o por jornada, según `pago`. */
+  monto: number;
+  /** Lo que suma el presentismo en el mes; 0 = no tiene. */
+  presentismo: number;
+  /** Hora en que tiene que marcar la entrada, "08:00". */
+  horaEntrada: string;
+  toleranciaMin: number;
+  /** Días que trabaja: 5 = lunes a viernes, 6 = lunes a sábado. */
+  dias: 5 | 6;
+  /** Su usuario en la app, para cruzar con las horas que marca. */
+  usuarioId?: string;
+  /** Por temporada: hasta cuándo. */
+  temporadaHasta?: string;
 };
 
 export type J2Pago = { cuenta: 'mp' | 'banco' | 'efectivo'; monto: number };

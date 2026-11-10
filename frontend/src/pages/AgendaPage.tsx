@@ -5,6 +5,7 @@ import { getJson, sendJson } from '@/lib/api';
 import { todayISO } from '@/lib/format';
 import { diasSemana, labelSemana, toYMD, weekRangeFromOffset } from '@/lib/agenda';
 import type { Cliente, Turno } from '@/types';
+import { ModalEquipos, ModalTurnoHecho, useEquipos } from '@/components/Equipos';
 import { useToast } from '@/context/ToastContext';
 import { useOrden, BarraFiltros, coincideAlguno } from '@/components/Tabla';
 import { Modal, ModalAcciones, ModalConfirmar } from '@/components/Modal';
@@ -23,7 +24,13 @@ export function AgendaPage() {
   const loc = useLocation();
   const nav = useNavigate();
   const j2 = useJ2Local();
-  const { puede } = useAuth();
+  const { puede, esAdmin } = useAuth();
+  const { data: equiposTodos = [] } = useEquipos();
+  const equipos = equiposTodos.filter((e) => e.activo);
+  const [verEquipos, setVerEquipos] = useState(false);
+  const [hecho, setHecho] = useState<Turno | null>(null);
+  const [filEquipo, setFilEquipo] = useState('');
+  const nombreEquipo = (id: string) => equiposTodos.find((e) => e._id === id)?.nombre ?? '';
   const [offset, setOffset] = useState(0);
   const { lunes, desde, hasta } = useMemo(() => weekRangeFromOffset(offset), [offset]);
 
@@ -39,6 +46,7 @@ export function AgendaPage() {
   const [tHora, setTHora] = useState('');
   const [tDur, setTDur] = useState('1 hora');
   const [tTipo, setTTipo] = useState('Cliente fijo');
+  const [tEquipo, setTEquipo] = useState('');
   /** Si el turno viene de la lista de espera: se la saca de ahí al guardarlo, no antes. */
   const [esperaId, setEsperaId] = useState<string | null>(null);
   const [borrarT, setBorrarT] = useState<Turno | null>(null);
@@ -50,6 +58,7 @@ export function AgendaPage() {
   const [etHora, setEtHora] = useState('');
   const [etDur, setEtDur] = useState('1 hora');
   const [etTipo, setEtTipo] = useState('Cliente fijo');
+  const [etEquipo, setEtEquipo] = useState('');
 
   // ── Filtros de la semana mostrada ───────────────────────────
   const [busqueda, setBusqueda] = useState('');
@@ -81,6 +90,8 @@ export function AgendaPage() {
         hora: tHora,
         duracion: tDur,
         tipo: tTipo,
+        equipoId: tEquipo,
+        equipoNombre: nombreEquipo(tEquipo),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['turnos'] });
@@ -110,6 +121,8 @@ export function AgendaPage() {
         hora: etHora,
         duracion: etDur,
         tipo: etTipo,
+        equipoId: etEquipo,
+        equipoNombre: nombreEquipo(etEquipo),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['turnos'] });
@@ -150,11 +163,16 @@ export function AgendaPage() {
   }
 
   const toggleMut = useMutation({
-    mutationFn: (p: { turno: Turno; realizado: boolean }) =>
-      sendJson(`/api/turnos/${p.turno._id}`, 'PATCH', { realizado: p.realizado }),
+    mutationFn: (p: { turno: Turno; realizado: boolean; personas?: { usuarioId: string; nombre: string }[]; horasReales?: number }) =>
+      sendJson(`/api/turnos/${p.turno._id}`, 'PATCH', {
+        realizado: p.realizado,
+        personas: p.realizado ? p.personas ?? [] : [],
+        horasReales: p.realizado && p.horasReales ? p.horasReales : null,
+      }),
     onSuccess: (_d, p) => {
       qc.invalidateQueries({ queryKey: ['turnos'] });
       qc.invalidateQueries({ queryKey: ['turnos-all'] });
+      setHecho(null);
       let volvio = false;
       if (p.realizado) volvio = volverAEspera(p.turno);
       else {
@@ -186,9 +204,11 @@ export function AgendaPage() {
         if (filEstado === 'realizado' && !t.realizado) return false;
         if (filEstado === 'pendiente' && t.realizado) return false;
         if (filTipo && t.tipo !== filTipo) return false;
+        if (filEquipo === 'sin' && t.equipoId) return false;
+        if (filEquipo && filEquipo !== 'sin' && t.equipoId !== filEquipo) return false;
         return true;
       }),
-    [turnos, busqueda, filEstado, filTipo]
+    [turnos, busqueda, filEstado, filTipo, filEquipo]
   );
 
   const valoresTurno = useMemo(
@@ -204,11 +224,12 @@ export function AgendaPage() {
     direccion: 'asc',
   });
 
-  const hayFiltros = Boolean(busqueda || filEstado || filTipo);
+  const hayFiltros = Boolean(busqueda || filEstado || filTipo || filEquipo);
   function limpiarFiltros() {
     setBusqueda('');
     setFilEstado('');
     setFilTipo('');
+    setFilEquipo('');
   }
 
   /** Agrupa por día respetando el orden elegido. */
@@ -264,6 +285,11 @@ export function AgendaPage() {
           <button type="button" className="btn secundario" onClick={exportar}>
             📋 Copiar WA
           </button>
+          {(esAdmin || puede('empleados')) && (
+            <button type="button" className="btn secundario" onClick={() => setVerEquipos(true)}>
+              👥 Equipos
+            </button>
+          )}
           <button type="button" className="btn" onClick={() => setAbrirAlta(true)}>
             ➕ Agregar turno
           </button>
@@ -303,6 +329,19 @@ export function AgendaPage() {
             ],
             onCambio: setFilTipo,
           },
+          ...(equiposTodos.length
+            ? [{
+                id: 'agenda-equipo',
+                label: 'Equipo',
+                valor: filEquipo,
+                opciones: [
+                  { valor: '', label: 'Todos' },
+                  ...equipos.map((e) => ({ valor: e._id, label: e.nombre })),
+                  { valor: 'sin', label: 'Sin asignar' },
+                ],
+                onCambio: setFilEquipo,
+              }]
+            : []),
         ]}
         resultados={ordenados.length}
         total={turnos.length}
@@ -379,12 +418,20 @@ export function AgendaPage() {
                         </div>
                         <div style={{ fontSize: 12, color: 'var(--texto-2)' }}>
                           {t.duracion} · {t.tipo}
+                          {t.realizado && t.horasReales ? ` · tardaron ${String(t.horasReales).replace('.', ',')} h` : ''}
                         </div>
+                        {t.equipoId && (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, marginTop: 2 }}>
+                            <span style={{ width: 8, height: 8, borderRadius: '50%', background: equiposTodos.find((e) => e._id === t.equipoId)?.color ?? 'var(--texto-3)' }} aria-hidden="true" />
+                            {t.equipoNombre || nombreEquipo(t.equipoId)}
+                            {t.personas?.length ? ` · ${t.personas.map((x) => x.nombre.split(' ')[0]).join(', ')}` : ''}
+                          </span>
+                        )}
                       </div>
                       <button
                         type="button"
                         className="btn secundario sm"
-                        onClick={() => toggleMut.mutate({ turno: t, realizado: !t.realizado })}
+                        onClick={() => (t.realizado ? toggleMut.mutate({ turno: t, realizado: false }) : setHecho(t))}
                         disabled={toggleMut.isPending}
                       >
                         {t.realizado ? '✓ Hecho' : '○ Pendiente'}
@@ -400,6 +447,7 @@ export function AgendaPage() {
                           setEtHora(t.hora);
                           setEtDur(t.duracion);
                           setEtTipo(t.tipo);
+                          setEtEquipo(t.equipoId ?? '');
                         }}
                       >
                         ✏️
@@ -424,6 +472,18 @@ export function AgendaPage() {
             </div>
           );
         })
+      )}
+
+      {verEquipos && <ModalEquipos onCerrar={() => setVerEquipos(false)} />}
+
+      {hecho && (
+        <ModalTurnoHecho
+          turno={hecho}
+          equipos={equiposTodos}
+          enviando={toggleMut.isPending}
+          onCerrar={() => setHecho(null)}
+          onConfirmar={(datos) => toggleMut.mutate({ turno: hecho, realizado: true, ...datos })}
+        />
       )}
 
       {borrarT && (
@@ -472,6 +532,15 @@ export function AgendaPage() {
                   {TIPOS.map((t) => <option key={t}>{t}</option>)}
                 </select>
               </div>
+              {equipos.length > 0 && (
+                <div className="form-group">
+                  <label htmlFor="et-equipo">Equipo</label>
+                  <select id="et-equipo" value={etEquipo} onChange={(e) => setEtEquipo(e.target.value)}>
+                    <option value="">Sin asignar</option>
+                    {equipos.map((e) => <option key={e._id} value={e._id}>{e.nombre}</option>)}
+                  </select>
+                </div>
+              )}
             </div>
             <ModalAcciones onCancelar={() => setEditT(null)} textoConfirmar="Guardar cambios" enviando={editMutT.isPending} />
           </form>
@@ -520,6 +589,15 @@ export function AgendaPage() {
                   ))}
                 </select>
               </div>
+              {equipos.length > 0 && (
+                <div className="form-group">
+                  <label htmlFor="agenda-equipo">Equipo</label>
+                  <select id="agenda-equipo" value={tEquipo} onChange={(e) => setTEquipo(e.target.value)}>
+                    <option value="">Sin asignar</option>
+                    {equipos.map((e) => <option key={e._id} value={e._id}>{e.nombre}</option>)}
+                  </select>
+                </div>
+              )}
             </div>
             <ModalAcciones onCancelar={cerrarAlta} textoConfirmar="Agregar turno" enviando={addMut.isPending} />
           </form>

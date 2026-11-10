@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { porHoraHombre, porMes, porSemana, ultimasSemanas } from './rendimiento';
+import { porEquipo, porHoraHombre, porMes, porSemana, ultimasSemanas } from './rendimiento';
 import type { Jornada } from './jornadas';
 import type { J2DeudaCliente, J2Ingreso } from '@/types';
 
@@ -48,5 +48,22 @@ describe('horas del equipo contra lo levantado', () => {
 
   it('las últimas semanas terminan en la actual', () => {
     expect(ultimasSemanas('2026-11-12', 3)).toEqual(['2026-10-26', '2026-11-02', '2026-11-09']);
+  });
+});
+
+describe('rendimiento por equipo', () => {
+  it('atribuye cada cobro al equipo que hizo el turno de ese cliente', () => {
+    const turnos = [
+      { cliente: 'Pérez', fecha: '2026-11-10', duracion: '2 horas', realizado: true, equipoId: 'e1', equipoNombre: 'Equipo 1', horasReales: 2.5 },
+      { cliente: 'Gómez', fecha: '2026-11-11', duracion: '3 horas', realizado: true, equipoId: 'e2', equipoNombre: 'Equipo 2', horasReales: 3 },
+      { cliente: 'Ruiz', fecha: '2026-11-12', duracion: '1 hora', realizado: false, equipoId: 'e2', equipoNombre: 'Equipo 2' },
+    ];
+    const ingresos = [ing('2026-11-10', 72_000), ing('2026-11-13', 100_000, 'Cobro de trabajo', 'Gómez'), ing('2026-11-14', 30_000, 'Cobro de trabajo', 'López')];
+    const filas = porEquipo({ ingresos, deudas: [] }, turnos, '2026-11', (d) => Number(d.split(' ')[0]) || 1);
+    expect(filas.map((f) => [f.equipo, f.turnos, f.horasReales, f.levantado])).toEqual([
+      ['Equipo 1', 1, 2.5, 72_000],
+      ['Equipo 2', 1, 3, 100_000],
+      ['Sin equipo', 0, 0, 30_000],
+    ]);
   });
 });

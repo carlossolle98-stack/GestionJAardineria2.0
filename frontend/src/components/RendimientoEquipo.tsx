@@ -4,8 +4,9 @@ import { getJson } from '@/lib/api';
 import { money, todayISO } from '@/lib/format';
 import { NOMBRES_MES } from '@/lib/historial';
 import { horasTexto, sumarDias, type Jornada } from '@/lib/jornadas';
-import { porHoraHombre, porMes, porSemana, ultimasSemanas, type Periodo } from '@/lib/rendimiento';
-import type { Cliente } from '@/types';
+import { porEquipo, porHoraHombre, porMes, porSemana, ultimasSemanas, type Periodo } from '@/lib/rendimiento';
+import { horasAgendadas } from '@/components/Equipos';
+import type { Cliente, Turno } from '@/types';
 import { useJ2Local } from '@/context/J2LocalContext';
 import { useAuth } from '@/context/AuthContext';
 
@@ -54,6 +55,13 @@ export function RendimientoEquipo() {
     enabled: puede('clientes'),
   });
 
+  const [mesEquipo, setMesEquipo] = useState(hoy.slice(0, 7));
+  const { data: turnos = [] } = useQuery({
+    queryKey: ['turnos', `${meses[0]}-01`, hoy],
+    queryFn: () => getJson<Turno[]>(`/api/turnos?desde=${meses[0]}-01&hasta=${hoy}`),
+    enabled: puede('agenda'),
+  });
+
   const datos = useMemo(
     () => ({
       jornadas,
@@ -66,6 +74,10 @@ export function RendimientoEquipo() {
   );
   const filasSemana = useMemo(() => porSemana(datos, semanas), [datos, semanas]);
   const filasMes = useMemo(() => porMes(datos, meses), [datos, meses]);
+  const filasEquipo = useMemo(
+    () => porEquipo({ ingresos: j2.ingresos, deudas: j2.deudasClientes }, turnos, mesEquipo, horasAgendadas),
+    [j2.ingresos, j2.deudasClientes, turnos, mesEquipo]
+  );
   const personas = useMemo(() => {
     const s = new Set<string>();
     for (const p of [...filasSemana, ...filasMes]) for (const n of p.minutosPorPersona.keys()) s.add(n);
@@ -169,6 +181,55 @@ export function RendimientoEquipo() {
           </table>
         </div>
       </div>
+
+      {puede('agenda') && (
+        <>
+          <div className="section-header" style={{ marginTop: 20 }}>
+            <div className="section-title">Por equipo</div>
+            <select className="campo" aria-label="Mes de los equipos" value={mesEquipo} onChange={(e) => setMesEquipo(e.target.value)}>
+              {[...meses].reverse().map((m) => <option key={m} value={m}>{etiquetaMes(m)}</option>)}
+            </select>
+          </div>
+          <p className="form-ayuda" style={{ maxWidth: '75ch', marginBottom: 12 }}>
+            Cada cobro o deuda va al equipo que hizo el turno de ese cliente ese día (o hasta 3 días antes). Las horas reales son
+            las que se cargan al marcar el turno como hecho.
+          </p>
+          {filasEquipo.length === 0 ? (
+            <p style={{ color: 'var(--texto-2)' }}>Sin turnos hechos en {etiquetaMes(mesEquipo)}.</p>
+          ) : (
+            <div className="tabla-wrap">
+              <div className="tabla-scroll">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Equipo</th>
+                      <th style={num}>Turnos hechos</th>
+                      <th style={num}>Horas agendadas</th>
+                      <th style={num}>Horas reales</th>
+                      <th style={num}>Levantado</th>
+                      <th style={num}>Por hora real</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filasEquipo.map((f) => (
+                      <tr key={f.equipo}>
+                        <td><strong>{f.equipo}</strong></td>
+                        <td style={num}>{f.turnos}</td>
+                        <td style={num}>{f.horasAgendadas ? `${String(f.horasAgendadas).replace('.', ',')} h` : '—'}</td>
+                        <td style={{ ...num, color: f.horasReales > f.horasAgendadas ? 'var(--rojo)' : undefined }}>
+                          {f.horasReales ? `${String(Math.round(f.horasReales * 100) / 100).replace('.', ',')} h` : '—'}
+                        </td>
+                        <td style={{ ...num, fontWeight: 700 }}>{money(Math.round(f.levantado))}</td>
+                        <td style={num}>{f.horasReales ? money(Math.round(f.levantado / f.horasReales)) : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }

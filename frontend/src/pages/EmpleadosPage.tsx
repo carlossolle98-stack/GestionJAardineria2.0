@@ -6,6 +6,7 @@ import { useJ2Local } from '@/context/J2LocalContext';
 import { useToast } from '@/context/ToastContext';
 import { Modal, ModalAcciones, ModalConfirmar } from '@/components/Modal';
 import { Vacio } from '@/components/Estados';
+import { ModalHorarioEmpleado, describirHorario } from '@/components/HorarioEmpleado';
 import {
   describirModalidad,
   ModalConfigurarEmpleado,
@@ -15,7 +16,7 @@ import {
 } from '@/components/Sueldos';
 
 type Operacion = 'intereses' | 'ajuste' | 'adelanto';
-type Ventana = Operacion | 'sueldo' | 'aguinaldo' | 'configurar' | 'borrar';
+type Ventana = Operacion | 'sueldo' | 'aguinaldo' | 'configurar' | 'borrar' | 'horario';
 
 const TITULOS: Record<Operacion, { titulo: string; descripcion: string; confirmar: string }> = {
   intereses: {
@@ -100,6 +101,7 @@ function FichaEmpleado({ emp }: { emp: J2Empleado }) {
             {describirModalidad(emp)}
             {!emp.activo && ' · inactivo'}
           </div>
+          {emp.horario && <div style={{ fontSize: 'var(--txt-sm)', color: 'var(--texto-2)' }}>{describirHorario(emp.horario)}</div>}
         </div>
         <div style={{ display: 'flex', gap: 'var(--sp-2)', flexWrap: 'wrap' }}>
           {emp.activo && (
@@ -107,7 +109,8 @@ function FichaEmpleado({ emp }: { emp: J2Empleado }) {
               💰 Pagar sueldo
             </button>
           )}
-          <button type="button" className="btn secundario sm" onClick={() => abrir('configurar')}>⚙ Cómo se le paga</button>
+          <button type="button" className="btn secundario sm" onClick={() => abrir('configurar')}>⚙ Descuentos</button>
+          <button type="button" className="btn secundario sm" onClick={() => abrir('horario')}>⏱ Pago y horario</button>
           <button
             type="button"
             className="btn secundario sm"
@@ -215,6 +218,7 @@ function FichaEmpleado({ emp }: { emp: J2Empleado }) {
       {ventana === 'sueldo' && <ModalPagarSueldo emp={emp} onCerrar={cerrar} />}
       {ventana === 'aguinaldo' && <ModalPagarAguinaldo emp={emp} onCerrar={cerrar} />}
       {ventana === 'configurar' && <ModalConfigurarEmpleado emp={emp} onCerrar={cerrar} />}
+      {ventana === 'horario' && <ModalHorarioEmpleado emp={emp} onCerrar={cerrar} />}
       {ventana === 'borrar' && (
         <ModalConfirmar
           titulo="Eliminar empleado"

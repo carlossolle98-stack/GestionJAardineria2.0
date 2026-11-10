@@ -116,3 +116,63 @@ export function porMes(d: Datos, meses: string[]): Periodo[] {
 export function porHoraHombre(p: Periodo) {
   return p.minutos > 0 ? p.levantado / (p.minutos / 60) : null;
 }
+
+export type TurnoHecho = {
+  cliente: string;
+  fecha: string;
+  duracion: string;
+  realizado?: boolean;
+  equipoId?: string;
+  equipoNombre?: string;
+  horasReales?: number | null;
+};
+
+export type FilaEquipo = {
+  equipo: string;
+  turnos: number;
+  horasAgendadas: number;
+  horasReales: number;
+  levantado: number;
+};
+
+/**
+ * Lo levantado de cada equipo en un mes: cada cobro de trabajo o deuda cargada
+ * se atribuye al equipo que hizo un turno de ese cliente ese día o hasta 3 días
+ * antes (el cobro a veces se carga después). Lo que no se puede atribuir queda
+ * en "Sin equipo".
+ */
+export function porEquipo(
+  d: { ingresos: J2Ingreso[]; deudas: J2DeudaCliente[] },
+  turnos: TurnoHecho[],
+  mes: string,
+  horasAgendadas: (duracion: string) => number
+): FilaEquipo[] {
+  const filas = new Map<string, FilaEquipo>();
+  const fila = (nombre: string) => {
+    const f = filas.get(nombre) ?? { equipo: nombre, turnos: 0, horasAgendadas: 0, horasReales: 0, levantado: 0 };
+    filas.set(nombre, f);
+    return f;
+  };
+  const hechos = turnos.filter((t) => t.realizado);
+  for (const t of hechos) {
+    if (!t.fecha.startsWith(mes)) continue;
+    const f = fila(t.equipoNombre || 'Sin equipo');
+    f.turnos += 1;
+    f.horasAgendadas += horasAgendadas(t.duracion);
+    f.horasReales += t.horasReales ?? 0;
+  }
+  const mismo = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+  const equipoDe = (cliente: string, fecha: string) => {
+    const candidatos = hechos
+      .filter((t) => mismo(t.cliente, cliente) && t.fecha <= fecha && t.fecha >= sumarDias(fecha, -3))
+      .sort((a, b) => b.fecha.localeCompare(a.fecha));
+    return candidatos[0]?.equipoNombre || 'Sin equipo';
+  };
+  for (const i of d.ingresos) {
+    if (i.fecha.startsWith(mes) && esCobroDeTrabajo(i, d.deudas)) fila(equipoDe(i.cliente, i.fecha)).levantado += i.monto;
+  }
+  for (const x of d.deudas) {
+    if (x.fecha.startsWith(mes) && esDeudaDeTrabajo(x)) fila(equipoDe(x.nombreCliente, x.fecha)).levantado += x.monto;
+  }
+  return [...filas.values()].sort((a, b) => (a.equipo === 'Sin equipo' ? 1 : b.equipo === 'Sin equipo' ? -1 : a.equipo.localeCompare(b.equipo, 'es')));
+}

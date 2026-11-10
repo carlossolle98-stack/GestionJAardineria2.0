@@ -31,6 +31,7 @@ import type {
   J2Moneda,
   J2MovCapital,
   J2MovLog,
+  J2Horario,
   J2Pago,
   J2Transferencia,
 } from '@/types';
@@ -474,6 +475,7 @@ export type J2Accion =
   | { tipo: 'compraMercaderia'; detalle: string; monto: number; cuenta: keyof J2Cuentas; fecha: string }
   | { tipo: 'ingresarPorMedio'; cuenta: keyof J2Cuentas; monto: number; concepto: string }
   | { tipo: 'addEmpleado'; nombre: string }
+  | { tipo: 'configurarHorario'; id: string; horario: J2Horario }
   | { tipo: 'toggleEmpleado'; id: string }
   | { tipo: 'removeEmpleado'; id: string }
   | { tipo: 'interesesAguinaldo'; empleadoId: string; intereses: number }
@@ -1232,6 +1234,9 @@ function transicion(d: J2Datos, a: J2Accion): J2Datos {
           { id: nuevoId('emp'), nombre: a.nombre, activo: true, aguinaldo: 0, adelanto: 0 },
         ],
       };
+
+    case 'configurarHorario':
+      return cambiarEmpleado(d, a.id, (e) => ({ ...e, horario: a.horario }));
 
     case 'toggleEmpleado':
       return {

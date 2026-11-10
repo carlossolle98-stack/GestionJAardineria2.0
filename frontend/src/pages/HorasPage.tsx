@@ -4,6 +4,7 @@ import { getJson, sendJson } from '@/lib/api';
 import { money, todayISO } from '@/lib/format';
 import { NOMBRES_MES } from '@/lib/historial';
 import { grillaSemana, horaAR, horasTexto, lunesDe, sumarDias, totalesMes, type Jornada } from '@/lib/jornadas';
+import { evaluarPresentismo, jornadasDe } from '@/lib/presentismo';
 import { useAuth } from '@/context/AuthContext';
 import { useJ2Local } from '@/context/J2LocalContext';
 import { useToast } from '@/context/ToastContext';
@@ -251,6 +252,9 @@ function HorasDelEquipo() {
     return j2.egresos.filter((e) => e.tipo === 'sueldo' && e.categoria === emp.nombre && e.fecha.startsWith(mes)).reduce((t, e) => t + e.monto, 0);
   };
   const [anioMes, numMes] = mes.split('-').map(Number);
+  const presentismos = j2.empleados
+    .filter((e) => e.activo && e.horario && e.horario.presentismo > 0)
+    .map((emp) => ({ emp, r: evaluarPresentismo(jornadasDe(emp, jornadas), mes, emp.horario!, hoy) }));
 
   return (
     <>
@@ -331,6 +335,37 @@ function HorasDelEquipo() {
               mes aparece en $0 hasta que se le paga.
             </p>
           )}
+        </div>
+      )}
+
+      {presentismos.length > 0 && (
+        <div className="tabla-wrap" style={{ marginBottom: 16 }}>
+          <div style={{ padding: 12 }}>
+            <strong>Presentismo de {NOMBRES_MES[numMes - 1]}</strong>
+            <span className="form-ayuda" style={{ marginLeft: 8 }}>Según la hora a la que marcó la entrada. Se suma al pagar el sueldo.</span>
+          </div>
+          <div className="tabla-scroll">
+            <table className="responsive">
+              <thead>
+                <tr><th>Persona</th><th style={num}>Días marcados</th><th>Llegadas tarde</th><th>Días sin marcar</th><th>Presentismo</th></tr>
+              </thead>
+              <tbody>
+                {presentismos.map(({ emp, r }) => (
+                  <tr key={emp.id}>
+                    <td data-label="Persona"><strong>{emp.nombre}</strong><div style={{ fontSize: 11, color: 'var(--texto-2)' }}>entra {emp.horario!.horaEntrada} · {emp.horario!.toleranciaMin} min</div></td>
+                    <td data-label="Días marcados" style={num}>{r.marcados} de {r.esperados}</td>
+                    <td data-label="Llegadas tarde">{r.tardes.length ? r.tardes.map((t) => `${Number(t.fecha.slice(8))}/${numMes} ${t.hora}`).join(' · ') : '—'}</td>
+                    <td data-label="Días sin marcar">{r.sinMarcar.length ? r.sinMarcar.map((f) => `${Number(f.slice(8))}/${numMes}`).join(' · ') : '—'}</td>
+                    <td data-label="Presentismo">
+                      {r.gana
+                        ? <span className="badge ok">Lo cobra · {money(emp.horario!.presentismo)}</span>
+                        : <span className="badge urgente">Lo pierde</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

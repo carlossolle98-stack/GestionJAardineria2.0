@@ -32,6 +32,7 @@ import type {
   J2ListaEspera,
   J2Modalidad,
   J2MovCapital,
+  J2Horario,
   J2Pago,
 } from '@/types';
 import {
@@ -151,6 +152,7 @@ type J2Ctx = J2Datos & {
   compraMercaderia: (p: { detalle: string; monto: number; cuenta: keyof J2Cuentas; fecha: string }) => void;
   ingresarPorMedio: (medioEtiqueta: string, monto: number) => void;
   addEmpleado: (nombre: string) => void;
+  configurarHorario: (id: string, horario: J2Horario) => void;
   toggleEmpleado: (id: string) => void;
   removeEmpleado: (id: string) => void;
   ajustarInteresesAguinaldo: (empId: string, intereses: number) => void;
@@ -501,6 +503,7 @@ export function J2LocalProvider({ children }: { children: ReactNode }) {
           concepto: `Ingreso ${nombreCuenta(medioACuenta(medioEtiqueta))}`,
         }),
       addEmpleado: (nombre: string) => envia({ tipo: 'addEmpleado', nombre }),
+      configurarHorario: (id: string, horario: J2Horario) => envia({ tipo: 'configurarHorario', id, horario }),
       toggleEmpleado: (id: string) => envia({ tipo: 'toggleEmpleado', id }),
       removeEmpleado: (id: string) => envia({ tipo: 'removeEmpleado', id }),
       ajustarInteresesAguinaldo: (empId: string, intereses: number) =>
