@@ -92,7 +92,8 @@ const PRIORIDAD: Permiso[] = [
 
 export function primeraRutaDisponible(permisos: Permiso[]): string {
   const p = PRIORIDAD.find((x) => permisos.includes(x));
-  return p ? RUTA_POR_PERMISO[p] : '/sin-acceso';
+  // Horas la puede usar cualquiera: quien no tiene otra sección entra ahí a marcar su jornada.
+  return p ? RUTA_POR_PERMISO[p] : '/horas';
 }
 
 export function tienePermiso(usuario: Usuario | null, permiso: Permiso): boolean {
