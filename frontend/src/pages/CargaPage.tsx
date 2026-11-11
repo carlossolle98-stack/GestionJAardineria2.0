@@ -63,7 +63,7 @@ export function CargaPage() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const { puede, esAdmin } = useAuth();
-  const admin = esAdmin || puede('empleados');
+  const admin = esAdmin || puede('empleados') || puede('carga_catalogo');
   const hoy = todayISO();
 
   const { data: catalogo = [], isLoading, error } = useQuery({
@@ -314,7 +314,7 @@ function VistaSalida({
   const [creando, setCreando] = useState(false);
   const qc = useQueryClient();
   const { esAdmin } = useAuth();
-  const puedeCatalogo = esAdmin || puede('empleados');
+  const puedeCatalogo = esAdmin || puede('empleados') || puede('carga_catalogo');
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cerrada = salida.estado === 'cerrada';
 

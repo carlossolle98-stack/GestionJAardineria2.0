@@ -110,7 +110,14 @@ function Rutas() {
           <Route path="activos" element={<P permiso="finanzas"><ActivosPage /></P>} />
           <Route path="contabilidad" element={<P permiso="finanzas"><ContabilidadPage /></P>} />
           <Route path="horas" element={<HorasPage />} />
-          <Route path="carga" element={<P permiso={usuario?.permisos.includes('tareas') ? 'tareas' : 'agenda'}><CargaPage /></P>} />
+          <Route
+            path="carga"
+            element={
+              <P permiso={(['carga', 'carga_catalogo', 'tareas', 'agenda'] as const).find((x) => usuario?.permisos.includes(x)) ?? 'carga'}>
+                <CargaPage />
+              </P>
+            }
+          />
           <Route path="usuarios" element={<P permiso="usuarios"><UsuariosPage /></P>} />
           <Route path="sin-acceso" element={<SinAcceso />} />
           <Route path="*" element={<Navigate to={inicio} replace />} />

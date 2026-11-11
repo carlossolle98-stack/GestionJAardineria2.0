@@ -14,6 +14,8 @@ export type Permiso =
   | 'espera'
   | 'whatsapp'
   | 'cargar'
+  | 'carga'
+  | 'carga_catalogo'
   | 'resumen'
   | 'cobros'
   | 'egresos'
@@ -56,6 +58,8 @@ export const RUTA_POR_PERMISO: Record<Permiso, string> = {
   cobros: '/cobros',
   whatsapp: '/whatsapp',
   cargar: '/cargar',
+  carga: '/carga',
+  carga_catalogo: '/carga',
   movimientos: '/movimientos',
   espera: '/espera',
   egresos: '/egresos',
@@ -78,6 +82,7 @@ const PRIORIDAD: Permiso[] = [
   'espera',
   'cargar',
   'whatsapp',
+  'carga',
   'egresos',
   'movimientos',
   'finanzas',
