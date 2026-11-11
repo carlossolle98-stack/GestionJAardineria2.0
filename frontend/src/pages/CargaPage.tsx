@@ -311,6 +311,10 @@ function VistaSalida({
   const [subidos, setSubidos] = useState<Record<string, number>>({});
   const [confirmando, setConfirmando] = useState<null | 'cliente' | 'cierre'>(null);
   const [agregar, setAgregar] = useState('');
+  const [creando, setCreando] = useState(false);
+  const qc = useQueryClient();
+  const { esAdmin } = useAuth();
+  const puedeCatalogo = esAdmin || puede('empleados');
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cerrada = salida.estado === 'cerrada';
 
@@ -396,6 +400,38 @@ function VistaSalida({
 
   const disponibles = catalogo.filter((h) => h.activo && !items.some((i) => i.herramientaId === h._id));
 
+  /**
+   * Agrega a la salida algo del catálogo o algo nuevo escrito a mano. Lo nuevo se
+   * suma también al catálogo (si quien carga puede editarlo), así queda para la próxima.
+   */
+  async function agregarItem() {
+    const nombre = agregar.trim();
+    if (!nombre) return;
+    const mismo = (n: string) => n.trim().toLowerCase() === nombre.toLowerCase();
+    if (items.some((i) => mismo(i.nombre))) {
+      toast(`${nombre} ya está en la lista`, { tono: 'neutro' });
+      setAgregar('');
+      return;
+    }
+    let h = catalogo.find((x) => mismo(x.nombre));
+    if (!h && puedeCatalogo) {
+      setCreando(true);
+      try {
+        h = await sendJson<Herramienta>('/api/carga/herramientas', 'POST', { nombre, cantidad: 1, categoria: 'Herramientas' });
+        void qc.invalidateQueries({ queryKey: ['carga-herramientas'] });
+      } catch {
+        h = undefined;
+      } finally {
+        setCreando(false);
+      }
+    }
+    // Sin catálogo (o sin permiso para editarlo) va igual a esta salida, sólo por hoy.
+    const id = h?._id ?? `libre:${nombre.toLowerCase()}`;
+    cambiarItems([...items, { herramientaId: id, nombre: h?.nombre ?? nombre, cantidad: 1, cargados: 1, devueltos: 0, controlesHechos: [], quedoEn: [] }]);
+    toast(h && !catalogo.some((x) => x._id === h!._id) ? `${nombre} agregado a la salida y al catálogo` : `${nombre} agregado`, { tono: 'exito' });
+    setAgregar('');
+  }
+
   return (
     <div style={{ display: 'grid', gap: 14 }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -443,27 +479,26 @@ function VistaSalida({
               );
             })}
           </div>
-          {disponibles.length > 0 && (
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <select className="campo" aria-label="Agregar herramienta" value={agregar} onChange={(e) => setAgregar(e.target.value)}>
-                <option value="">+ Agregar algo que no está en la lista</option>
-                {disponibles.map((h) => <option key={h._id} value={h._id}>{h.nombre}</option>)}
-              </select>
-              {agregar && (
-                <button
-                  type="button"
-                  className="btn sm"
-                  onClick={() => {
-                    const h = herr(agregar)!;
-                    cambiarItems([...items, { herramientaId: h._id, nombre: h.nombre, cantidad: 1, cargados: 1, devueltos: 0, controlesHechos: [], quedoEn: [] }]);
-                    setAgregar('');
-                  }}
-                >
-                  Agregar
-                </button>
-              )}
-            </div>
-          )}
+          <form
+            style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}
+            onSubmit={(e) => { e.preventDefault(); void agregarItem(); }}
+          >
+            <input
+              className="campo"
+              list="carga-disponibles"
+              value={agregar}
+              onChange={(e) => setAgregar(e.target.value)}
+              placeholder="+ Agregar: escribí o elegí una herramienta"
+              aria-label="Agregar herramienta"
+              style={{ flex: '1 1 240px' }}
+            />
+            <datalist id="carga-disponibles">
+              {disponibles.map((h) => <option key={h._id} value={h.nombre} />)}
+            </datalist>
+            <button type="submit" className="btn sm" disabled={!agregar.trim() || creando}>
+              {creando ? 'Agregando…' : 'Agregar'}
+            </button>
+          </form>
         </>
       )}
 
