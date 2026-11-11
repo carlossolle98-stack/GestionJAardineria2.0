@@ -4,6 +4,7 @@ import { getJson, sendJson } from '@/lib/api';
 import type { Equipo, Turno } from '@/types';
 import { useToast } from '@/context/ToastContext';
 import { Modal, ModalAcciones } from '@/components/Modal';
+import { useJ2Local } from '@/context/J2LocalContext';
 
 export const COLORES_EQUIPO = ['#2e7d32', '#1565c0', '#e65100', '#6a1b9a', '#00838f', '#ad1457'];
 
@@ -33,9 +34,23 @@ function usePersonas(equipos: Equipo[]) {
     queryFn: () => getJson<{ id: string; nombre: string }[]>('/api/jornadas/personas'),
     retry: false,
   });
+  const j2 = useJ2Local();
   const todas = new Map<string, Persona>();
   for (const p of data) todas.set(p.nombre.toLowerCase(), { usuarioId: p.id, nombre: p.nombre });
-  for (const e of equipos) for (const m of e.miembros) if (!todas.has(m.nombre.toLowerCase())) todas.set(m.nombre.toLowerCase(), m);
+  // Todos los empleados activos, tengan o no usuario en la app. Si coincide con un
+  // usuario (por el vínculo o por el primer nombre), aparece una sola vez.
+  for (const e of j2.empleados.filter((x) => x.activo)) {
+    const vinculado = e.horario?.usuarioId && data.find((p) => p.id === e.horario?.usuarioId);
+    const primero = e.nombre.trim().split(' ')[0].toLowerCase();
+    const yaEsta = vinculado || [...todas.keys()].some((k) => k === e.nombre.toLowerCase() || k.split(' ')[0] === primero);
+    if (!yaEsta) todas.set(e.nombre.toLowerCase(), { usuarioId: e.horario?.usuarioId ?? '', nombre: e.nombre });
+  }
+  for (const e of equipos) {
+    for (const m of e.miembros) {
+      const primero = m.nombre.trim().split(' ')[0].toLowerCase();
+      if (![...todas.keys()].some((k) => k === m.nombre.toLowerCase() || k.split(' ')[0] === primero)) todas.set(m.nombre.toLowerCase(), m);
+    }
+  }
   return [...todas.values()].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
 }
 

@@ -50,7 +50,7 @@ function Ficha({ texto, hechos, total, aviso, onTocar }: { texto: string; hechos
     >
       <span style={{ fontWeight: 600, fontSize: 15 }}>{listo ? '✓ ' : ''}{texto}</span>
       <span style={{ fontSize: 13, color: 'var(--texto-2)' }}>
-        {total > 1 ? `${hechos} de ${total}` : listo ? 'Listo' : 'Tocar'}
+        {total > 1 ? `Cargados ${hechos} de ${total}` : listo ? 'Cargado' : 'Tocar al cargar'}
       </span>
       {aviso && <span style={{ fontSize: 12, color: 'var(--rojo)', fontWeight: 600 }}>{aviso}</span>}
     </button>
@@ -311,7 +311,11 @@ function VistaSalida({
   const [subidos, setSubidos] = useState<Record<string, number>>({});
   const [confirmando, setConfirmando] = useState<null | 'cliente' | 'cierre'>(null);
   const [agregar, setAgregar] = useState('');
+  const [agregarSalen, setAgregarSalen] = useState('1');
+  const [agregarTenemos, setAgregarTenemos] = useState('');
   const [creando, setCreando] = useState(false);
+  /** Herramienta a la que se le está cambiando cuántas tenemos en total. */
+  const [tenemos, setTenemos] = useState<{ h: Herramienta; valor: number } | null>(null);
   const qc = useQueryClient();
   const { esAdmin } = useAuth();
   const puedeCatalogo = esAdmin || puede('empleados') || puede('carga_catalogo');
@@ -413,11 +417,13 @@ function VistaSalida({
       setAgregar('');
       return;
     }
+    const salen = Math.max(1, parseInt(agregarSalen, 10) || 1);
     let h = catalogo.find((x) => mismo(x.nombre));
     if (!h && puedeCatalogo) {
       setCreando(true);
       try {
-        h = await sendJson<Herramienta>('/api/carga/herramientas', 'POST', { nombre, cantidad: 1, categoria: 'Herramientas' });
+        const total = Math.max(salen, parseInt(agregarTenemos, 10) || salen);
+        h = await sendJson<Herramienta>('/api/carga/herramientas', 'POST', { nombre, cantidad: total, categoria: 'Herramientas' });
         void qc.invalidateQueries({ queryKey: ['carga-herramientas'] });
       } catch {
         h = undefined;
@@ -427,10 +433,36 @@ function VistaSalida({
     }
     // Sin catálogo (o sin permiso para editarlo) va igual a esta salida, sólo por hoy.
     const id = h?._id ?? `libre:${nombre.toLowerCase()}`;
-    cambiarItems([...items, { herramientaId: id, nombre: h?.nombre ?? nombre, cantidad: 1, cargados: 1, devueltos: 0, controlesHechos: [], quedoEn: [] }]);
+    // Si ya estaba en el catálogo, no se llevan más de las que hay.
+    const cantidad = h && catalogo.some((x) => x._id === h!._id) ? Math.min(salen, h.cantidad) : salen;
+    cambiarItems([...items, { herramientaId: id, nombre: h?.nombre ?? nombre, cantidad, cargados: 0, devueltos: 0, controlesHechos: [], quedoEn: [] }]);
     toast(h && !catalogo.some((x) => x._id === h!._id) ? `${nombre} agregado a la salida y al catálogo` : `${nombre} agregado`, { tono: 'exito' });
     setAgregar('');
+    setAgregarSalen('1');
+    setAgregarTenemos('');
   }
+
+  /** Cuántas salen esta vez: entre 1 y las que hay (si no está en el catálogo, sin tope). */
+  function cambiarLlevamos(i: ItemSalida, delta: number) {
+    const h = herr(i.herramientaId);
+    const tope = h ? h.cantidad : Infinity;
+    const nueva = Math.max(1, Math.min(tope, i.cantidad + delta));
+    if (nueva === i.cantidad) {
+      if (delta > 0 && h) toast(`Hay ${h.cantidad} en total. Si compraron más, tocá "Tenemos" para cambiarlo.`, { tono: 'neutro' });
+      return;
+    }
+    editar(i.herramientaId, (x) => ({ ...x, cantidad: nueva, cargados: Math.min(x.cargados, nueva) }));
+  }
+
+  const guardarTenemos = useMutation({
+    mutationFn: ({ h, valor }: { h: Herramienta; valor: number }) => sendJson<Herramienta>(`/api/carga/herramientas/${h._id}`, 'PATCH', { cantidad: valor }),
+    onSuccess: (_d, { h, valor }) => {
+      void qc.invalidateQueries({ queryKey: ['carga-herramientas'] });
+      toast(`${h.nombre}: ahora tenemos ${valor}`, { tono: 'exito' });
+      setTenemos(null);
+    },
+    onError: (e: Error) => toast(e.message, { tono: 'error' }),
+  });
 
   return (
     <div style={{ display: 'grid', gap: 14 }}>
@@ -450,7 +482,10 @@ function VistaSalida({
 
       {paso === 'cargar' && (
         <>
-          <p className="form-ayuda" style={{ margin: 0 }}>Tocá cada cosa cuando la subís. Si es más de una, tocá una vez por cada una.</p>
+          <p className="form-ayuda" style={{ margin: 0 }}>
+            Tocá cada cosa cuando la subís (si son varias, un toque por cada una). Con <strong>−</strong> y <strong>+</strong> elegís
+            cuántas <strong>llevan</strong> hoy; <strong>tenemos</strong> es cuántas hay en total.
+          </p>
           <div style={grilla}>
             {items.map((i) => {
               const h = herr(i.herramientaId);
@@ -466,6 +501,21 @@ function VistaSalida({
                     aviso={exceso}
                     onTocar={() => editar(i.herramientaId, (x) => ({ ...x, cargados: x.cargados >= x.cantidad ? 0 : x.cargados + 1 }))}
                   />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, flexWrap: 'wrap' }}>
+                    <span style={{ color: 'var(--texto-2)' }}>Llevamos</span>
+                    <button type="button" className="btn secundario sm" aria-label={`Llevar menos ${i.nombre}`} disabled={i.cantidad <= 1} onClick={() => cambiarLlevamos(i, -1)}>−</button>
+                    <strong style={{ minWidth: 18, textAlign: 'center', fontFamily: 'var(--fuente-mono)' }}>{i.cantidad}</strong>
+                    <button type="button" className="btn secundario sm" aria-label={`Llevar más ${i.nombre}`} onClick={() => cambiarLlevamos(i, 1)}>+</button>
+                    {h && (
+                      puedeCatalogo ? (
+                        <button type="button" className="btn secundario sm" onClick={() => setTenemos({ h, valor: h.cantidad })} title="Cambiar cuántas tenemos en total">
+                          Tenemos {h.cantidad} ✎
+                        </button>
+                      ) : (
+                        <span style={{ color: 'var(--texto-2)' }}>de {h.cantidad}</span>
+                      )
+                    )}
+                  </div>
                   {i.cargados > 0 && controlesPendientes({ ...i, controlesHechos: [] }, h, 'salida').map((c) => {
                     const clave = `salida:${c.texto}`;
                     const ok = i.controlesHechos.includes(clave);
@@ -495,6 +545,18 @@ function VistaSalida({
             <datalist id="carga-disponibles">
               {disponibles.map((h) => <option key={h._id} value={h.nombre} />)}
             </datalist>
+            {agregar.trim() && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14 }}>
+                Llevamos
+                <input className="campo" style={{ width: 64 }} type="number" inputMode="numeric" min="1" value={agregarSalen} onChange={(e) => setAgregarSalen(e.target.value)} />
+              </label>
+            )}
+            {agregar.trim() && puedeCatalogo && !catalogo.some((x) => x.nombre.trim().toLowerCase() === agregar.trim().toLowerCase()) && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14 }}>
+                Tenemos en total
+                <input className="campo" style={{ width: 64 }} type="number" inputMode="numeric" min="1" value={agregarTenemos} onChange={(e) => setAgregarTenemos(e.target.value)} placeholder={agregarSalen || '1'} />
+              </label>
+            )}
             <button type="submit" className="btn sm" disabled={!agregar.trim() || creando}>
               {creando ? 'Agregando…' : 'Agregar'}
             </button>
@@ -587,6 +649,17 @@ function VistaSalida({
         </>
       )}
 
+      {tenemos && (
+        <Modal titulo={`¿Cuántas ${tenemos.h.nombre} tenemos?`} descripcion="En total, contando todas. Cambialo cuando compren más o se rompa o pierda alguna." onCerrar={() => setTenemos(null)} ancho="chico">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, margin: '8px 0 16px' }}>
+            <button type="button" className="btn secundario" style={{ fontSize: 22, width: 52, height: 52 }} aria-label="Una menos" disabled={tenemos.valor <= 1} onClick={() => setTenemos({ ...tenemos, valor: tenemos.valor - 1 })}>−</button>
+            <strong style={{ fontSize: 32, minWidth: 48, textAlign: 'center', fontFamily: 'var(--fuente-mono)' }}>{tenemos.valor}</strong>
+            <button type="button" className="btn secundario" style={{ fontSize: 22, width: 52, height: 52 }} aria-label="Una más" onClick={() => setTenemos({ ...tenemos, valor: tenemos.valor + 1 })}>+</button>
+          </div>
+          <ModalAcciones tipo="button" onCancelar={() => setTenemos(null)} onConfirmar={() => guardarTenemos.mutate(tenemos)} textoConfirmar="Guardar" enviando={guardarTenemos.isPending} />
+        </Modal>
+      )}
+
       {confirmando === 'cliente' && (
         <Modal titulo={`¿Quedan en lo de ${cliente}?`} onCerrar={() => setConfirmando(null)} ancho="chico">
           <ul style={{ margin: '0 0 12px', paddingLeft: 18 }}>
@@ -645,7 +718,12 @@ function ModalCatalogo({ catalogo, plantillas, onCerrar }: { catalogo: Herramien
   };
 
   return (
-    <Modal titulo="Herramientas y plantillas" descripcion="Cuántas hay de cada cosa y qué lleva cada tipo de trabajo." onCerrar={onCerrar} ancho="ancho">
+    <Modal
+      titulo="Herramientas y plantillas"
+      descripcion="En «Todas las herramientas» se carga cuántas tenemos de cada cosa (sumá cuando compren). En cada plantilla, cuántas se llevan por defecto para ese trabajo; en cada salida se puede cambiar."
+      onCerrar={onCerrar}
+      ancho="ancho"
+    >
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
         <button type="button" className={`btn sm ${vista === 'herramientas' ? '' : 'secundario'}`} onClick={() => setVista('herramientas')}>Todas las herramientas</button>
         {plantillas.map((p) => (
@@ -655,7 +733,7 @@ function ModalCatalogo({ catalogo, plantillas, onCerrar }: { catalogo: Herramien
       <div className="tabla-scroll" style={{ maxHeight: '55vh', overflowY: 'auto' }}>
         <table style={{ fontSize: 14 }}>
           <thead>
-            <tr><th>Herramienta</th><th>{plantilla ? `En "${plantilla.nombre}"` : 'Cuántas hay'}</th>{!plantilla && <th />}</tr>
+            <tr><th>Herramienta</th><th>{plantilla ? `Llevamos en "${plantilla.nombre}"` : 'Tenemos en total'}</th>{!plantilla && <th />}</tr>
           </thead>
           <tbody>
             {catalogo.map((h) => {
@@ -693,7 +771,10 @@ function ModalCatalogo({ catalogo, plantillas, onCerrar }: { catalogo: Herramien
       {!plantilla && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
           <input className="campo" value={nuevo} onChange={(e) => setNuevo(e.target.value)} placeholder="Nueva herramienta" aria-label="Nueva herramienta" />
-          <input className="campo" style={{ width: 70 }} type="number" min="1" value={nuevaCant} onChange={(e) => setNuevaCant(e.target.value)} aria-label="Cantidad" />
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14 }}>
+            Tenemos
+            <input className="campo" style={{ width: 70 }} type="number" min="1" value={nuevaCant} onChange={(e) => setNuevaCant(e.target.value)} />
+          </label>
           <button type="button" className="btn sm" onClick={() => nuevo.trim() && crearH.mutate()} disabled={!nuevo.trim()}>Agregar</button>
         </div>
       )}
